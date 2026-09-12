@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fuente Oswald - igual que Control de Carpas */
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&display=swap');
+
+/* Aplicar la fuente a TODO */
+html, body, #root, * {
+  font-family: 'Oswald', sans-serif !important;
+}
+
+body {
+  background-color: #E8DEC4;
+  margin: 0;
+  padding: 0;
+}
+
+/* Estilos scout */
+.scout-title {
+  font-weight: 700;
+  font-size: 28px;
+  color: #24352A;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.scout-subtitle {
+  font-weight: 400;
+  font-size: 16px;
+  color: #7A7364;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.scout-card {
+  background-color: white;
+  border-radius: 12px;
+  padding: 16px;
+  border: 2px solid #D1C9B4;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.scout-number {
+  font-weight: 700;
+  font-size: 36px;
+  color: #24352A;
+  line-height: 1;
+}
+
+.scout-label {
+  font-weight: 500;
+  font-size: 11px;
+  color: #7A7364;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+/* ============================================
+   RESPONSIVE - Ajustes para celular
+   ============================================ */
+
+html {
+  font-size: 14px;
+}
+
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 767px) {
+  h1 {
+    font-size: 20px !important;
+  }
+  
+  h2 {
+    font-size: 16px !important;
+  }
+  
+  h3 {
+    font-size: 14px !important;
+  }
+}
+
+body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+* {
+  box-sizing: border-box;
+}

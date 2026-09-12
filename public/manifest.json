@@ -1,0 +1,22 @@
+{
+  "short_name": "LoretoApp",
+  "name": "LoretoApp - Sistema de Gestión Scout",
+  "icons": [
+    {
+      "src": "/logo-grupo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/logo-grupo.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#E8DEC4",
+  "theme_color": "#24352A",
+  "display": "standalone",
+  "orientation": "portrait"
+}
