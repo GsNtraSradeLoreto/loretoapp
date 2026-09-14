@@ -1,15 +1,17 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import Perfil from './pages/Perfil'
-import Admin from './pages/Admin'
-import BeneficiarioDetalle from './pages/BeneficiarioDetalle'
-import Pagos from './pages/Pagos'
-import Planillas from './pages/Planillas'
-import Campamentos from './pages/Campamentos'
 import Layout from './components/Layout'
-import Auditoria from './pages/Auditoria'
+
+// ✅ Lazy loading de las páginas
+const Login = lazy(() => import('./pages/Login'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Perfil = lazy(() => import('./pages/Perfil'))
+const Admin = lazy(() => import('./pages/Admin'))
+const BeneficiarioDetalle = lazy(() => import('./pages/BeneficiarioDetalle'))
+const Pagos = lazy(() => import('./pages/Pagos'))
+const Planillas = lazy(() => import('./pages/Planillas'))
+const Campamentos = lazy(() => import('./pages/Campamentos'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -34,68 +36,86 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return children
 }
 
+// ✅ Loader que se muestra mientras carga cada página
+function PageLoader() {
+  return (
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      padding: '48px 0',
+      minHeight: '200px'
+    }}>
+      <div style={{
+        fontFamily: 'Oswald, sans-serif',
+        color: '#7A7364',
+        fontSize: '14px',
+        textTransform: 'uppercase',
+        letterSpacing: '1px'
+      }}>
+        Cargando...
+      </div>
+    </div>
+  )
+}
+
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/dashboard" element={
-        <PrivateRoute>
-          <Layout>
-            <Dashboard />
-          </Layout>
-        </PrivateRoute>
-      } />
-      <Route path="/perfil" element={
-        <PrivateRoute>
-          <Layout>
-            <Perfil />
-          </Layout>
-        </PrivateRoute>
-      } />
-      <Route path="/admin" element={
-        <PrivateRoute>
-          <Layout>
-            <Admin />
-          </Layout>
-        </PrivateRoute>
-      } />
-      <Route path="/beneficiario/:id" element={
-        <PrivateRoute>
-          <Layout>
-            <BeneficiarioDetalle />
-          </Layout>
-        </PrivateRoute>
-      } />
-      <Route path="/pagos" element={
-        <PrivateRoute>
-          <Layout>
-            <Pagos />
-          </Layout>
-        </PrivateRoute>
-      } />
-      <Route path="/planillas" element={
-        <PrivateRoute>
-          <Layout>
-            <Planillas />
-          </Layout>
-        </PrivateRoute>
-      } />
-      <Route path="/campamentos" element={
-        <PrivateRoute>
-          <Layout>
-            <Campamentos />
-          </Layout>
-        </PrivateRoute>
-      } />
-            <Route path="/auditoria" element={
-        <PrivateRoute>
-          <Layout>
-            <Auditoria />
-          </Layout>
-        </PrivateRoute>
-      } />
-      <Route path="*" element={<Navigate to="/dashboard" />} />
-    </Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/dashboard" element={
+          <PrivateRoute>
+            <Layout>
+              <Dashboard />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/perfil" element={
+          <PrivateRoute>
+            <Layout>
+              <Perfil />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/admin" element={
+          <PrivateRoute>
+            <Layout>
+              <Admin />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/beneficiario/:id" element={
+          <PrivateRoute>
+            <Layout>
+              <BeneficiarioDetalle />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/pagos" element={
+          <PrivateRoute>
+            <Layout>
+              <Pagos />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/planillas" element={
+          <PrivateRoute>
+            <Layout>
+              <Planillas />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/campamentos" element={
+          <PrivateRoute>
+            <Layout>
+              <Campamentos />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="*" element={<Navigate to="/dashboard" />} />
+      </Routes>
+    </Suspense>
   )
 }
 
