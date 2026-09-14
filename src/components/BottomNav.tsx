@@ -32,17 +32,14 @@ export default function BottomNav() {
     { id: 'pagos', label: 'Pagos', icon: '💰', path: '/pagos' },
   ]
 
-  // ✅ Campamentos solo para SUPER_ADMIN y Jefatura
   if (puedeVerCampamentos) {
     navItems.push({ id: 'campamentos', label: 'Campamentos', icon: '🏕️', path: '/campamentos' })
   }
 
-  // ✅ Auditoría solo para SUPER_ADMIN y Jefatura
   if (puedeVerCampamentos) {
     navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
   }
 
-  // Admin solo ve el enlace de admin si tiene permisos
   if (isSuperAdmin || isJefatura || isAdministrador) {
     navItems.push({ id: 'admin', label: 'Admin', icon: '⚙️', path: '/admin' })
   }
@@ -68,61 +65,95 @@ export default function BottomNav() {
       overflow: 'hidden',
       flexShrink: 0
     }}>
-      {navItems.map((item) => (
-        <Link
-          key={item.id}
-          to={item.path}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textDecoration: 'none',
-            color: isActive(item.path) ? '#F3ECD8' : '#7A7364',
-            fontSize: '10px',
-            fontFamily: 'Oswald, sans-serif',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            padding: '4px 8px',
-            borderRadius: '8px',
-            transition: 'all 0.2s',
-            borderBottom: isActive(item.path) ? '2px solid #BF4E30' : '2px solid transparent',
-            minWidth: '44px',
-            flex: 1,
-            textAlign: 'center',
-            position: 'relative'
-          }}
-        >
-          <span style={{ fontSize: '20px', position: 'relative', display: 'inline-block' }}>
-            {item.icon}
-            {/* Badge de novedades solo en Historial */}
-            {item.id === 'auditoria' && novedades > 0 && (
+      {navItems.map((item) => {
+        const activo = isActive(item.path)
+        return (
+          <Link
+            key={item.id}
+            to={item.path}
+            className="bottom-nav-link"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textDecoration: 'none',
+              color: activo ? '#F3ECD8' : '#7A7364',
+              fontSize: '10px',
+              fontFamily: 'Oswald, sans-serif',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              padding: '4px 6px',
+              borderRadius: '10px',
+              transition: 'all 0.2s ease',
+              minWidth: '44px',
+              flex: 1,
+              textAlign: 'center',
+              position: 'relative',
+              WebkitTapHighlightColor: 'transparent'
+            }}
+          >
+            {/* Ícono con círculo de fondo si está activo */}
+            <div style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '34px',
+              height: '34px',
+              borderRadius: '50%',
+              backgroundColor: activo ? '#BF4E30' : 'transparent',
+              transition: 'all 0.2s ease',
+              marginBottom: '2px'
+            }}>
               <span style={{
-                position: 'absolute',
-                top: '-4px',
-                right: '-10px',
-                minWidth: '16px',
-                height: '16px',
-                padding: '0 4px',
-                backgroundColor: '#B71C1C',
-                color: 'white',
-                borderRadius: '8px',
-                fontSize: '10px',
-                fontWeight: '700',
-                fontFamily: 'Oswald, sans-serif',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                fontSize: activo ? '20px' : '19px',
                 lineHeight: 1,
-                boxShadow: '0 0 0 2px #24352A'
+                transition: 'all 0.2s ease',
+                position: 'relative'
               }}>
-                {novedades > 99 ? '99+' : novedades}
+                {item.icon}
               </span>
-            )}
-          </span>
-          <span style={{ marginTop: '2px', fontSize: '9px' }}>{item.label}</span>
-        </Link>
-      ))}
+
+              {/* Badge de novedades solo en Historial */}
+              {item.id === 'auditoria' && novedades > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-3px',
+                  right: '-6px',
+                  minWidth: '16px',
+                  height: '16px',
+                  padding: '0 4px',
+                  backgroundColor: '#B71C1C',
+                  color: 'white',
+                  borderRadius: '8px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  fontFamily: 'Oswald, sans-serif',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  lineHeight: 1,
+                  boxShadow: '0 0 0 2px #24352A',
+                  zIndex: 2
+                }}>
+                  {novedades > 99 ? '99+' : novedades}
+                </span>
+              )}
+            </div>
+
+            <span style={{
+              marginTop: '0px',
+              fontSize: activo ? '10px' : '9px',
+              fontWeight: activo ? '600' : '400',
+              transition: 'all 0.2s ease',
+              lineHeight: 1.1
+            }}>
+              {item.label}
+            </span>
+          </Link>
+        )
+      })}
     </nav>
   )
 }

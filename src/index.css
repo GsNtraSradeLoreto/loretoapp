@@ -91,3 +91,11 @@ body {
 * {
   box-sizing: border-box;
 }
+/* Efecto de "press" para los items del BottomNav */
+.bottom-nav-link {
+  transition: transform 0.15s ease;
+}
+
+.bottom-nav-link:active {
+  transform: scale(0.92);
+}
