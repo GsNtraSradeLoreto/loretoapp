@@ -61,6 +61,15 @@ export default function Auditoria() {
   // Lista de usuarios únicos (para el filtro)
   const [usuariosUnicos, setUsuariosUnicos] = useState<string[]>([])
 
+  // Selección para borrado masivo (solo Super Admin)
+  const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set())
+
+  // Confirmación de borrado
+  const [confirmarBorrado, setConfirmarBorrado] = useState<
+    { tipo: 'uno'; id: number } | { tipo: 'varios' } | null
+  >(null)
+  const [borrando, setBorrando] = useState(false)
+
   const buildQuery = (desde: number, hasta: number) => {
     let q = supabase
       .from('audit_log')
@@ -86,6 +95,7 @@ export default function Auditoria() {
       if (error) throw error
       setRows(data || [])
       setHayMas((data || []).length === PAGE_SIZE)
+      setSeleccionados(new Set()) // limpiamos la selección al recargar
     } catch (e: any) {
       console.error(e)
       setError(e?.message || 'Error al cargar el historial')
@@ -183,6 +193,85 @@ export default function Auditoria() {
     setFechaHasta('')
   }
 
+  // ============ SELECCIÓN ============
+  const toggleSeleccion = (id: number) => {
+    setSeleccionados(prev => {
+      const nuevo = new Set(prev)
+      if (nuevo.has(id)) {
+        nuevo.delete(id)
+      } else {
+        nuevo.add(id)
+      }
+      return nuevo
+    })
+  }
+
+  const toggleTodos = () => {
+    if (seleccionados.size === rows.length) {
+      setSeleccionados(new Set())
+    } else {
+      setSeleccionados(new Set(rows.map(r => r.id)))
+    }
+  }
+
+  const cancelarSeleccion = () => {
+    setSeleccionados(new Set())
+  }
+
+  // ============ BORRADO ============
+  const pedirBorrarUno = (id: number) => {
+    setConfirmarBorrado({ tipo: 'uno', id })
+  }
+
+  const pedirBorrarVarios = () => {
+    if (seleccionados.size === 0) return
+    setConfirmarBorrado({ tipo: 'varios' })
+  }
+
+  const ejecutarBorrado = async () => {
+    if (!confirmarBorrado) return
+    setBorrando(true)
+
+    try {
+      if (confirmarBorrado.tipo === 'uno') {
+        const { error } = await supabase
+          .from('audit_log')
+          .delete()
+          .eq('id', confirmarBorrado.id)
+        if (error) throw error
+      } else {
+        const ids = Array.from(seleccionados)
+        const { error } = await supabase
+          .from('audit_log')
+          .delete()
+          .in('id', ids)
+        if (error) throw error
+      }
+
+      // Cerramos modal y recargamos
+      setConfirmarBorrado(null)
+      await cargar()
+
+      // Recargamos también la lista de usuarios únicos
+      supabase
+        .from('audit_log')
+        .select('usuario_nombre')
+        .not('usuario_nombre', 'is', null)
+        .limit(1000)
+        .then(({ data }) => {
+          if (data) {
+            const unicos = Array.from(new Set(data.map(d => d.usuario_nombre).filter(Boolean)))
+            setUsuariosUnicos(unicos as string[])
+          }
+        })
+    } catch (e: any) {
+      console.error(e)
+      setError(e?.message || 'Error al borrar registros')
+    } finally {
+      setBorrando(false)
+    }
+  }
+
   // ✅ Chequeo de permisos: SIEMPRE después de los hooks
   if (!isSuperAdmin && !isJefatura) {
     return (
@@ -198,6 +287,9 @@ export default function Auditoria() {
       </div>
     )
   }
+
+  const haySeleccion = seleccionados.size > 0
+  const todosSeleccionados = rows.length > 0 && seleccionados.size === rows.length
 
   return (
     <div style={{ fontFamily: 'Oswald, sans-serif' }}>
@@ -272,6 +364,97 @@ export default function Auditoria() {
         </div>
       </div>
 
+      {/* Barra de acciones masivas (solo Super Admin) */}
+      {isSuperAdmin && haySeleccion && (
+        <div style={{
+          backgroundColor: '#24352A',
+          color: '#F3ECD8',
+          borderRadius: '10px',
+          padding: '10px 16px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{
+            fontSize: '13px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            ✅ {seleccionados.size} seleccionado{seleccionados.size !== 1 ? 's' : ''}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              onClick={pedirBorrarVarios}
+              style={{
+                padding: '8px 14px',
+                backgroundColor: '#B71C1C',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: '12px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600
+              }}
+            >
+              🗑️ Eliminar seleccionados
+            </button>
+            <button
+              onClick={cancelarSeleccion}
+              style={{
+                padding: '8px 14px',
+                backgroundColor: 'transparent',
+                color: '#F3ECD8',
+                border: '2px solid #F3ECD8',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: '12px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Checkbox "seleccionar todos" (solo Super Admin) */}
+      {isSuperAdmin && rows.length > 0 && !loading && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '10px',
+          paddingLeft: '4px'
+        }}>
+          <input
+            type="checkbox"
+            checked={todosSeleccionados}
+            onChange={toggleTodos}
+            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+          />
+          <span style={{
+            fontSize: '12px',
+            color: '#7A7364',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            cursor: 'pointer'
+          }}
+          onClick={toggleTodos}
+          >
+            Seleccionar todos los visibles
+          </span>
+        </div>
+      )}
+
       {/* Lista */}
       {loading && (
         <div style={{ textAlign: 'center', padding: '40px', color: '#7A7364' }}>
@@ -307,41 +490,100 @@ export default function Auditoria() {
         </div>
       )}
 
-      {rows.map(r => (
-        <div
-          key={r.id}
-          style={{
-            backgroundColor: '#F3ECD8',
-            border: '2px solid #D1C9B4',
-            borderLeft: `6px solid ${colorAccion(r.accion)}`,
-            borderRadius: '8px',
-            padding: '12px 14px',
-            marginBottom: '8px',
-            cursor: 'pointer'
-          }}
-          onClick={() => setDetalle(r)}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: '200px' }}>
-              <div style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                <strong style={{ color: colorAccion(r.accion) }}>{labelAccion(r.accion)}</strong>
-                {' · '}
-                <span>{r.usuario_nombre || 'Usuario desconocido'}</span>
-                {r.usuario_rol && <span style={{ color: '#A89E86' }}> ({r.usuario_rol})</span>}
+      {rows.map(r => {
+        const estaSeleccionado = seleccionados.has(r.id)
+        return (
+          <div
+            key={r.id}
+            style={{
+              backgroundColor: estaSeleccionado ? '#F0E0C0' : '#F3ECD8',
+              border: '2px solid #D1C9B4',
+              borderLeft: `6px solid ${colorAccion(r.accion)}`,
+              borderRadius: '8px',
+              padding: '12px 14px',
+              marginBottom: '8px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px'
+            }}
+          >
+            {/* Checkbox (solo Super Admin) */}
+            {isSuperAdmin && (
+              <div style={{ paddingTop: '4px' }}>
+                <input
+                  type="checkbox"
+                  checked={estaSeleccionado}
+                  onChange={() => toggleSeleccion(r.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
               </div>
-              <div style={{ fontSize: '14px', color: '#24352A', marginTop: '4px', lineHeight: 1.35 }}>
-                {r.descripcion}
-              </div>
-              <div style={{ fontSize: '11px', color: '#A89E86', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {r.entidad}
+            )}
+
+            {/* Contenido (clickeable para ver detalle) */}
+            <div
+              style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+              onClick={() => setDetalle(r)}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <div style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <strong style={{ color: colorAccion(r.accion) }}>{labelAccion(r.accion)}</strong>
+                    {' · '}
+                    <span>{r.usuario_nombre || 'Usuario desconocido'}</span>
+                    {r.usuario_rol && <span style={{ color: '#A89E86' }}> ({r.usuario_rol})</span>}
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#24352A', marginTop: '4px', lineHeight: 1.35 }}>
+                    {r.descripcion}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#A89E86', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {r.entidad}
+                  </div>
+                </div>
+                <div style={{ fontSize: '12px', color: '#7A7364', whiteSpace: 'nowrap' }}>
+                  {formatearFecha(r.created_at)}
+                </div>
               </div>
             </div>
-            <div style={{ fontSize: '12px', color: '#7A7364', whiteSpace: 'nowrap' }}>
-              {formatearFecha(r.created_at)}
-            </div>
+
+            {/* Botón borrar individual (solo Super Admin) */}
+            {isSuperAdmin && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  pedirBorrarUno(r.id)
+                }}
+                title="Eliminar este registro"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '32px',
+                  height: '32px',
+                  backgroundColor: 'transparent',
+                  color: '#B71C1C',
+                  border: '2px solid transparent',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  flexShrink: 0,
+                  padding: 0
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#B71C1C'
+                  e.currentTarget.style.color = 'white'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                  e.currentTarget.style.color = '#B71C1C'
+                }}
+              >
+                🗑️
+              </button>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
 
       {hayMas && !loading && (
         <div style={{ textAlign: 'center', marginTop: '16px' }}>
@@ -409,6 +651,107 @@ export default function Auditoria() {
 
             <div style={{ textAlign: 'right', marginTop: '16px' }}>
               <button onClick={() => setDetalle(null)} style={btnPrimary}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal confirmar borrado */}
+      {confirmarBorrado && (
+        <div
+          onClick={() => !borrando && setConfirmarBorrado(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(36, 53, 42, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 300,
+            padding: '20px'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              backgroundColor: '#F3ECD8',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '440px',
+              width: '100%',
+              border: '3px solid #B71C1C'
+            }}
+          >
+            <h2 style={{
+              fontSize: '20px',
+              color: '#B71C1C',
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+              margin: '0 0 8px 0'
+            }}>
+              ⚠️ Confirmar eliminación
+            </h2>
+
+            <p style={{
+              fontSize: '14px',
+              color: '#24352A',
+              lineHeight: 1.5,
+              margin: '12px 0'
+            }}>
+              {confirmarBorrado.tipo === 'uno'
+                ? '¿Estás seguro de que querés eliminar este registro?'
+                : `¿Estás seguro de que querés eliminar ${seleccionados.size} registro${seleccionados.size !== 1 ? 's' : ''}?`}
+              <br />
+              <strong style={{ color: '#B71C1C' }}>Esta acción no se puede deshacer.</strong>
+            </p>
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '10px',
+              marginTop: '20px',
+              flexWrap: 'wrap'
+            }}>
+              <button
+                onClick={() => setConfirmarBorrado(null)}
+                disabled={borrando}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'transparent',
+                  border: '2px solid #24352A',
+                  borderRadius: '8px',
+                  color: '#24352A',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: '12px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  cursor: borrando ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  opacity: borrando ? 0.5 : 1
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={ejecutarBorrado}
+                disabled={borrando}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#B71C1C',
+                  border: '2px solid #B71C1C',
+                  borderRadius: '8px',
+                  color: 'white',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: '12px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  cursor: borrando ? 'wait' : 'pointer',
+                  fontWeight: 600,
+                  opacity: borrando ? 0.6 : 1
+                }}
+              >
+                {borrando ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
             </div>
           </div>
         </div>
