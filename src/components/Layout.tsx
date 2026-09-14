@@ -2,6 +2,7 @@ import React, { ReactNode } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { Link, useNavigate } from 'react-router-dom'
 import BottomNav from './BottomNav'
+import { supabase } from '../lib/supabase'
 
 interface LayoutProps {
   children: ReactNode
@@ -12,6 +13,7 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
   const [showMenu, setShowMenu] = React.useState(false)
   const [refrescando, setRefrescando] = React.useState(false)
+  const [novedades, setNovedades] = React.useState(0)
 
   const handleLogout = async () => {
     await signOut()
@@ -20,15 +22,51 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleRefresh = () => {
     setRefrescando(true)
-    // Pequeño delay para que se vea la animación antes de recargar
     setTimeout(() => {
       window.location.reload()
     }, 400)
   }
 
+  // Cargar cantidad de novedades (solo Jefatura/Super Admin)
+  React.useEffect(() => {
+    if (!isSuperAdmin && !isJefatura) return
+
+    supabase
+      .rpc('contar_novedades_auditoria')
+      .then(({ data, error }) => {
+        if (!error && typeof data === 'number') {
+          setNovedades(data)
+        }
+      })
+  }, [isSuperAdmin, isJefatura])
+
   const nombreCompleto = profile?.nombre
     ? `${profile.nombre}${profile.apellido ? ' ' + profile.apellido : ''}`
     : 'Usuario'
+
+  const Badge = () => {
+    if (novedades <= 0) return null
+    return (
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: '20px',
+        height: '20px',
+        padding: '0 6px',
+        backgroundColor: '#B71C1C',
+        color: 'white',
+        borderRadius: '10px',
+        fontSize: '11px',
+        fontWeight: '700',
+        fontFamily: 'Oswald, sans-serif',
+        marginLeft: '8px',
+        lineHeight: 1
+      }}>
+        {novedades > 99 ? '99+' : novedades}
+      </span>
+    )
+  }
 
   return (
     <div style={{
@@ -299,6 +337,7 @@ export default function Layout({ children }: LayoutProps) {
                       >
                         <span style={{ marginRight: '8px' }}>📋</span>
                         Historial
+                        <Badge />
                       </Link>
                     )}
 

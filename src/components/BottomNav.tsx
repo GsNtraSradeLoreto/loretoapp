@@ -1,15 +1,31 @@
 import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 
 export default function BottomNav() {
   const location = useLocation()
   const { isSuperAdmin, isJefatura, isAdministrador } = useAuth()
 
+  const [novedades, setNovedades] = React.useState(0)
+
   const isActive = (path: string) => location.pathname === path
 
-  // ✅ Solo SUPER_ADMIN y Jefatura ven la pestaña de Campamentos
+  // ✅ Solo SUPER_ADMIN y Jefatura ven la pestaña de Campamentos y Auditoría
   const puedeVerCampamentos = isSuperAdmin || isJefatura
+
+  // Cargar novedades (solo si tiene permiso)
+  React.useEffect(() => {
+    if (!isSuperAdmin && !isJefatura) return
+
+    supabase
+      .rpc('contar_novedades_auditoria')
+      .then(({ data, error }) => {
+        if (!error && typeof data === 'number') {
+          setNovedades(data)
+        }
+      })
+  }, [isSuperAdmin, isJefatura, location.pathname])
 
   const navItems = [
     { id: 'beneficiarios', label: 'Beneficiarios', icon: '👥', path: '/dashboard' },
@@ -21,7 +37,7 @@ export default function BottomNav() {
     navItems.push({ id: 'campamentos', label: 'Campamentos', icon: '🏕️', path: '/campamentos' })
   }
 
-    // ✅ Auditoría solo para SUPER_ADMIN y Jefatura
+  // ✅ Auditoría solo para SUPER_ADMIN y Jefatura
   if (puedeVerCampamentos) {
     navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
   }
@@ -73,10 +89,37 @@ export default function BottomNav() {
             borderBottom: isActive(item.path) ? '2px solid #BF4E30' : '2px solid transparent',
             minWidth: '44px',
             flex: 1,
-            textAlign: 'center'
+            textAlign: 'center',
+            position: 'relative'
           }}
         >
-          <span style={{ fontSize: '20px' }}>{item.icon}</span>
+          <span style={{ fontSize: '20px', position: 'relative', display: 'inline-block' }}>
+            {item.icon}
+            {/* Badge de novedades solo en Historial */}
+            {item.id === 'auditoria' && novedades > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '-10px',
+                minWidth: '16px',
+                height: '16px',
+                padding: '0 4px',
+                backgroundColor: '#B71C1C',
+                color: 'white',
+                borderRadius: '8px',
+                fontSize: '10px',
+                fontWeight: '700',
+                fontFamily: 'Oswald, sans-serif',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1,
+                boxShadow: '0 0 0 2px #24352A'
+              }}>
+                {novedades > 99 ? '99+' : novedades}
+              </span>
+            )}
+          </span>
           <span style={{ marginTop: '2px', fontSize: '9px' }}>{item.label}</span>
         </Link>
       ))}

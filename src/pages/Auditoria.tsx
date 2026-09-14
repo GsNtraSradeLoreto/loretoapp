@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -70,6 +70,11 @@ export default function Auditoria() {
   >(null)
   const [borrando, setBorrando] = useState(false)
 
+  // Novedades (para el banner)
+  const [novedades, setNovedades] = useState(0)
+  const [mostrarBanner, setMostrarBanner] = useState(false)
+  const yaMarcoVisto = useRef(false)
+
   const buildQuery = (desde: number, hasta: number) => {
     let q = supabase
       .from('audit_log')
@@ -95,7 +100,7 @@ export default function Auditoria() {
       if (error) throw error
       setRows(data || [])
       setHayMas((data || []).length === PAGE_SIZE)
-      setSeleccionados(new Set()) // limpiamos la selección al recargar
+      setSeleccionados(new Set())
     } catch (e: any) {
       console.error(e)
       setError(e?.message || 'Error al cargar el historial')
@@ -115,6 +120,33 @@ export default function Auditoria() {
       setError(e?.message || 'Error al cargar más registros')
     }
   }
+
+  // ============ CARGA INICIAL ============
+  useEffect(() => {
+    if (!isSuperAdmin && !isJefatura) return
+
+    // 1) Consultamos las novedades ANTES de marcar como visto
+    supabase
+      .rpc('contar_novedades_auditoria')
+      .then(({ data, error }) => {
+        if (!error && typeof data === 'number' && data > 0) {
+          setNovedades(data)
+          setMostrarBanner(true)
+        }
+
+        // 2) Después de 2 segundos, marcamos como visto
+        setTimeout(() => {
+          if (!yaMarcoVisto.current) {
+            yaMarcoVisto.current = true
+            supabase.rpc('marcar_auditoria_vista').then(() => {
+              setMostrarBanner(false)
+            })
+          }
+        }, 2000)
+      })
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperAdmin, isJefatura])
 
   // Cargar usuarios únicos la primera vez
   useEffect(() => {
@@ -248,11 +280,9 @@ export default function Auditoria() {
         if (error) throw error
       }
 
-      // Cerramos modal y recargamos
       setConfirmarBorrado(null)
       await cargar()
 
-      // Recargamos también la lista de usuarios únicos
       supabase
         .from('audit_log')
         .select('usuario_nombre')
@@ -270,6 +300,13 @@ export default function Auditoria() {
     } finally {
       setBorrando(false)
     }
+  }
+
+  // ============ MARCAR COMO VISTO MANUALMENTE ============
+  const marcarComoVistoManual = async () => {
+    await supabase.rpc('marcar_auditoria_vista')
+    setMostrarBanner(false)
+    setNovedades(0)
   }
 
   // ✅ Chequeo de permisos: SIEMPRE después de los hooks
@@ -315,6 +352,57 @@ export default function Auditoria() {
           Registro de todas las acciones de los usuarios
         </p>
       </div>
+
+      {/* Banner de novedades */}
+      {mostrarBanner && novedades > 0 && (
+        <div style={{
+          backgroundColor: '#FFF3CD',
+          border: '2px solid #F5C842',
+          borderLeft: '6px solid #F5C842',
+          borderRadius: '10px',
+          padding: '12px 16px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{
+            fontSize: '14px',
+            color: '#7A5C00',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flex: 1,
+            minWidth: '200px'
+          }}>
+            <span style={{ fontSize: '20px' }}>📬</span>
+            <span>
+              Tenés <strong>{novedades}</strong> {novedades === 1 ? 'cambio nuevo' : 'cambios nuevos'} desde tu última visita
+            </span>
+          </div>
+          <button
+            onClick={marcarComoVistoManual}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: 'transparent',
+              border: '2px solid #7A5C00',
+              borderRadius: '6px',
+              color: '#7A5C00',
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: '11px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              flexShrink: 0
+            }}
+          >
+            Marcar como visto
+          </button>
+        </div>
+      )}
 
       {/* Filtros */}
       <div style={{
@@ -378,11 +466,7 @@ export default function Auditoria() {
           gap: '12px',
           flexWrap: 'wrap'
         }}>
-          <div style={{
-            fontSize: '13px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px'
-          }}>
+          <div style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             ✅ {seleccionados.size} seleccionado{seleccionados.size !== 1 ? 's' : ''}
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -441,14 +525,15 @@ export default function Auditoria() {
             onChange={toggleTodos}
             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
           />
-          <span style={{
-            fontSize: '12px',
-            color: '#7A7364',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            cursor: 'pointer'
-          }}
-          onClick={toggleTodos}
+          <span
+            style={{
+              fontSize: '12px',
+              color: '#7A7364',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              cursor: 'pointer'
+            }}
+            onClick={toggleTodos}
           >
             Seleccionar todos los visibles
           </span>
@@ -507,7 +592,6 @@ export default function Auditoria() {
               gap: '10px'
             }}
           >
-            {/* Checkbox (solo Super Admin) */}
             {isSuperAdmin && (
               <div style={{ paddingTop: '4px' }}>
                 <input
@@ -520,7 +604,6 @@ export default function Auditoria() {
               </div>
             )}
 
-            {/* Contenido (clickeable para ver detalle) */}
             <div
               style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
               onClick={() => setDetalle(r)}
@@ -546,7 +629,6 @@ export default function Auditoria() {
               </div>
             </div>
 
-            {/* Botón borrar individual (solo Super Admin) */}
             {isSuperAdmin && (
               <button
                 onClick={(e) => {
