@@ -12,16 +12,17 @@ const BeneficiarioDetalle = lazy(() => import('./pages/BeneficiarioDetalle'))
 const Pagos = lazy(() => import('./pages/Pagos'))
 const Planillas = lazy(() => import('./pages/Planillas'))
 const Campamentos = lazy(() => import('./pages/Campamentos'))
+const Auditoria = lazy(() => import('./pages/Auditoria'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
-  
+
   if (loading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
         height: '100vh',
         backgroundColor: '#E8DEC4',
         fontFamily: 'Oswald, sans-serif',
@@ -31,7 +32,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
       </div>
     )
   }
-  
+
   if (!user) return <Navigate to="/login" />
   return children
 }
@@ -39,10 +40,10 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 // ✅ Loader que se muestra mientras carga cada página
 function PageLoader() {
   return (
-    <div style={{ 
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center', 
+    <div style={{
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
       padding: '48px 0',
       minHeight: '200px'
     }}>
@@ -110,6 +111,13 @@ function AppRoutes() {
           <PrivateRoute>
             <Layout>
               <Campamentos />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/auditoria" element={
+          <PrivateRoute>
+            <Layout>
+              <Auditoria />
             </Layout>
           </PrivateRoute>
         } />
