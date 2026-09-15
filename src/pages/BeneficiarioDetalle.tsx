@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
+import { useSwipe } from '../hooks/useSwipe'
 
 interface Beneficiario {
   id: string
@@ -388,6 +389,7 @@ export default function BeneficiarioDetalle() {
   const [beneficiario, setBeneficiario] = useState<Beneficiario | null>(null)
   const [todosLosIds, setTodosLosIds] = useState<string[]>([])
   const [posicionActual, setPosicionActual] = useState<number>(-1)
+  const [dragOffset, setDragOffset] = useState(0)
   const [progresionManada, setProgresionManada] = useState<ProgresionManada | null>(null)
   const [progresionUnidad, setProgresionUnidad] = useState<ProgresionUnidad | null>(null)
   const [progresionCaminantes, setProgresionCaminantes] = useState<ProgresionCaminantes | null>(null)
@@ -2714,6 +2716,40 @@ const abrirModalCampamentos = async () => {
     )
   }
 
+    // ============================================
+  // NAVEGACIÓN POR SWIPE
+  // ============================================
+  const handleSwipeLeft = () => {
+    if (posicionActual < todosLosIds.length - 1) {
+      const nuevoId = todosLosIds[posicionActual + 1]
+      if (nuevoId) navigate(`/beneficiario/${nuevoId}`)
+    }
+  }
+
+  const handleSwipeRight = () => {
+    if (posicionActual > 0) {
+      const nuevoId = todosLosIds[posicionActual - 1]
+      if (nuevoId) navigate(`/beneficiario/${nuevoId}`)
+    }
+  }
+
+  const handleDrag = (deltaX: number) => {
+    const limitado = Math.max(-50, Math.min(50, deltaX))
+    setDragOffset(limitado)
+  }
+
+  const handleDragEnd = () => {
+    setDragOffset(0)
+  }
+
+  useSwipe({
+    onSwipeLeft: handleSwipeLeft,
+    onSwipeRight: handleSwipeRight,
+    threshold: 60,
+    onDrag: handleDrag,
+    onDragEnd: handleDragEnd
+  })
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
@@ -2746,7 +2782,12 @@ const abrirModalCampamentos = async () => {
   const actual = posicionActual + 1
 
   return (
-    <div>
+    <div
+      style={{
+        transform: `translateX(${dragOffset}px)`,
+        transition: dragOffset === 0 ? 'transform 0.3s ease-out' : 'none'
+      }}
+    >
       {/* Navegación */}
       <div style={{
         display: 'flex',

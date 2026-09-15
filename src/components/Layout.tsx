@@ -1,19 +1,22 @@
 import React, { ReactNode } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import BottomNav from './BottomNav'
 import { supabase } from '../lib/supabase'
+import { useSwipe } from '../hooks/useSwipe'
 
 interface LayoutProps {
   children: ReactNode
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const { profile, signOut, isSuperAdmin, isJefatura } = useAuth()
+  const { profile, signOut, isSuperAdmin, isJefatura, isAdministrador } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [showMenu, setShowMenu] = React.useState(false)
   const [refrescando, setRefrescando] = React.useState(false)
   const [novedades, setNovedades] = React.useState(0)
+  const [dragOffset, setDragOffset] = React.useState(0)
 
   const handleLogout = async () => {
     await signOut()
@@ -39,6 +42,55 @@ export default function Layout({ children }: LayoutProps) {
         }
       })
   }, [isSuperAdmin, isJefatura])
+
+  // ============================================
+  // NAVEGACIÓN POR SWIPE (solo en páginas principales)
+  // ============================================
+  const rutasNav = [
+    { path: '/dashboard' },
+    { path: '/pagos' },
+    ...(isSuperAdmin || isJefatura ? [{ path: '/campamentos' }, { path: '/auditoria' }] : []),
+    ...(isSuperAdmin || isJefatura || isAdministrador ? [{ path: '/admin' }] : [])
+  ]
+
+  const indiceActual = rutasNav.findIndex(r => r.path === location.pathname)
+  const estoyEnRutaPrincipal = indiceActual !== -1
+
+  // Solo permitir swipe si estoy en una de las rutas principales
+  const swipeHabilitado = estoyEnRutaPrincipal
+
+  const handleSwipeLeft = () => {
+    if (!estoyEnRutaPrincipal) return
+    if (indiceActual < rutasNav.length - 1) {
+      navigate(rutasNav[indiceActual + 1].path)
+    }
+  }
+
+  const handleSwipeRight = () => {
+    if (!estoyEnRutaPrincipal) return
+    if (indiceActual > 0) {
+      navigate(rutasNav[indiceActual - 1].path)
+    }
+  }
+
+  const handleDrag = (deltaX: number) => {
+    if (!swipeHabilitado) return
+    const limitado = Math.max(-50, Math.min(50, deltaX))
+    setDragOffset(limitado)
+  }
+
+  const handleDragEnd = () => {
+    setDragOffset(0)
+  }
+
+  useSwipe({
+    onSwipeLeft: handleSwipeLeft,
+    onSwipeRight: handleSwipeRight,
+    threshold: 60,
+    onDrag: handleDrag,
+    onDragEnd: handleDragEnd,
+    enabled: swipeHabilitado
+  })
 
   const nombreCompleto = profile?.nombre
     ? `${profile.nombre}${profile.apellido ? ' ' + profile.apellido : ''}`
@@ -80,7 +132,6 @@ export default function Layout({ children }: LayoutProps) {
       width: '100%',
       maxWidth: '100vw'
     }}>
-      {/* Animación spin para el botón refresh */}
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
@@ -102,34 +153,31 @@ export default function Layout({ children }: LayoutProps) {
         <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' }}>
 
-            {/* Logo */}
             <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-  <img
-    src="/logo-grupo.png"
-    alt="LoretApp"
-    style={{
-      height: '42px',
-      width: '42px',
-      objectFit: 'contain',
-      borderRadius: '8px'
-    }}
-  />
-  <span style={{
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#F3ECD8',
-    letterSpacing: '1px',
-    textTransform: 'uppercase',
-    fontFamily: 'Oswald, sans-serif'
-  }}>
-    LoretApp
-  </span>
-</Link>
+              <img
+                src="/logo-grupo.png"
+                alt="LoretApp"
+                style={{
+                  height: '42px',
+                  width: '42px',
+                  objectFit: 'contain',
+                  borderRadius: '8px'
+                }}
+              />
+              <span style={{
+                fontSize: '20px',
+                fontWeight: '700',
+                color: '#F3ECD8',
+                letterSpacing: '1px',
+                textTransform: 'uppercase',
+                fontFamily: 'Oswald, sans-serif'
+              }}>
+                LoretApp
+              </span>
+            </Link>
 
-            {/* Botón refresh + menú usuario */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 
-              {/* Botón refresh global */}
               <button
                 onClick={handleRefresh}
                 disabled={refrescando}
@@ -181,7 +229,6 @@ export default function Layout({ children }: LayoutProps) {
                 </svg>
               </button>
 
-              {/* Menú de usuario */}
               <div style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowMenu(!showMenu)}
@@ -432,20 +479,23 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </header>
 
-      {/* Contenido principal */}
-      <main style={{
-        maxWidth: '1280px',
-        margin: '0 auto',
-        padding: '24px 16px',
-        flex: 1,
-        width: '100%',
-        overflowX: 'hidden',
-        boxSizing: 'border-box'
-      }}>
+      {/* Contenido principal CON swipe */}
+      <main
+        style={{
+          maxWidth: '1280px',
+          margin: '0 auto',
+          padding: '24px 16px',
+          flex: 1,
+          width: '100%',
+          overflowX: 'hidden',
+          boxSizing: 'border-box',
+          transform: `translateX(${dragOffset}px)`,
+          transition: dragOffset === 0 ? 'transform 0.3s ease-out' : 'none'
+        }}
+      >
         {children}
       </main>
 
-      {/* Bottom Navigation */}
       <BottomNav />
     </div>
   )

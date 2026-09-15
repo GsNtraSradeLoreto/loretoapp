@@ -93,7 +93,6 @@ export default function BottomNav() {
               WebkitTapHighlightColor: 'transparent'
             }}
           >
-            {/* Ícono con círculo de fondo si está activo */}
             <div style={{
               position: 'relative',
               display: 'flex',
@@ -115,7 +114,6 @@ export default function BottomNav() {
                 {item.icon}
               </span>
 
-              {/* Badge de novedades solo en Historial */}
               {item.id === 'auditoria' && novedades > 0 && (
                 <span style={{
                   position: 'absolute',
