@@ -213,18 +213,18 @@ export default function Login() {
     letterSpacing: '1px',
     margin: 0
   }}>
-    LoretoApp
+    LoretApp
   </h1>
   <p style={{
     fontFamily: 'Oswald, sans-serif',
-    fontWeight: '400',
+    fontWeight: '500',
     fontSize: '14px',
     color: '#7A7364',
     textTransform: 'uppercase',
-    letterSpacing: '0.5px',
+    letterSpacing: '0.3px',
     margin: '4px 0 0 0'
   }}>
-    {showResetPassword ? 'Restablecer Contraseña' : 'Sistema de Gestión Scout'}
+    {showResetPassword ? 'Restablecer Contraseña' : 'Sistema de Gestión - GS. Ntra. Sra. de Loreto'}
   </p>
 </div>
 

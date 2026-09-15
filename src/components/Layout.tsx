@@ -103,19 +103,28 @@ export default function Layout({ children }: LayoutProps) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' }}>
 
             {/* Logo */}
-            <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
-              <span style={{ fontSize: '24px' }}>🏕️</span>
-              <span style={{
-                fontSize: '20px',
-                fontWeight: '700',
-                color: '#F3ECD8',
-                letterSpacing: '1px',
-                textTransform: 'uppercase',
-                fontFamily: 'Oswald, sans-serif'
-              }}>
-                LoretoApp
-              </span>
-            </Link>
+            <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+  <img
+    src="/logo-grupo.png"
+    alt="LoretApp"
+    style={{
+      height: '42px',
+      width: '42px',
+      objectFit: 'contain',
+      borderRadius: '8px'
+    }}
+  />
+  <span style={{
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#F3ECD8',
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    fontFamily: 'Oswald, sans-serif'
+  }}>
+    LoretApp
+  </span>
+</Link>
 
             {/* Botón refresh + menú usuario */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

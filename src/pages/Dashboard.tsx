@@ -183,7 +183,7 @@ export default function Dashboard() {
           letterSpacing: '0.5px',
           margin: 0
         }}>
-          ¡Hola {nombre}! • Sistema de Gestión Scout
+          ¡Hola {nombre}!
         </p>
       </div>
 
