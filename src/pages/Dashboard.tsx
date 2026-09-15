@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRama, setFilterRama] = useState('Todas')
+  const [filterEstado, setFilterEstado] = useState<'todos' | 'activos' | 'inactivos'>('todos')
 
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
@@ -55,9 +56,10 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-      let query = supabase
+        let query = supabase
         .from('beneficiarios')
         .select('*')
+        .order('estado', { ascending: true })   // 'activo' va antes que 'inactivo' alfabéticamente
         .order('apellido', { ascending: true })
 
       if (!esSuperAdmin) {
@@ -95,11 +97,20 @@ export default function Dashboard() {
     }
   }
 
-  useEffect(() => {
+    useEffect(() => {
     let result = beneficiarios
 
     if (filterRama !== 'Todas') {
       result = result.filter(b => b.rama === filterRama)
+    }
+
+    // ✅ Filtro por estado (solo para Jefatura/Super Admin)
+    if ((isSuperAdmin || isJefatura) && filterEstado !== 'todos') {
+      if (filterEstado === 'activos') {
+        result = result.filter(b => b.estado === 'activo')
+      } else if (filterEstado === 'inactivos') {
+        result = result.filter(b => b.estado === 'inactivo')
+      }
     }
 
     if (searchTerm.trim()) {
@@ -111,19 +122,20 @@ export default function Dashboard() {
     }
 
     setFiltered(result)
-  }, [searchTerm, filterRama, beneficiarios])
+  }, [searchTerm, filterRama, filterEstado, beneficiarios, isSuperAdmin, isJefatura])
 
   const handleFilterByRama = (rama: string) => {
     setFilterRama(rama)
     setSearchTerm('')
   }
 
-  const handleLimpiarFiltros = () => {
+    const handleLimpiarFiltros = () => {
     if (esDirigente && ramaAsignada) {
       setFilterRama(ramaAsignada)
     } else {
       setFilterRama('Todas')
     }
+    setFilterEstado('todos')
     setSearchTerm('')
   }
 
@@ -150,6 +162,12 @@ export default function Dashboard() {
         <text x="30" y="38" font-family="Oswald, sans-serif" font-size="22" fill="white" text-anchor="middle">${iniciales || 'U'}</text>
       </svg>
     `)}`
+  }
+
+    const labelEstado = (estado: string) => {
+    if (estado === 'activo') return 'Activo'
+    if (estado === 'inactivo') return 'Ex miembro'
+    return estado
   }
 
   if (loading) {
@@ -292,8 +310,7 @@ export default function Dashboard() {
             letterSpacing: '1px',
             margin: 0
           }}>
-            📋 Beneficiarios
-            {!esSuperAdmin && <span style={{ fontSize: '10px', color: '#7A7364', marginLeft: '8px' }}>(solo activos)</span>}
+                      📋 Beneficiarios
           </h2>
           <span style={{
             fontFamily: 'Oswald, sans-serif',
@@ -326,10 +343,23 @@ export default function Dashboard() {
             onBlur={(e) => e.currentTarget.style.borderColor = '#D1C9B4'}
           />
 
-          {verTodas && (
+                    {verTodas && (
             <select
-              value={filterRama}
-              onChange={(e) => setFilterRama(e.target.value)}
+              value={
+                filterEstado !== 'todos'
+                  ? `estado:${filterEstado}`
+                  : `rama:${filterRama}`
+              }
+              onChange={(e) => {
+                const v = e.target.value
+                if (v.startsWith('estado:')) {
+                  setFilterEstado(v.replace('estado:', '') as 'todos' | 'activos' | 'inactivos')
+                  setFilterRama('Todas')
+                } else {
+                  setFilterRama(v.replace('rama:', ''))
+                  setFilterEstado('todos')
+                }
+              }}
               style={{
                 padding: '6px 12px',
                 fontSize: 'clamp(11px, 2vw, 13px)',
@@ -341,11 +371,17 @@ export default function Dashboard() {
                 cursor: 'pointer'
               }}
             >
-              <option value="Todas">Todas</option>
-              <option value="Manada">Manada</option>
-              <option value="Unidad Scout">Unidad</option>
-              <option value="Caminantes">Caminantes</option>
-              <option value="Rovers">Rovers</option>
+              <option value="rama:Todas">Todas las ramas</option>
+              <option value="rama:Manada">Manada</option>
+              <option value="rama:Unidad Scout">Unidad</option>
+              <option value="rama:Caminantes">Caminantes</option>
+              <option value="rama:Rovers">Rovers</option>
+              {(isSuperAdmin || isJefatura) && (
+                <>
+                  <option value="estado:activos">✅ Solo activos</option>
+                  <option value="estado:inactivos">❌ Solo ex miembros</option>
+                </>
+              )}
             </select>
           )}
 
@@ -473,7 +509,7 @@ export default function Dashboard() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    {beneficiario.rama} • {beneficiario.estado}
+                    {beneficiario.rama} • {labelEstado(beneficiario.estado)}
                   </div>
                 </div>
 

@@ -4048,8 +4048,7 @@ const abrirModalCampamentos = async () => {
                     disabled={editLoading}
                   >
                     <option value="activo">Activo</option>
-                    <option value="inactivo">Inactivo</option>
-                    <option value="egresado">Egresado</option>
+                    <option value="inactivo">Ex miembro</option>
                   </select>
                 </div>
                 <div style={{ gridColumn: '1 / -1' }}>
