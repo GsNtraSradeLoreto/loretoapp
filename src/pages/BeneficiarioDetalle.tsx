@@ -281,6 +281,105 @@ const EditableDate = ({
     </div>
   )
 }
+// =============================================
+// SELECTOR DE ELEMENTO (Caminantes)
+// =============================================
+
+const ELEMENTOS_CAMINANTES = [
+  { value: 'Tierra', label: '🌍 Tierra', color: '#8B6F47', bg: '#F5EDE0' },
+  { value: 'Agua',   label: '💧 Agua',   color: '#3B82F6', bg: '#E0EFFE' },
+  { value: 'Aire',   label: '🌬️ Aire',   color: '#A78BFA', bg: '#F0EAFE' },
+  { value: 'Fuego',  label: '🔥 Fuego',  color: '#EF4444', bg: '#FEE5E5' },
+] as const
+
+type ElementoValor = 'Tierra' | 'Agua' | 'Aire' | 'Fuego'
+
+const ElementoSelector = ({
+  valor,
+  elementosUsados,
+  onCambio,
+  disabled = false,
+  requiereFecha = false,
+  hayFecha = false
+}: {
+  valor: string | null
+  elementosUsados: string[]
+  onCambio: (nuevo: ElementoValor | null) => void
+  disabled?: boolean
+  requiereFecha?: boolean
+  hayFecha?: boolean
+}) => {
+  const estaDisponible = (elem: string) => !elementosUsados.includes(elem)
+
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const nuevo = e.target.value as ElementoValor | ''
+    onCambio(nuevo === '' ? null : nuevo)
+  }
+
+  const bloqueadoPorFaltaDeFecha = requiereFecha && !hayFecha && !valor
+
+  return (
+    <select
+      value={valor || ''}
+      onChange={handleChange}
+      disabled={disabled || bloqueadoPorFaltaDeFecha}
+      style={{
+        padding: '4px 8px',
+        fontSize: '13px',
+        border: '2px solid ' + (bloqueadoPorFaltaDeFecha ? '#E8DEC4' : '#D1C9B4'),
+        borderRadius: '4px',
+        outline: 'none',
+        fontFamily: 'Oswald, sans-serif',
+        backgroundColor: (disabled || bloqueadoPorFaltaDeFecha) ? '#F3F4F6' : 'white',
+        color: bloqueadoPorFaltaDeFecha
+          ? '#A89E86'
+          : valor
+            ? ELEMENTOS_CAMINANTES.find(e => e.value === valor)?.color || '#24352A'
+            : '#7A7364',
+        fontWeight: valor ? '600' : '400',
+        cursor: (disabled || bloqueadoPorFaltaDeFecha) ? 'not-allowed' : 'pointer',
+        minWidth: '130px',
+        opacity: bloqueadoPorFaltaDeFecha ? 0.7 : 1
+      }}
+      title={bloqueadoPorFaltaDeFecha ? 'Primero cargá la fecha de esta etapa' : ''}
+    >
+      <option value="">
+        {bloqueadoPorFaltaDeFecha ? '🔒 Primero la fecha' : '🔲 Elegir'}
+      </option>
+      {!bloqueadoPorFaltaDeFecha && ELEMENTOS_CAMINANTES.map(elem => {
+        const usado = !estaDisponible(elem.value)
+        const esElActual = elem.value === valor
+        if (usado && !esElActual) return null
+        return (
+          <option key={elem.value} value={elem.value}>
+            {elem.label}
+          </option>
+        )
+      })}
+    </select>
+  )
+}
+
+const ElementoBadge = ({ elemento }: { elemento: string }) => {
+  const info = ELEMENTOS_CAMINANTES.find(e => e.value === elemento)
+  if (!info) return null
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '2px 8px',
+      borderRadius: '12px',
+      fontSize: '11px',
+      fontWeight: '600',
+      fontFamily: 'Oswald, sans-serif',
+      backgroundColor: info.bg,
+      color: info.color,
+      marginRight: '4px'
+    }}>
+      {info.label}
+    </span>
+  )
+}
 
 export default function BeneficiarioDetalle() {
   const { id } = useParams<{ id: string }>()
@@ -1812,6 +1911,91 @@ const abrirModalCampamentos = async () => {
       alert('Error al guardar la fecha')
     }
   }
+    // =============================================
+  // ACTUALIZAR ELEMENTO DE UNA ETAPA (Caminantes)
+  // =============================================
+  const actualizarElementoDeEtapa = async (
+    numeroEtapa: 1 | 2 | 3 | 4,
+    nuevoElemento: ElementoValor | null
+  ) => {
+    if (!progresionCaminantes) return
+
+    const actuales: (string | null)[] = Array.isArray(progresionCaminantes.elemento_elegido)
+      ? [...progresionCaminantes.elemento_elegido]
+      : [null, null, null, null]
+
+    while (actuales.length < 4) actuales.push(null)
+
+    const nuevos: (string | null)[] = [...actuales]
+    nuevos[numeroEtapa - 1] = nuevoElemento
+
+    try {
+      const { error } = await supabase
+        .from('progresion_caminantes')
+        .update({ elemento_elegido: nuevos })
+        .eq('id', progresionCaminantes.id)
+
+      if (error) throw error
+      await loadData()
+    } catch (error: any) {
+      console.error('Error al actualizar elemento:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+    }
+  }
+
+  // =============================================
+  // ACTUALIZAR FECHA DE ETAPA
+  // =============================================
+  const actualizarFechaDeEtapa = async (
+    numeroEtapa: 1 | 2 | 3 | 4,
+    nuevaFecha: string
+  ) => {
+    if (!progresionCaminantes) return
+
+    const fechaKey = `fecha_etapa${numeroEtapa}` as
+      | 'fecha_etapa1' | 'fecha_etapa2' | 'fecha_etapa3' | 'fecha_etapa4'
+
+    if (!nuevaFecha) {
+      const actuales: (string | null)[] = Array.isArray(progresionCaminantes.elemento_elegido)
+        ? [...progresionCaminantes.elemento_elegido]
+        : [null, null, null, null]
+      while (actuales.length < 4) actuales.push(null)
+
+      const nuevos: (string | null)[] = [...actuales]
+      nuevos[numeroEtapa - 1] = null
+
+      try {
+        const { error } = await supabase
+          .from('progresion_caminantes')
+          .update({
+            [fechaKey]: null,
+            elemento_elegido: nuevos
+          })
+          .eq('id', progresionCaminantes.id)
+
+        if (error) throw error
+        await loadData()
+      } catch (error: any) {
+        console.error('Error al borrar fecha y elemento:', error)
+        setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      }
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('progresion_caminantes')
+        .update({ [fechaKey]: nuevaFecha })
+        .eq('id', progresionCaminantes.id)
+
+      if (error) throw error
+      await loadData()
+    } catch (error: any) {
+      console.error('Error al actualizar fecha:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+    }
+  }
+
 
   const handleAbrirFormPago = async () => {
   if (!beneficiario) return
@@ -2117,54 +2301,113 @@ const abrirModalCampamentos = async () => {
       )
     }
 
-    if (rama === 'Caminantes' && progresionCaminantes) {
+        if (rama === 'Caminantes' && progresionCaminantes) {
+      const elementos = Array.isArray(progresionCaminantes.elemento_elegido)
+        ? progresionCaminantes.elemento_elegido
+        : []
+      const elementosValidos = elementos.filter(Boolean) as string[]
+      const cantidad = elementosValidos.length
+
+      const getElementoDeEtapa = (num: 1 | 2 | 3 | 4): string | null => {
+        return (elementos[num - 1] as string) || null
+      }
+
+      const getElementosUsadosExcluyendo = (num: 1 | 2 | 3 | 4): string[] => {
+        return elementosValidos.filter((_, idx) => idx !== num - 1)
+      }
+
       return (
         <div>
-          <div style={{ marginBottom: '12px' }}>
-            <span style={{ 
-              fontFamily: 'Oswald, sans-serif',
-              fontSize: '13px',
-              color: '#7A7364',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}>
-              Progresión Actual: 
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Progresión Actual:
             </span>
-            <span style={{
-              fontFamily: 'Oswald, sans-serif',
-              fontSize: '18px',
-              color: '#24352A',
-              fontWeight: '700',
-              marginLeft: '8px'
-            }}>
+            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '18px', color: '#24352A', fontWeight: '700', marginLeft: '8px' }}>
               {progresionCaminantes.progresion_actual || 'Sin asignar'}
             </span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <EditableDate 
-              label="Etapa 1" 
-              value={progresionCaminantes.fecha_etapa1} 
-              onSave={(val) => updateProgresionCaminantes('fecha_etapa1', val)}
+
+          <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Elementos:
+            </span>
+            {elementosValidos.length === 0 ? (
+              <span style={{ fontSize: '13px', color: '#A89E86' }}>Ninguno todavía</span>
+            ) : (
+              <>
+                {elementosValidos.map((elem, i) => <ElementoBadge key={i} elemento={elem} />)}
+              </>
+            )}
+            <span style={{
+              fontFamily: 'Oswald, sans-serif', fontSize: '13px', fontWeight: '600',
+              color: cantidad === 4 ? '#5C7A5E' : '#7A7364', marginLeft: '4px'
+            }}>
+              ({cantidad}/4)
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <EditableDate
+              label="Ceremonia de Bienvenida"
+              value={progresionCaminantes.fecha_ceremonia_bienvenida}
+              onSave={(val) => updateProgresionCaminantes('fecha_ceremonia_bienvenida', val)}
               disabled={!canEdit()}
             />
-            <EditableDate 
-              label="Etapa 2" 
-              value={progresionCaminantes.fecha_etapa2} 
-              onSave={(val) => updateProgresionCaminantes('fecha_etapa2', val)}
-              disabled={!canEdit()}
-            />
-            <EditableDate 
-              label="Etapa 3" 
-              value={progresionCaminantes.fecha_etapa3} 
-              onSave={(val) => updateProgresionCaminantes('fecha_etapa3', val)}
-              disabled={!canEdit()}
-            />
-            <EditableDate 
-              label="Etapa 4" 
-              value={progresionCaminantes.fecha_etapa4} 
-              onSave={(val) => updateProgresionCaminantes('fecha_etapa4', val)}
-              disabled={!canEdit()}
-            />
+
+            {[1, 2, 3, 4].map((num) => {
+              const numEtapa = num as 1 | 2 | 3 | 4
+              const fechaKey = `fecha_etapa${num}` as 'fecha_etapa1' | 'fecha_etapa2' | 'fecha_etapa3' | 'fecha_etapa4'
+              const fechaRaw = progresionCaminantes?.[fechaKey]
+              const fechaValor = (fechaRaw && String(fechaRaw).trim() !== '') ? String(fechaRaw) : null
+              const elementoActual = getElementoDeEtapa(numEtapa)
+              const usadosExcluyendo = getElementosUsadosExcluyendo(numEtapa)
+              const hayFecha = !!fechaValor
+
+              return (
+                <div
+                  key={num}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '4px 0',
+                    borderBottom: '1px solid #E8DEC4',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <span style={{ fontSize: '13px', color: '#7A7364', minWidth: '120px', fontFamily: 'Oswald, sans-serif' }}>
+                    Etapa {num}:
+                  </span>
+
+                  <div style={{ flex: 1, minWidth: '140px' }}>
+                    <EditableDate
+                      label=""
+                      value={fechaValor}
+                      onSave={(val) => actualizarFechaDeEtapa(numEtapa, val)}
+                      disabled={!canEdit()}
+                    />
+                  </div>
+
+                  <ElementoSelector
+                    valor={elementoActual}
+                    elementosUsados={usadosExcluyendo}
+                    onCambio={(nuevo) => {
+                      if (!nuevo && fechaValor) {
+                        setMessage({
+                          text: `⚠️ No podés quitar el elemento de Etapa ${num} porque ya tiene fecha. Borrá la fecha primero.`,
+                          type: 'warning'
+                        })
+                        return
+                      }
+                      actualizarElementoDeEtapa(numEtapa, nuevo)
+                    }}
+                    disabled={!canEdit()}
+                    requiereFecha={true}
+                    hayFecha={hayFecha}
+                  />
+                </div>
+              )
+            })}
           </div>
         </div>
       )
