@@ -12,6 +12,12 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const { profile, signOut, isSuperAdmin, isJefatura, isAdministrador } = useAuth()
   const navigate = useNavigate()
+  const [esCelular, setEsCelular] = React.useState(window.innerWidth < 640)
+  React.useEffect(() => {
+    const handleResize = () => setEsCelular(window.innerWidth < 640)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
   const location = useLocation()
   const [showMenu, setShowMenu] = React.useState(false)
   const [refrescando, setRefrescando] = React.useState(false)
@@ -153,27 +159,29 @@ export default function Layout({ children }: LayoutProps) {
         <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' }}>
 
-            <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+                       <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
               <img
                 src="/logo-grupo.png"
                 alt="LoretApp"
                 style={{
-                  height: '42px',
-                  width: '42px',
+                  height: esCelular ? '36px' : '42px',
+                  width: esCelular ? '36px' : '42px',
                   objectFit: 'contain',
                   borderRadius: '8px'
                 }}
               />
-              <span style={{
-                fontSize: '20px',
-                fontWeight: '700',
-                color: '#F3ECD8',
-                letterSpacing: '1px',
-                textTransform: 'uppercase',
-                fontFamily: 'Oswald, sans-serif'
-              }}>
-                LoretApp
-              </span>
+              {!esCelular && (
+                <span style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  color: '#F3ECD8',
+                  letterSpacing: '1px',
+                  textTransform: 'uppercase',
+                  fontFamily: 'Oswald, sans-serif'
+                }}>
+                  LoretApp
+                </span>
+              )}
             </Link>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -261,16 +269,18 @@ export default function Layout({ children }: LayoutProps) {
                   }}>
                     {nombreCompleto.charAt(0).toUpperCase()}
                   </div>
-                  <span style={{
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    color: '#F3ECD8',
-                    fontFamily: 'Oswald, sans-serif',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {nombreCompleto}
-                  </span>
+                                   {!esCelular && (
+                    <span style={{
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: '#F3ECD8',
+                      fontFamily: 'Oswald, sans-serif',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      {nombreCompleto}
+                    </span>
+                  )}
                   <svg style={{ width: '16px', height: '16px', color: '#F3ECD8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>

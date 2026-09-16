@@ -47,7 +47,6 @@ export default function Auditoria() {
   const [error, setError] = useState<string | null>(null)
   const [hayMas, setHayMas] = useState(false)
 
-  // Filtros
   const [filtroEntidad, setFiltroEntidad] = useState('')
   const [filtroAccion, setFiltroAccion] = useState('')
   const [filtroUsuario, setFiltroUsuario] = useState('')
@@ -55,22 +54,10 @@ export default function Auditoria() {
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
 
-  // Modal detalle
   const [detalle, setDetalle] = useState<AuditRow | null>(null)
-
-  // Lista de usuarios únicos (para el filtro)
   const [usuariosUnicos, setUsuariosUnicos] = useState<string[]>([])
-
-  // Selección para borrado masivo (solo Super Admin)
   const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set())
 
-  // Confirmación de borrado
-  const [confirmarBorrado, setConfirmarBorrado] = useState<
-    { tipo: 'uno'; id: number } | { tipo: 'varios' } | null
-  >(null)
-  const [borrando, setBorrando] = useState(false)
-
-  // Novedades (para el banner)
   const [novedades, setNovedades] = useState(0)
   const [mostrarBanner, setMostrarBanner] = useState(false)
   const yaMarcoVisto = useRef(false)
@@ -121,11 +108,9 @@ export default function Auditoria() {
     }
   }
 
-  // ============ CARGA INICIAL ============
   useEffect(() => {
     if (!isSuperAdmin && !isJefatura) return
 
-    // 1) Consultamos las novedades ANTES de marcar como visto
     supabase
       .rpc('contar_novedades_auditoria')
       .then(({ data, error }) => {
@@ -134,7 +119,6 @@ export default function Auditoria() {
           setMostrarBanner(true)
         }
 
-        // 2) Después de 2 segundos, marcamos como visto
         setTimeout(() => {
           if (!yaMarcoVisto.current) {
             yaMarcoVisto.current = true
@@ -144,11 +128,9 @@ export default function Auditoria() {
           }
         }, 2000)
       })
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin, isJefatura])
 
-  // Cargar usuarios únicos la primera vez
   useEffect(() => {
     supabase
       .from('audit_log')
@@ -163,7 +145,6 @@ export default function Auditoria() {
       })
   }, [])
 
-  // Recargar cuando cambian los filtros
   useEffect(() => {
     cargar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,7 +206,6 @@ export default function Auditoria() {
     setFechaHasta('')
   }
 
-  // ============ SELECCIÓN ============
   const toggleSeleccion = (id: number) => {
     setSeleccionados(prev => {
       const nuevo = new Set(prev)
@@ -250,66 +230,53 @@ export default function Auditoria() {
     setSeleccionados(new Set())
   }
 
-  // ============ BORRADO ============
-  const pedirBorrarUno = (id: number) => {
-    setConfirmarBorrado({ tipo: 'uno', id })
-  }
+  const borrarUno = async (id: number) => {
+    if (!window.confirm('¿Estás seguro de que querés eliminar este registro?\n\nEsta acción no se puede deshacer.')) {
+      return
+    }
 
-  const pedirBorrarVarios = () => {
-    if (seleccionados.size === 0) return
-    setConfirmarBorrado({ tipo: 'varios' })
-  }
-
-  const ejecutarBorrado = async () => {
-    if (!confirmarBorrado) return
-    setBorrando(true)
-
+    setError(null)
     try {
-      if (confirmarBorrado.tipo === 'uno') {
-        const { error } = await supabase
-          .from('audit_log')
-          .delete()
-          .eq('id', confirmarBorrado.id)
-        if (error) throw error
-      } else {
-        const ids = Array.from(seleccionados)
-        const { error } = await supabase
-          .from('audit_log')
-          .delete()
-          .in('id', ids)
-        if (error) throw error
-      }
-
-      setConfirmarBorrado(null)
-      await cargar()
-
-      supabase
+      const { error } = await supabase
         .from('audit_log')
-        .select('usuario_nombre')
-        .not('usuario_nombre', 'is', null)
-        .limit(1000)
-        .then(({ data }) => {
-          if (data) {
-            const unicos = Array.from(new Set(data.map(d => d.usuario_nombre).filter(Boolean)))
-            setUsuariosUnicos(unicos as string[])
-          }
-        })
+        .delete()
+        .eq('id', id)
+      if (error) throw error
+      await cargar()
     } catch (e: any) {
-      console.error(e)
-      setError(e?.message || 'Error al borrar registros')
-    } finally {
-      setBorrando(false)
+      console.error('Error al borrar:', e)
+      setError(e?.message || 'Error al borrar el registro')
     }
   }
 
-  // ============ MARCAR COMO VISTO MANUALMENTE ============
+  const borrarVarios = async () => {
+    if (seleccionados.size === 0) return
+
+    if (!window.confirm(`¿Estás seguro de que querés eliminar ${seleccionados.size} registro${seleccionados.size !== 1 ? 's' : ''}?\n\nEsta acción no se puede deshacer.`)) {
+      return
+    }
+
+    setError(null)
+    try {
+      const ids = Array.from(seleccionados)
+      const { error } = await supabase
+        .from('audit_log')
+        .delete()
+        .in('id', ids)
+      if (error) throw error
+      await cargar()
+    } catch (e: any) {
+      console.error('Error al borrar:', e)
+      setError(e?.message || 'Error al borrar los registros')
+    }
+  }
+
   const marcarComoVistoManual = async () => {
     await supabase.rpc('marcar_auditoria_vista')
     setMostrarBanner(false)
     setNovedades(0)
   }
 
-  // ✅ Chequeo de permisos: SIEMPRE después de los hooks
   if (!isSuperAdmin && !isJefatura) {
     return (
       <div style={{
@@ -330,7 +297,6 @@ export default function Auditoria() {
 
   return (
     <div style={{ fontFamily: 'Oswald, sans-serif' }}>
-      {/* Título */}
       <div style={{ marginBottom: '20px' }}>
         <h1 style={{
           fontSize: '28px',
@@ -353,7 +319,6 @@ export default function Auditoria() {
         </p>
       </div>
 
-      {/* Banner de novedades */}
       {mostrarBanner && novedades > 0 && (
         <div style={{
           backgroundColor: '#FFF3CD',
@@ -404,7 +369,6 @@ export default function Auditoria() {
         </div>
       )}
 
-      {/* Filtros */}
       <div style={{
         backgroundColor: '#F3ECD8',
         border: '2px solid #D1C9B4',
@@ -452,7 +416,6 @@ export default function Auditoria() {
         </div>
       </div>
 
-      {/* Barra de acciones masivas (solo Super Admin) */}
       {isSuperAdmin && haySeleccion && (
         <div style={{
           backgroundColor: '#24352A',
@@ -471,7 +434,7 @@ export default function Auditoria() {
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
-              onClick={pedirBorrarVarios}
+              onClick={borrarVarios}
               style={{
                 padding: '8px 14px',
                 backgroundColor: '#B71C1C',
@@ -510,7 +473,6 @@ export default function Auditoria() {
         </div>
       )}
 
-      {/* Checkbox "seleccionar todos" (solo Super Admin) */}
       {isSuperAdmin && rows.length > 0 && !loading && (
         <div style={{
           display: 'flex',
@@ -540,7 +502,6 @@ export default function Auditoria() {
         </div>
       )}
 
-      {/* Lista */}
       {loading && (
         <div style={{ textAlign: 'center', padding: '40px', color: '#7A7364' }}>
           Cargando...
@@ -554,9 +515,11 @@ export default function Auditoria() {
           color: '#B71C1C',
           padding: '12px 16px',
           borderRadius: '8px',
-          marginBottom: '16px'
+          marginBottom: '16px',
+          fontFamily: 'Oswald, sans-serif',
+          fontSize: '13px'
         }}>
-          {error}
+          ❌ {error}
         </div>
       )}
 
@@ -633,7 +596,7 @@ export default function Auditoria() {
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  pedirBorrarUno(r.id)
+                  borrarUno(r.id)
                 }}
                 title="Eliminar este registro"
                 style={{
@@ -673,32 +636,34 @@ export default function Auditoria() {
         </div>
       )}
 
-      {/* Modal detalle */}
       {detalle && (
         <div
-          onClick={() => setDetalle(null)}
           style={{
             position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(36, 53, 42, 0.7)',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 200,
-            padding: '20px'
+            zIndex: 2147483647,
+            padding: '20px',
+            boxSizing: 'border-box'
           }}
         >
           <div
-            onClick={e => e.stopPropagation()}
             style={{
               backgroundColor: '#F3ECD8',
               borderRadius: '12px',
-              padding: '20px',
+              padding: '24px',
               maxWidth: '600px',
               width: '100%',
-              maxHeight: '80vh',
+              maxHeight: '85vh',
               overflowY: 'auto',
-              border: '3px solid #24352A'
+              border: '3px solid #24352A',
+              boxSizing: 'border-box'
             }}
           >
             <h2 style={{
@@ -706,11 +671,12 @@ export default function Auditoria() {
               color: '#24352A',
               textTransform: 'uppercase',
               letterSpacing: '1px',
-              margin: '0 0 12px 0'
+              margin: '0 0 16px 0'
             }}>
-              Detalle del registro
+              📋 Detalle del registro
             </h2>
-            <div style={{ fontSize: '13px', color: '#24352A', lineHeight: 1.6 }}>
+
+            <div style={{ fontSize: '14px', color: '#24352A', lineHeight: 1.6 }}>
               <p><strong>Descripción:</strong> {detalle.descripcion}</p>
               <p><strong>Usuario:</strong> {detalle.usuario_nombre} ({detalle.usuario_rol})</p>
               <p><strong>Acción:</strong> {detalle.accion}</p>
@@ -719,121 +685,20 @@ export default function Auditoria() {
             </div>
 
             {detalle.datos_anteriores && (
-              <div style={{ marginTop: '12px' }}>
+              <div style={{ marginTop: '16px' }}>
                 <strong style={{ fontSize: '13px', textTransform: 'uppercase', color: '#7A7364' }}>Antes</strong>
                 <pre style={preStyle}>{JSON.stringify(detalle.datos_anteriores, null, 2)}</pre>
               </div>
             )}
             {detalle.datos_nuevos && (
-              <div style={{ marginTop: '12px' }}>
+              <div style={{ marginTop: '16px' }}>
                 <strong style={{ fontSize: '13px', textTransform: 'uppercase', color: '#7A7364' }}>Después</strong>
                 <pre style={preStyle}>{JSON.stringify(detalle.datos_nuevos, null, 2)}</pre>
               </div>
             )}
 
-            <div style={{ textAlign: 'right', marginTop: '16px' }}>
+            <div style={{ textAlign: 'right', marginTop: '20px' }}>
               <button onClick={() => setDetalle(null)} style={btnPrimary}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal confirmar borrado */}
-      {confirmarBorrado && (
-        <div
-          onClick={() => !borrando && setConfirmarBorrado(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(36, 53, 42, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 300,
-            padding: '20px'
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              backgroundColor: '#F3ECD8',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '440px',
-              width: '100%',
-              border: '3px solid #B71C1C'
-            }}
-          >
-            <h2 style={{
-              fontSize: '20px',
-              color: '#B71C1C',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
-              margin: '0 0 8px 0'
-            }}>
-              ⚠️ Confirmar eliminación
-            </h2>
-
-            <p style={{
-              fontSize: '14px',
-              color: '#24352A',
-              lineHeight: 1.5,
-              margin: '12px 0'
-            }}>
-              {confirmarBorrado.tipo === 'uno'
-                ? '¿Estás seguro de que querés eliminar este registro?'
-                : `¿Estás seguro de que querés eliminar ${seleccionados.size} registro${seleccionados.size !== 1 ? 's' : ''}?`}
-              <br />
-              <strong style={{ color: '#B71C1C' }}>Esta acción no se puede deshacer.</strong>
-            </p>
-
-            <div style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '10px',
-              marginTop: '20px',
-              flexWrap: 'wrap'
-            }}>
-              <button
-                onClick={() => setConfirmarBorrado(null)}
-                disabled={borrando}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: 'transparent',
-                  border: '2px solid #24352A',
-                  borderRadius: '8px',
-                  color: '#24352A',
-                  fontFamily: 'Oswald, sans-serif',
-                  fontSize: '12px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  cursor: borrando ? 'not-allowed' : 'pointer',
-                  fontWeight: 600,
-                  opacity: borrando ? 0.5 : 1
-                }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={ejecutarBorrado}
-                disabled={borrando}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#B71C1C',
-                  border: '2px solid #B71C1C',
-                  borderRadius: '8px',
-                  color: 'white',
-                  fontFamily: 'Oswald, sans-serif',
-                  fontSize: '12px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  cursor: borrando ? 'wait' : 'pointer',
-                  fontWeight: 600,
-                  opacity: borrando ? 0.6 : 1
-                }}
-              >
-                {borrando ? 'Eliminando...' : 'Sí, eliminar'}
-              </button>
             </div>
           </div>
         </div>
@@ -842,7 +707,6 @@ export default function Auditoria() {
   )
 }
 
-// ==================== estilos reutilizables ====================
 const inputStyle: React.CSSProperties = {
   padding: '8px 12px',
   border: '2px solid #D1C9B4',
