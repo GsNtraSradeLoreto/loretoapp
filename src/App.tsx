@@ -13,6 +13,7 @@ const Pagos = lazy(() => import('./pages/Pagos'))
 const Planillas = lazy(() => import('./pages/Planillas'))
 const Campamentos = lazy(() => import('./pages/Campamentos'))
 const Auditoria = lazy(() => import('./pages/Auditoria'))
+const VidaScout = lazy(() => import('./pages/VidaScout'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -93,6 +94,13 @@ function AppRoutes() {
             </Layout>
           </PrivateRoute>
         } />
+        <Route path="/beneficiario/:id/vida-scout" element={
+  <PrivateRoute>
+    <Layout>
+      <VidaScout />
+    </Layout>
+  </PrivateRoute>
+} />
         <Route path="/pagos" element={
           <PrivateRoute>
             <Layout>
