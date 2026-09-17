@@ -23,13 +23,40 @@ interface Stats {
   rovers: number
 }
 
+const ORDEN_RAMAS: Record<string, number> = {
+  'Manada': 1,
+  'Unidad Scout': 2,
+  'Caminantes': 3,
+  'Rovers': 4
+}
+
+// ✅ Orden: activos → rama → apellido → nombre | inactivos al final
+const ordenarBeneficiarios = (a: Beneficiario, b: Beneficiario) => {
+  // 1) Activos primero
+  const aActivo = a.estado === 'activo' ? 0 : 1
+  const bActivo = b.estado === 'activo' ? 0 : 1
+  if (aActivo !== bActivo) return aActivo - bActivo
+
+  // 2) Rama
+  const ordenA = ORDEN_RAMAS[a.rama] || 99
+  const ordenB = ORDEN_RAMAS[b.rama] || 99
+  if (ordenA !== ordenB) return ordenA - ordenB
+
+  // 3) Apellido
+  const cmpApellido = (a.apellido || '').localeCompare(b.apellido || '')
+  if (cmpApellido !== 0) return cmpApellido
+
+  // 4) Nombre
+  return (a.nombre || '').localeCompare(b.nombre || '')
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { 
-    profile, 
-    isSuperAdmin, 
-    isJefatura, 
-    isAdministrador, 
+  const {
+    profile,
+    isSuperAdmin,
+    isJefatura,
+    isAdministrador,
     isTesorero,
     getRolData
   } = useAuth()
@@ -56,11 +83,9 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-        let query = supabase
+      let query = supabase
         .from('beneficiarios')
-        .select('*')
-        .order('estado', { ascending: true })   // 'activo' va antes que 'inactivo' alfabéticamente
-        .order('apellido', { ascending: true })
+        .select('id, nombre, apellido, rama, estado, tiene_hermanos, foto_url, fecha_nacimiento')
 
       if (!esSuperAdmin) {
         query = query.eq('estado', 'activo')
@@ -74,12 +99,14 @@ export default function Dashboard() {
       const { data: beneficiariosData, error: beneficiariosError } = await query
       if (beneficiariosError) throw beneficiariosError
 
-      setBeneficiarios(beneficiariosData || [])
-      setFiltered(beneficiariosData || [])
+      const ordenados = [...(beneficiariosData || [])].sort(ordenarBeneficiarios)
 
-      let activos = beneficiariosData || []
+      setBeneficiarios(ordenados)
+      setFiltered(ordenados)
+
+      let activos = ordenados
       if (!esSuperAdmin) {
-        activos = beneficiariosData?.filter(b => b.estado === 'activo') || []
+        activos = ordenados.filter(b => b.estado === 'activo')
       }
 
       setStats({
@@ -97,14 +124,13 @@ export default function Dashboard() {
     }
   }
 
-    useEffect(() => {
+  useEffect(() => {
     let result = beneficiarios
 
     if (filterRama !== 'Todas') {
       result = result.filter(b => b.rama === filterRama)
     }
 
-    // ✅ Filtro por estado (solo para Jefatura/Super Admin)
     if ((isSuperAdmin || isJefatura) && filterEstado !== 'todos') {
       if (filterEstado === 'activos') {
         result = result.filter(b => b.estado === 'activo')
@@ -121,7 +147,8 @@ export default function Dashboard() {
       )
     }
 
-    setFiltered(result)
+    // ✅ Volvemos a ordenar después de filtrar (mantiene activos primero)
+    setFiltered([...result].sort(ordenarBeneficiarios))
   }, [searchTerm, filterRama, filterEstado, beneficiarios, isSuperAdmin, isJefatura])
 
   const handleFilterByRama = (rama: string) => {
@@ -129,7 +156,7 @@ export default function Dashboard() {
     setSearchTerm('')
   }
 
-    const handleLimpiarFiltros = () => {
+  const handleLimpiarFiltros = () => {
     if (esDirigente && ramaAsignada) {
       setFilterRama(ramaAsignada)
     } else {
@@ -164,7 +191,7 @@ export default function Dashboard() {
     `)}`
   }
 
-    const labelEstado = (estado: string) => {
+  const labelEstado = (estado: string) => {
     if (estado === 'activo') return 'Activo'
     if (estado === 'inactivo') return 'Ex miembro'
     return estado
@@ -205,11 +232,11 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Tarjetas de estadísticas - RESPONSIVE */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: `repeat(auto-fit, minmax(60px, 1fr))`, 
-        gap: '6px', 
+      {/* Tarjetas de estadísticas */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(auto-fit, minmax(60px, 1fr))`,
+        gap: '6px',
         marginBottom: '24px',
         width: '100%'
       }}>
@@ -234,12 +261,12 @@ export default function Dashboard() {
           }
 
           return (
-            <div 
+            <div
               key={rama}
-              style={{ 
+              style={{
                 backgroundColor: isActive ? '#24352A' : 'white',
-                borderRadius: '8px', 
-                padding: '6px 4px', 
+                borderRadius: '8px',
+                padding: '6px 4px',
                 border: '2px solid #D1C9B4',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
@@ -264,23 +291,23 @@ export default function Dashboard() {
                 }
               }}
             >
-              <p style={{ 
-                fontFamily: 'Oswald, sans-serif', 
-                fontWeight: '700', 
-                fontSize: 'clamp(14px, 3vw, 20px)', 
-                color: isActive ? 'white' : '#24352A', 
+              <p style={{
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: '700',
+                fontSize: 'clamp(14px, 3vw, 20px)',
+                color: isActive ? 'white' : '#24352A',
                 margin: 0,
                 lineHeight: 1
               }}>
                 {getStatsValue()}
               </p>
-              <p style={{ 
-                fontFamily: 'Oswald, sans-serif', 
-                fontWeight: '500', 
-                fontSize: 'clamp(7px, 1.5vw, 9px)', 
-                color: isActive ? '#D1C9B4' : '#7A7364', 
-                textTransform: 'uppercase', 
-                letterSpacing: '0.5px', 
+              <p style={{
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: '500',
+                fontSize: 'clamp(7px, 1.5vw, 9px)',
+                color: isActive ? '#D1C9B4' : '#7A7364',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
                 margin: '2px 0 0 0',
                 lineHeight: 1
               }}>
@@ -293,10 +320,10 @@ export default function Dashboard() {
 
       {/* Lista de Beneficiarios */}
       <div style={{ marginTop: '24px' }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
           marginBottom: '12px',
           flexWrap: 'wrap',
           gap: '8px'
@@ -310,7 +337,7 @@ export default function Dashboard() {
             letterSpacing: '1px',
             margin: 0
           }}>
-                      📋 Beneficiarios
+            📋 Beneficiarios
           </h2>
           <span style={{
             fontFamily: 'Oswald, sans-serif',
@@ -343,7 +370,7 @@ export default function Dashboard() {
             onBlur={(e) => e.currentTarget.style.borderColor = '#D1C9B4'}
           />
 
-                    {verTodas && (
+          {verTodas && (
             <select
               value={
                 filterEstado !== 'todos'

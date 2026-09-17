@@ -37,12 +37,14 @@ const ORDEN_RAMAS: Record<string, number> = {
   'Rovers': 4
 }
 
+const PAGE_SIZE = 20
+
 export default function Pagos() {
-  const { 
-    profile, 
-    isSuperAdmin, 
-    isJefatura, 
-    isAdministrador, 
+  const {
+    profile,
+    isSuperAdmin,
+    isJefatura,
+    isAdministrador,
     isTesorero,
     getRolData,
     canCreatePagos
@@ -56,9 +58,14 @@ export default function Pagos() {
   const [filterRama, setFilterRama] = useState('Todas')
   const [filterBeneficiario, setFilterBeneficiario] = useState('')
   const [selectedPago, setSelectedPago] = useState<Pago | null>(null)
-  
+
   const [sortColumn, setSortColumn] = useState<SortColumn>('recibo')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+
+  // ✅ Paginación
+  const [limite, setLimite] = useState(PAGE_SIZE)
+  const [hayMas, setHayMas] = useState(false)
+  const [cargandoMas, setCargandoMas] = useState(false)
 
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
@@ -95,14 +102,16 @@ export default function Pagos() {
     loadData()
   }, [])
 
+  // ✅ Cargar solo los primeros N pagos (por fecha de carga descendente)
   const loadData = async () => {
     try {
       setLoading(true)
+      setLimite(PAGE_SIZE)
 
+      // 1) Beneficiarios
       let beneficiariosQuery = supabase
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, tiene_hermanos, estado')
-        .order('apellido', { ascending: true })
 
       if (!esSuperAdmin) {
         beneficiariosQuery = beneficiariosQuery.eq('estado', 'activo')
@@ -116,11 +125,14 @@ export default function Pagos() {
         const ordenA = ORDEN_RAMAS[a.rama] || 99
         const ordenB = ORDEN_RAMAS[b.rama] || 99
         if (ordenA !== ordenB) return ordenA - ordenB
-        return a.apellido.localeCompare(b.apellido)
+        const cmpApellido = a.apellido.localeCompare(b.apellido)
+        if (cmpApellido !== 0) return cmpApellido
+        return a.nombre.localeCompare(b.nombre)
       })
 
       setBeneficiarios(beneficiariosOrdenados)
 
+      // 2) Pagos (últimos PAGE_SIZE por fecha_pago descendente)
       let query = supabase
         .from('pagos')
         .select(`
@@ -132,6 +144,9 @@ export default function Pagos() {
             estado
           )
         `)
+        .order('fecha_pago', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(PAGE_SIZE)
 
       if (esDirigente && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
@@ -144,7 +159,7 @@ export default function Pagos() {
 
       let pagosFiltrados = pagosData || []
       if (!esSuperAdmin) {
-        pagosFiltrados = pagosFiltrados.filter((pago: any) => 
+        pagosFiltrados = pagosFiltrados.filter((pago: any) =>
           pago.beneficiarios?.estado === 'activo'
         )
       }
@@ -159,12 +174,69 @@ export default function Pagos() {
       }))
 
       setPagos(pagosConNombres)
+      setHayMas(pagosData && pagosData.length === PAGE_SIZE)
 
     } catch (error) {
       console.error('Error:', error)
       setMessage({ text: '❌ Error al cargar los datos', type: 'error' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ✅ Cargar más pagos (suma PAGE_SIZE al límite)
+  const cargarMas = async () => {
+    try {
+      setCargandoMas(true)
+      const nuevoLimite = limite + PAGE_SIZE
+
+      let query = supabase
+        .from('pagos')
+        .select(`
+          *,
+          beneficiarios (
+            nombre,
+            apellido,
+            tiene_hermanos,
+            estado
+          )
+        `)
+        .order('fecha_pago', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(nuevoLimite)
+
+      if (esDirigente && ramaAsignada) {
+        query = query.eq('rama', ramaAsignada)
+      }
+
+      const { data: pagosData, error: pagosError } = await query
+
+      if (pagosError) throw pagosError
+
+      let pagosFiltrados = pagosData || []
+      if (!esSuperAdmin) {
+        pagosFiltrados = pagosFiltrados.filter((pago: any) =>
+          pago.beneficiarios?.estado === 'activo'
+        )
+      }
+
+      const pagosConNombres = pagosFiltrados.map((pago: any) => ({
+        ...pago,
+        beneficiario_nombre: pago.beneficiarios?.nombre || '',
+        beneficiario_apellido: pago.beneficiarios?.apellido || '',
+        beneficiario_tiene_hermanos: pago.beneficiarios?.tiene_hermanos || false,
+        beneficiario_estado: pago.beneficiarios?.estado || '',
+        reciboNumero: pago.recibo ? parseInt(pago.recibo.replace(/^[A-Z]-/, '')) : 0
+      }))
+
+      setPagos(pagosConNombres)
+      setLimite(nuevoLimite)
+      setHayMas(pagosData && pagosData.length === nuevoLimite)
+    } catch (error) {
+      console.error('Error al cargar más:', error)
+      setMessage({ text: '❌ Error al cargar más pagos', type: 'error' })
+    } finally {
+      setCargandoMas(false)
     }
   }
 
@@ -196,8 +268,7 @@ export default function Pagos() {
       }
     }
 
-    const siguiente = maxNumero + 1
-    return `${prefijo}-${siguiente}`
+    return `${prefijo}-${maxNumero + 1}`
   }
 
   const verificarYResolverDuplicado = async (recibo: string, excludeId?: string): Promise<string> => {
@@ -238,14 +309,12 @@ export default function Pagos() {
     }
 
     const nuevoSufijo = maxSufijo + 1
-    const nuevoRecibo = nuevoSufijo === 1 ? baseRecibo : `${baseRecibo}-${nuevoSufijo}`
-    
-    return nuevoRecibo
+    return nuevoSufijo === 1 ? baseRecibo : `${baseRecibo}-${nuevoSufijo}`
   }
 
   const handleBeneficiarioChange = async (beneficiarioId: string) => {
     setFormData({ ...formData, beneficiario_id: beneficiarioId })
-    
+
     if (beneficiarioId) {
       try {
         const recibo = await generarProximoRecibo(beneficiarioId)
@@ -307,11 +376,11 @@ export default function Pagos() {
     let reciboFinal = formData.recibo.trim()
     try {
       reciboFinal = await verificarYResolverDuplicado(reciboFinal, editingId || undefined)
-      
+
       if (reciboFinal !== formData.recibo.trim()) {
-        setMessage({ 
-          text: `⚠️ El recibo "${formData.recibo}" ya existe. Se usará "${reciboFinal}" en su lugar.`, 
-          type: 'warning' 
+        setMessage({
+          text: `⚠️ El recibo "${formData.recibo}" ya existe. Se usará "${reciboFinal}" en su lugar.`,
+          type: 'warning'
         })
         setFormData(prev => ({ ...prev, recibo: reciboFinal }))
         return
@@ -324,7 +393,7 @@ export default function Pagos() {
 
     try {
       const beneficiario = beneficiarios.find(b => b.id === formData.beneficiario_id)
-      
+
       let categoriaFinal = formData.categoria
       if (formData.categoria === 'OTRO') {
         categoriaFinal = formData.categoria_otro.trim().toUpperCase()
@@ -369,10 +438,10 @@ export default function Pagos() {
 
   const handleEdit = (pago: Pago) => {
     setEditingId(pago.id)
-    
+
     const categoriasEstandar = ['AFILIACION', 'CUOTAS', 'C. CORTO', 'C. ANUAL']
     const esOtro = !categoriasEstandar.includes(pago.categoria)
-    
+
     setFormData({
       beneficiario_id: pago.beneficiario_id,
       recibo: pago.recibo || '',
@@ -591,29 +660,23 @@ export default function Pagos() {
           fontSize: 'clamp(11px, 2.5vw, 14px)',
           border: '1px solid',
           fontFamily: 'Oswald, sans-serif',
-          ...(message.type === 'error' ? { 
-            backgroundColor: '#FEE2E2', 
-            color: '#BF4E30', 
-            borderColor: '#FECACA' 
-          } : message.type === 'warning' ? { 
-            backgroundColor: '#FEF3C7', 
-            color: '#C48A2A', 
-            borderColor: '#FDE68A' 
-          } : { 
-            backgroundColor: '#D1FAE5', 
-            color: '#5C7A5E', 
-            borderColor: '#A7F3D0' 
+          ...(message.type === 'error' ? {
+            backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA'
+          } : message.type === 'warning' ? {
+            backgroundColor: '#FEF3C7', color: '#C48A2A', borderColor: '#FDE68A'
+          } : {
+            backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0'
           })
         }}>
           {message.text}
         </div>
       )}
 
-      {/* FILTROS POR RAMA - RESPONSIVE */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: `repeat(auto-fit, minmax(60px, 1fr))`, 
-        gap: '6px', 
+      {/* FILTROS POR RAMA */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(auto-fit, minmax(60px, 1fr))`,
+        gap: '6px',
         marginBottom: '16px',
         width: '100%'
       }}>
@@ -630,12 +693,12 @@ export default function Pagos() {
           }
 
           return (
-            <div 
+            <div
               key={rama}
-              style={{ 
+              style={{
                 backgroundColor: isActive ? '#24352A' : 'white',
-                borderRadius: '8px', 
-                padding: '8px 4px', 
+                borderRadius: '8px',
+                padding: '8px 4px',
                 border: '2px solid #D1C9B4',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
@@ -659,11 +722,11 @@ export default function Pagos() {
                 }
               }}
             >
-              <p style={{ 
-                fontFamily: 'Oswald, sans-serif', 
-                fontWeight: '700', 
-                fontSize: 'clamp(10px, 2vw, 15px)', 
-                color: isActive ? 'white' : '#24352A', 
+              <p style={{
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: '700',
+                fontSize: 'clamp(10px, 2vw, 15px)',
+                color: isActive ? 'white' : '#24352A',
                 margin: 0,
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -966,7 +1029,7 @@ export default function Pagos() {
         </div>
       )}
 
-      {/* FILTROS ADICIONALES */}
+      {/* FILTRO BENEFICIARIO */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <select
           value={filterBeneficiario}
@@ -1013,7 +1076,7 @@ export default function Pagos() {
         )}
       </div>
 
-      {/* TABLA DE PAGOS - CON SCROLL HORIZONTAL */}
+      {/* TABLA DE PAGOS */}
       <div style={{
         backgroundColor: 'white',
         borderRadius: '12px',
@@ -1030,27 +1093,27 @@ export default function Pagos() {
           <thead style={{ backgroundColor: '#24352A' }}>
             <tr>
               <th style={{ padding: '8px 8px', textAlign: 'center', color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '70px', borderRight: '1px solid rgba(255,255,255,0.1)' }}>Acciones</th>
-              
+
               <th onClick={() => handleSort('recibo')} style={{ padding: '8px 8px', textAlign: 'left', color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)', textTransform: 'uppercase', letterSpacing: '0.5px', borderRight: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', userSelect: 'none' }}>
                 Recibo {getSortIcon('recibo')}
               </th>
-              
+
               <th onClick={() => handleSort('beneficiario')} style={{ padding: '8px 8px', textAlign: 'left', color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)', textTransform: 'uppercase', letterSpacing: '0.5px', borderRight: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', userSelect: 'none' }}>
                 Beneficiario {getSortIcon('beneficiario')}
               </th>
-              
+
               <th onClick={() => handleSort('monto')} style={{ padding: '8px 8px', textAlign: 'right', color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)', textTransform: 'uppercase', letterSpacing: '0.5px', borderRight: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', userSelect: 'none' }}>
                 Monto {getSortIcon('monto')}
               </th>
-              
+
               <th onClick={() => handleSort('fecha')} style={{ padding: '8px 8px', textAlign: 'left', color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)', textTransform: 'uppercase', letterSpacing: '0.5px', borderRight: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', userSelect: 'none' }}>
                 Fecha {getSortIcon('fecha')}
               </th>
-              
+
               <th onClick={() => handleSort('categoria')} style={{ padding: '8px 8px', textAlign: 'left', color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)', textTransform: 'uppercase', letterSpacing: '0.5px', borderRight: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', userSelect: 'none' }}>
                 Categoría {getSortIcon('categoria')}
               </th>
-              
+
               <th onClick={() => handleSort('observaciones')} style={{ padding: '8px 8px', textAlign: 'left', color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)', textTransform: 'uppercase', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' }}>
                 Observaciones {getSortIcon('observaciones')}
               </th>
@@ -1065,8 +1128,8 @@ export default function Pagos() {
               )
 
               return (
-                <tr 
-                  key={pago.id} 
+                <tr
+                  key={pago.id}
                   style={{ borderBottom: '1px solid #E8DEC4', cursor: 'pointer', transition: 'background-color 0.2s' }}
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F3ECD8'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -1168,6 +1231,32 @@ export default function Pagos() {
         </div>
       )}
 
+      {/* ✅ BOTÓN "VER MÁS" */}
+      {hayMas && pagosFiltrados.length > 0 && (
+        <div style={{ textAlign: 'center', marginTop: '16px' }}>
+          <button
+            onClick={cargarMas}
+            disabled={cargandoMas}
+            style={{
+              padding: '10px 24px',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              backgroundColor: 'transparent',
+              border: '2px solid #24352A',
+              borderRadius: '8px',
+              color: '#24352A',
+              fontFamily: 'Oswald, sans-serif',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              cursor: cargandoMas ? 'wait' : 'pointer',
+              fontWeight: 600,
+              opacity: cargandoMas ? 0.5 : 1
+            }}
+          >
+            {cargandoMas ? 'Cargando...' : `⬇️ Ver más (${limite} de ${hayMas ? limite + PAGE_SIZE : limite})`}
+          </button>
+        </div>
+      )}
+
       {/* MODAL DE DETALLE DEL PAGO */}
       {selectedPago && (
         <div style={{
@@ -1194,7 +1283,7 @@ export default function Pagos() {
             overflow: 'auto',
             boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
           }} onClick={(e) => e.stopPropagation()}>
-            
+
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',

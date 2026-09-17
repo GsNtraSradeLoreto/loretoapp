@@ -2408,7 +2408,7 @@ export default function BeneficiarioDetalle() {
         }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <div style={{
-              width: '120px', height: '120px', borderRadius: '12px', overflow: 'hidden',
+              width: '200px', height: '200px', borderRadius: '12px', overflow: 'hidden',
               backgroundColor: '#F3ECD8', border: '3px solid #D1C9B4', flexShrink: 0
             }}>
               <img
