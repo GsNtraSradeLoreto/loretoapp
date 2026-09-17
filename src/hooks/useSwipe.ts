@@ -17,6 +17,42 @@ interface UseSwipeOptions {
   onDragEnd?: () => void
 }
 
+/**
+ * Encuentra el contenedor con scroll horizontal más cercano (si existe)
+ */
+const encontrarScrollHorizontal = (el: HTMLElement | null): HTMLElement | null => {
+  let actual: HTMLElement | null = el
+  while (actual && actual !== document.body) {
+    const estilo = window.getComputedStyle(actual)
+    const overflowX = estilo.overflowX
+    if (
+      (overflowX === 'auto' || overflowX === 'scroll') &&
+      actual.scrollWidth > actual.clientWidth
+    ) {
+      return actual
+    }
+    actual = actual.parentElement
+  }
+  return null
+}
+
+/**
+ * Devuelve true si el contenedor todavía puede scrollear en la dirección dada.
+ * direccion: -1 = deslizar hacia la izquierda (contenido se mueve a la izq)
+ *             1 = deslizar hacia la derecha
+ */
+const puedeScrollearEnDireccion = (el: HTMLElement, direccion: number): boolean => {
+  const maxScroll = el.scrollWidth - el.clientWidth
+  if (maxScroll <= 1) return false // no tiene scroll
+  if (direccion < 0) {
+    // deslizar hacia la izquierda → el contenido se mueve hacia la izquierda → aumentamos scrollLeft
+    return el.scrollLeft < maxScroll - 1
+  } else {
+    // deslizar hacia la derecha → volvemos al inicio → reducimos scrollLeft
+    return el.scrollLeft > 1
+  }
+}
+
 export function useSwipe({
   onSwipeLeft,
   onSwipeRight,
@@ -31,17 +67,18 @@ export function useSwipe({
   const touchStartY = useRef(0)
   const touchStartTime = useRef(0)
   const isTracking = useRef(false)
+  const scrollContainer = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (!enabled) return
 
-    // Solo activar en dispositivos táctiles (celulares/tablets)
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
     if (!isTouchDevice) return
 
     const handleTouchStart = (e: TouchEvent) => {
-      // Ignorar si el toque es en inputs, textareas, selects o botones
       const target = e.target as HTMLElement
+
+      // Ignorar si toca inputs, botones, links, selects
       if (
         target.closest('input, textarea, select, button, a') ||
         target.closest('[data-no-swipe]')
@@ -53,10 +90,13 @@ export function useSwipe({
       const screenWidth = window.innerWidth
       const x = touch.clientX
 
-      // Ignorar si toca muy cerca de los bordes (para no chocar con gestos del navegador)
+      // Ignorar si toca muy cerca de los bordes
       if (x < edgeBuffer || x > screenWidth - edgeBuffer) {
         return
       }
+
+      // ✅ Detectar si está dentro de un contenedor con scroll horizontal
+      scrollContainer.current = encontrarScrollHorizontal(target)
 
       touchStartX.current = x
       touchStartY.current = touch.clientY
@@ -71,21 +111,30 @@ export function useSwipe({
       const deltaX = touch.clientX - touchStartX.current
       const deltaY = touch.clientY - touchStartY.current
 
-      // Si el movimiento vertical es mayor, cancelamos (es un scroll)
+      // Si el movimiento vertical es mayor → cancelar
       if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 20) {
         isTracking.current = false
+        scrollContainer.current = null
         if (onDragEnd) onDragEnd()
         return
       }
 
-      // Si el movimiento vertical es muy grande, cancelamos
       if (Math.abs(deltaY) > maxVerticalMovement) {
         isTracking.current = false
+        scrollContainer.current = null
         if (onDragEnd) onDragEnd()
         return
       }
 
-      // Llamamos al callback de drag para la animación
+      // ✅ Si hay un contenedor con scroll y todavía puede scrollear en esa dirección,
+      // NO aplicamos el drag visual (dejamos que el navegador scrollee la tabla)
+      if (scrollContainer.current && Math.abs(deltaX) > 8) {
+        const direccion = deltaX < 0 ? -1 : 1
+        if (puedeScrollearEnDireccion(scrollContainer.current, direccion)) {
+          return
+        }
+      }
+
       if (onDrag) {
         onDrag(deltaX)
       }
@@ -93,6 +142,7 @@ export function useSwipe({
 
     const handleTouchEnd = (e: TouchEvent) => {
       if (!isTracking.current) {
+        scrollContainer.current = null
         if (onDragEnd) onDragEnd()
         return
       }
@@ -104,22 +154,28 @@ export function useSwipe({
 
       isTracking.current = false
 
-      // Verificaciones finales
       const cumpleHorizontal = Math.abs(deltaX) > threshold
       const cumpleVertical = Math.abs(deltaY) < maxVerticalMovement
-      const cumpleTiempo = deltaTime < 600 // no más de 600ms
+      const cumpleTiempo = deltaTime < 1000
 
-      if (cumpleHorizontal && cumpleVertical && cumpleTiempo) {
+      // ✅ Si hay un contenedor con scroll y todavía puede scrollear → NO cambiar de página
+      let debeBloquearSwipe = false
+      if (scrollContainer.current && cumpleHorizontal) {
+        const direccion = deltaX < 0 ? -1 : 1
+        if (puedeScrollearEnDireccion(scrollContainer.current, direccion)) {
+          debeBloquearSwipe = true
+        }
+      }
+
+      if (cumpleHorizontal && cumpleVertical && cumpleTiempo && !debeBloquearSwipe) {
         if (deltaX < 0 && onSwipeLeft) {
-          // Deslizó hacia la izquierda → siguiente
           onSwipeLeft()
         } else if (deltaX > 0 && onSwipeRight) {
-          // Deslizó hacia la derecha → anterior
           onSwipeRight()
         }
       }
 
-      // Resetear animación
+      scrollContainer.current = null
       if (onDragEnd) onDragEnd()
     }
 

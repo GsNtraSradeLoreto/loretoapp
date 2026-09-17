@@ -2310,7 +2310,7 @@ export default function BeneficiarioDetalle() {
   useSwipe({
     onSwipeLeft: handleSwipeLeft,
     onSwipeRight: handleSwipeRight,
-    threshold: 60,
+    threshold: 100,
     onDrag: handleDrag,
     onDragEnd: handleDragEnd
   })

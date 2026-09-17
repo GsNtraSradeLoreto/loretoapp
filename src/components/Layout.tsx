@@ -92,7 +92,7 @@ export default function Layout({ children }: LayoutProps) {
   useSwipe({
     onSwipeLeft: handleSwipeLeft,
     onSwipeRight: handleSwipeRight,
-    threshold: 60,
+    threshold: 100,
     onDrag: handleDrag,
     onDragEnd: handleDragEnd,
     enabled: swipeHabilitado
