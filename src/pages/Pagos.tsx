@@ -63,7 +63,7 @@ export default function Pagos() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
 
   // ✅ Paginación
-  const [limite, setLimite] = useState(PAGE_SIZE)
+  const [pagina, setPagina] = useState(1)
   const [hayMas, setHayMas] = useState(false)
   const [cargandoMas, setCargandoMas] = useState(false)
 
@@ -99,16 +99,22 @@ export default function Pagos() {
   const mediosPago = ['Efectivo', 'Mercadopago']
 
   useEffect(() => {
-    loadData()
+    loadBeneficiarios()
   }, [])
 
-  // ✅ Cargar solo los primeros N pagos (por fecha de carga descendente)
-  const loadData = async () => {
+  // ✅ Se recarga cuando cambian los filtros (rama/beneficiario)
+  useEffect(() => {
+    if (!loading) {
+      cargarPagos(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterRama, filterBeneficiario])
+
+  // ✅ Carga inicial: beneficiarios + primeros 20 pagos
+  const loadBeneficiarios = async () => {
     try {
       setLoading(true)
-      setLimite(PAGE_SIZE)
 
-      // 1) Beneficiarios
       let beneficiariosQuery = supabase
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, tiene_hermanos, estado')
@@ -132,63 +138,29 @@ export default function Pagos() {
 
       setBeneficiarios(beneficiariosOrdenados)
 
-      // 2) Pagos (últimos PAGE_SIZE por fecha_pago descendente)
-      let query = supabase
-        .from('pagos')
-        .select(`
-          *,
-          beneficiarios (
-            nombre,
-            apellido,
-            tiene_hermanos,
-            estado
-          )
-        `)
-        .order('fecha_pago', { ascending: false })
-        .order('id', { ascending: false })
-        .limit(PAGE_SIZE)
-
-      if (esDirigente && ramaAsignada) {
-        query = query.eq('rama', ramaAsignada)
-        setFilterRama(ramaAsignada)
-      }
-
-      const { data: pagosData, error: pagosError } = await query
-
-      if (pagosError) throw pagosError
-
-      let pagosFiltrados = pagosData || []
-      if (!esSuperAdmin) {
-        pagosFiltrados = pagosFiltrados.filter((pago: any) =>
-          pago.beneficiarios?.estado === 'activo'
-        )
-      }
-
-      const pagosConNombres = pagosFiltrados.map((pago: any) => ({
-        ...pago,
-        beneficiario_nombre: pago.beneficiarios?.nombre || '',
-        beneficiario_apellido: pago.beneficiarios?.apellido || '',
-        beneficiario_tiene_hermanos: pago.beneficiarios?.tiene_hermanos || false,
-        beneficiario_estado: pago.beneficiarios?.estado || '',
-        reciboNumero: pago.recibo ? parseInt(pago.recibo.replace(/^[A-Z]-/, '')) : 0
-      }))
-
-      setPagos(pagosConNombres)
-      setHayMas(pagosData && pagosData.length === PAGE_SIZE)
+      // Después de cargar beneficiarios, cargamos la primera página de pagos
+      await cargarPagos(true)
 
     } catch (error) {
       console.error('Error:', error)
       setMessage({ text: '❌ Error al cargar los datos', type: 'error' })
-    } finally {
       setLoading(false)
     }
   }
 
-  // ✅ Cargar más pagos (suma PAGE_SIZE al límite)
-  const cargarMas = async () => {
+  // ✅ Carga pagos con filtros aplicados server-side
+  const cargarPagos = async (reset: boolean) => {
     try {
-      setCargandoMas(true)
-      const nuevoLimite = limite + PAGE_SIZE
+      if (reset) {
+        setLoading(true)
+        setPagina(1)
+      } else {
+        setCargandoMas(true)
+      }
+
+      const paginaActual = reset ? 1 : pagina + 1
+      const desde = (paginaActual - 1) * PAGE_SIZE
+      const hasta = desde + PAGE_SIZE - 1
 
       let query = supabase
         .from('pagos')
@@ -203,8 +175,19 @@ export default function Pagos() {
         `)
         .order('fecha_pago', { ascending: false })
         .order('id', { ascending: false })
-        .limit(nuevoLimite)
+        .range(desde, hasta)
 
+      // ✅ Filtro por rama (server-side)
+      if (filterRama !== 'Todas') {
+        query = query.eq('rama', filterRama)
+      }
+
+      // ✅ Filtro por beneficiario (server-side)
+      if (filterBeneficiario) {
+        query = query.eq('beneficiario_id', filterBeneficiario)
+      }
+
+      // Si es Jefe de Rama, mostrar solo su rama
       if (esDirigente && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
       }
@@ -229,15 +212,27 @@ export default function Pagos() {
         reciboNumero: pago.recibo ? parseInt(pago.recibo.replace(/^[A-Z]-/, '')) : 0
       }))
 
-      setPagos(pagosConNombres)
-      setLimite(nuevoLimite)
-      setHayMas(pagosData && pagosData.length === nuevoLimite)
+      if (reset) {
+        setPagos(pagosConNombres)
+        setPagina(1)
+      } else {
+        setPagos(prev => [...prev, ...pagosConNombres])
+        setPagina(paginaActual)
+      }
+
+      setHayMas(pagosData && pagosData.length === PAGE_SIZE)
+
     } catch (error) {
-      console.error('Error al cargar más:', error)
-      setMessage({ text: '❌ Error al cargar más pagos', type: 'error' })
+      console.error('Error:', error)
+      setMessage({ text: '❌ Error al cargar los pagos', type: 'error' })
     } finally {
+      setLoading(false)
       setCargandoMas(false)
     }
+  }
+
+  const cargarMas = () => {
+    cargarPagos(false)
   }
 
   const generarProximoRecibo = async (beneficiarioId: string): Promise<string> => {
@@ -428,7 +423,7 @@ export default function Pagos() {
       }
 
       resetForm()
-      loadData()
+      cargarPagos(true)
 
     } catch (error) {
       console.error('Error:', error)
@@ -468,7 +463,7 @@ export default function Pagos() {
 
       if (error) throw error
       setMessage({ text: '✅ Pago eliminado correctamente', type: 'success' })
-      loadData()
+      cargarPagos(true)
       setSelectedPago(null)
     } catch (error) {
       console.error('Error:', error)
@@ -540,13 +535,8 @@ export default function Pagos() {
     return sortDirection === 'asc' ? ' ▲' : ' ▼'
   }
 
-  const pagosFiltrados = pagos.filter(pago => {
-    if (filterRama !== 'Todas' && pago.rama !== filterRama) return false
-    if (filterBeneficiario && pago.beneficiario_id !== filterBeneficiario) return false
-    return true
-  })
-
-  const pagosOrdenados = [...pagosFiltrados].sort((a, b) => {
+  // ✅ Ya no filtramos en el frontend: los filtros se aplican en la query
+  const pagosOrdenados = [...pagos].sort((a, b) => {
     let valorA: any
     let valorB: any
 
@@ -615,9 +605,9 @@ export default function Pagos() {
       return a.apellido.localeCompare(b.apellido)
     })
 
-  const totalMonto = pagosFiltrados.reduce((sum, p) => sum + p.monto, 0)
+  const totalMonto = pagos.reduce((sum, p) => sum + p.monto, 0)
 
-  if (loading) {
+  if (loading && pagos.length === 0) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
         <span style={{ fontFamily: 'Oswald, sans-serif', color: '#7A7364' }}>Cargando pagos...</span>
@@ -648,7 +638,7 @@ export default function Pagos() {
           letterSpacing: '0.5px',
           margin: 0
         }}>
-          {pagosFiltrados.length} pagos • Total: ${totalMonto.toLocaleString()}
+          {pagos.length} pagos • Total visible: ${totalMonto.toLocaleString()}
         </p>
       </div>
 
@@ -672,10 +662,10 @@ export default function Pagos() {
         </div>
       )}
 
-      {/* FILTROS POR RAMA */}
+      {/* FILTROS POR RAMA - GRILLA 2x2 + TODOS arriba */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(auto-fit, minmax(60px, 1fr))`,
+        gridTemplateColumns: '1fr 1fr',
         gap: '6px',
         marginBottom: '16px',
         width: '100%'
@@ -706,7 +696,8 @@ export default function Pagos() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                minHeight: '40px'
+                minHeight: '40px',
+                gridColumn: esTodas ? '1 / -1' : 'auto'
               }}
               onClick={() => handleFilterByRama(rama)}
               onMouseEnter={(e) => {
@@ -1217,7 +1208,7 @@ export default function Pagos() {
         </table>
       </div>
 
-      {pagosOrdenados.length === 0 && (
+      {pagosOrdenados.length === 0 && !loading && (
         <div style={{
           textAlign: 'center',
           padding: '32px 0',
@@ -1232,7 +1223,7 @@ export default function Pagos() {
       )}
 
       {/* ✅ BOTÓN "VER MÁS" */}
-      {hayMas && pagosFiltrados.length > 0 && (
+      {hayMas && pagosOrdenados.length > 0 && (
         <div style={{ textAlign: 'center', marginTop: '16px' }}>
           <button
             onClick={cargarMas}
@@ -1252,7 +1243,7 @@ export default function Pagos() {
               opacity: cargandoMas ? 0.5 : 1
             }}
           >
-            {cargandoMas ? 'Cargando...' : `⬇️ Ver más (${limite} de ${hayMas ? limite + PAGE_SIZE : limite})`}
+            {cargandoMas ? 'Cargando...' : '⬇️ Ver más'}
           </button>
         </div>
       )}

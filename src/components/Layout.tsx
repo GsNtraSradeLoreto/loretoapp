@@ -159,7 +159,7 @@ export default function Layout({ children }: LayoutProps) {
         <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' }}>
 
-                       <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+             <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
               <img
                 src="/logo-grupo.png"
                 alt="LoretApp"
@@ -167,21 +167,21 @@ export default function Layout({ children }: LayoutProps) {
                   height: esCelular ? '36px' : '42px',
                   width: esCelular ? '36px' : '42px',
                   objectFit: 'contain',
-                  borderRadius: '8px'
+                  borderRadius: '8px',
+                  flexShrink: 0
                 }}
               />
-              {!esCelular && (
-                <span style={{
-                  fontSize: '20px',
-                  fontWeight: '700',
-                  color: '#F3ECD8',
-                  letterSpacing: '1px',
-                  textTransform: 'uppercase',
-                  fontFamily: 'Oswald, sans-serif'
-                }}>
-                  LoretApp
-                </span>
-              )}
+              <span style={{
+                fontSize: esCelular ? '16px' : '20px',
+                fontWeight: '700',
+                color: '#F3ECD8',
+                letterSpacing: '1px',
+                textTransform: 'uppercase',
+                fontFamily: 'Oswald, sans-serif',
+                whiteSpace: 'nowrap'
+              }}>
+                LoretApp
+              </span>
             </Link>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
