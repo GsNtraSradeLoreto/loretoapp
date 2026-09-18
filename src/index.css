@@ -99,3 +99,9 @@ body {
 .bottom-nav-link:active {
   transform: scale(0.92);
 }
+/* Ocultar el texto "Editar" del botón en celular, dejar solo el lápiz */
+@media (max-width: 640px) {
+  .btn-text-editar {
+    display: none;
+  }
+}

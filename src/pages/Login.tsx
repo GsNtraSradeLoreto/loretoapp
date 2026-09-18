@@ -187,8 +187,8 @@ export default function Login() {
         padding: '32px',
         maxWidth: '420px',
         width: '100%',
-        border: '2px solid #D1C9B4',
-        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)'
+        border: '3px solid #BF4E30',
+boxShadow: '0 0 0 3px #111111, 0 10px 25px -5px rgba(0,0,0,0.1)'
       }}>
         {/* Logo y título */}
 <div style={{ textAlign: 'center', marginBottom: '20px' }}>

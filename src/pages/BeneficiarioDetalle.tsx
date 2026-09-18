@@ -352,8 +352,7 @@ const ElementoSelector = ({
             : '#7A7364',
         fontWeight: valor ? '600' : '400',
         cursor: (disabled || bloqueadoPorFaltaDeFecha) ? 'not-allowed' : 'pointer',
-        width: '100%',
-        maxWidth: '180px',
+        minWidth: '130px',
         opacity: bloqueadoPorFaltaDeFecha ? 0.7 : 1
       }}
       title={bloqueadoPorFaltaDeFecha ? 'Primero cargá la fecha de esta etapa' : ''}
@@ -396,6 +395,67 @@ const ElementoBadge = ({ elemento }: { elemento: string }) => {
   )
 }
 
+// =============================================
+// CONSTANTES DE DISEÑO
+// =============================================
+
+const COL = {
+  fondo: '#F5F1E8',
+  verdeScout: '#24352A',
+  terracota: '#BF4E30',
+  verdeClaro: '#5C7A5E',
+  dorado: '#C48A2A',
+  textoPrincipal: '#24352A',
+  textoSecundario: '#7A7364',
+  bordeSuave: '#E8DEC4'
+}
+
+// Componente reutilizable: Sección (card con título)
+const Seccion = ({
+  icono,
+  titulo,
+  accion,
+  children,
+  color = COL.verdeScout
+}: {
+  icono?: string,
+  titulo: string,
+  accion?: React.ReactNode,
+  children: React.ReactNode,
+  color?: string
+}) => (
+  <div style={{
+    backgroundColor: '#FFFFFF',
+    border: `2px solid ${COL.bordeSuave}`,
+    borderRadius: '16px',
+    padding: '16px',
+    marginBottom: '16px',
+    fontFamily: 'Oswald, sans-serif'
+  }}>
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '10px',
+      paddingBottom: '10px',
+      marginBottom: '14px',
+      borderBottom: `2px dashed ${COL.bordeSuave}`,
+      flexWrap: 'wrap'
+    }}>
+      <div style={{
+        fontSize: 'clamp(14px, 3.5vw, 17px)',
+        fontWeight: '700',
+        color: color,
+        textTransform: 'uppercase',
+        letterSpacing: '1px'
+      }}>
+        {icono && `${icono} `}{titulo}
+      </div>
+      {accion}
+    </div>
+    {children}
+  </div>
+)
 export default function BeneficiarioDetalle() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -411,7 +471,6 @@ export default function BeneficiarioDetalle() {
   const [pagos, setPagos] = useState<Pago[]>([])
   const [campamentos, setCampamentos] = useState<Campamento[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('info')
   const [showEditModal, setShowEditModal] = useState(false)
   const [showInfoEditModal, setShowInfoEditModal] = useState(false)
   const [showPhotoModal, setShowPhotoModal] = useState(false)
@@ -424,6 +483,10 @@ export default function BeneficiarioDetalle() {
   const [saving, setSaving] = useState(false)
   const [showHistorialEditModal, setShowHistorialEditModal] = useState(false)
   const [editHistorialLoading, setEditHistorialLoading] = useState(false)
+
+  // NUEVO: controles de UI
+  const [verTodosPagos, setVerTodosPagos] = useState(false)
+  const [legajoAbierto, setLegajoAbierto] = useState(false)
 
   const [showCampamentoModal, setShowCampamentoModal] = useState(false)
   const [campamentosDisponibles, setCampamentosDisponibles] = useState<Campamento[]>([])
@@ -526,13 +589,15 @@ export default function BeneficiarioDetalle() {
     }
   }, [id, todosLosIds])
 
-  // Resetear refs cuando cambia el ID
+  // Reset refs cuando cambia el ID
   useEffect(() => {
     cargandoLegajoRef.current = false
     campamentosCargadosRef.current = false
     setLegajo(null)
     setLegajoForm(null)
     setCampamentos([])
+    setVerTodosPagos(false)
+    setLegajoAbierto(false)
   }, [id])
 
   const cargarListaIds = async () => {
@@ -689,17 +754,12 @@ export default function BeneficiarioDetalle() {
     }
   }, [beneficiario])
 
+  // Cargar legajo cuando se abre el colapsable
   useEffect(() => {
-    if (activeTab === 'legajo' && beneficiario) {
+    if (legajoAbierto && beneficiario) {
       cargarLegajo()
     }
-  }, [activeTab, beneficiario, cargarLegajo])
-
-  useEffect(() => {
-    if (activeTab === 'campamentos' && beneficiario) {
-      cargarCampamentos()
-    }
-  }, [activeTab, beneficiario])
+  }, [legajoAbierto, beneficiario, cargarLegajo])
 
   // =============================================
   // SUSCRIPCIÓN REALTIME LEGAJO
@@ -795,14 +855,10 @@ export default function BeneficiarioDetalle() {
     }
   }
 
+  // =============================================
+  // RENDER LEGAJO (TARJETAS COMPACTAS - Opción A)
+  // =============================================
   const renderLegajo = () => {
-    const puedeVer = (): boolean => {
-      if (!beneficiario) return false
-      if (esSuperAdmin || esJefatura) return true
-      if (esJefe && ramaAsignada === beneficiario.rama) return true
-      return true
-    }
-
     const puedeEditar = (): boolean => {
       if (!beneficiario) return false
       if (esSuperAdmin || esJefatura) return true
@@ -810,26 +866,10 @@ export default function BeneficiarioDetalle() {
       return false
     }
 
-    if (!puedeVer()) {
-      return (
-        <div style={{ textAlign: 'center', padding: '48px 0', color: '#BF4E30', fontFamily: 'Oswald, sans-serif' }}>
-          ⚠️ No tenés permisos para ver el legajo de este beneficiario
-        </div>
-      )
-    }
-
     if (cargandoLegajo) {
       return (
-        <div style={{ textAlign: 'center', padding: '24px 0', color: '#7A7364' }}>
+        <div style={{ textAlign: 'center', padding: '24px 0', color: COL.textoSecundario }}>
           Cargando legajo...
-        </div>
-      )
-    }
-
-    if (!legajo && !legajoForm && !cargandoLegajo) {
-      return (
-        <div style={{ textAlign: 'center', padding: '24px 0', color: '#7A7364' }}>
-          No hay datos de legajo
         </div>
       )
     }
@@ -843,8 +883,8 @@ export default function BeneficiarioDetalle() {
       { key: 'ficha_datos_personales', label: '📋 Ficha de Datos Personales', obsKey: 'ficha_datos_personales_obs' },
       { key: 'ficha_seguimiento', label: '📈 Ficha de Seguimiento', obsKey: 'ficha_seguimiento_obs' },
       { key: 'autorizacion_ingreso', label: '📄 Autorización Ingreso', obsKey: 'autorizacion_ingreso_obs' },
-      { key: 'salidas_cercanas', label: '🚶 Salidas Cercanas (anual)', obsKey: 'salidas_cercanas_obs', fechaKey: 'salidas_cercanas_fecha' },
-      { key: 'uso_imagen', label: '📸 Uso de Imagen (anual)', obsKey: 'uso_imagen_obs', fechaKey: 'uso_imagen_fecha' },
+      { key: 'salidas_cercanas', label: '🚶 Salidas Cercanas', obsKey: 'salidas_cercanas_obs', fechaKey: 'salidas_cercanas_fecha' },
+      { key: 'uso_imagen', label: '📸 Uso de Imagen', obsKey: 'uso_imagen_obs', fechaKey: 'uso_imagen_fecha' },
       { key: 'declaracion_jurada_salud', label: '🏥 Declaración Jurada de Salud', obsKey: 'declaracion_jurada_salud_obs' },
       { key: 'autorizacion_retirarse', label: '🚪 Autorización retirarse solos', obsKey: 'autorizacion_retirarse_obs' },
       { key: 'fotocopia_dni_beneficiario', label: '🪪 Fotocopia DNI Beneficiario', obsKey: 'fotocopia_dni_beneficiario_obs' },
@@ -871,53 +911,48 @@ export default function BeneficiarioDetalle() {
 
     return (
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 style={{ fontFamily: 'Oswald, sans-serif', fontSize: '16px', color: '#24352A', margin: 0 }}>
-            📁 Legajo Scout
-          </h3>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {editandoLegajo && (
-              <button
-                onClick={() => {
-                  setEditandoLegajo(false)
-                  setLegajoForm(legajo)
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '12px' }}>
+          {editandoLegajo && (
+            <button
+              onClick={() => {
+                setEditandoLegajo(false)
+                setLegajoForm(legajo)
+                setMessage({ text: '', type: '' })
+              }}
+              disabled={saving}
+              style={{
+                backgroundColor: '#E8DEC4', color: '#24352A', padding: '6px 14px',
+                borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px',
+                fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                letterSpacing: '0.5px', opacity: saving ? 0.5 : 1
+              }}
+            >
+              Cancelar
+            </button>
+          )}
+          {puedeEditarLegajo && (
+            <button
+              onClick={() => {
+                if (editandoLegajo) {
+                  handleGuardarLegajo()
+                } else {
+                  setEditandoLegajo(true)
+                  setLegajoForm(legajo ? { ...legajo } : null)
                   setMessage({ text: '', type: '' })
-                }}
-                disabled={saving}
-                style={{
-                  backgroundColor: '#E8DEC4', color: '#24352A', padding: '6px 14px',
-                  borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px',
-                  fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                  letterSpacing: '0.5px', opacity: saving ? 0.5 : 1
-                }}
-              >
-                Cancelar
-              </button>
-            )}
-            {puedeEditarLegajo && (
-              <button
-                onClick={() => {
-                  if (editandoLegajo) {
-                    handleGuardarLegajo()
-                  } else {
-                    setEditandoLegajo(true)
-                    setLegajoForm(legajo ? { ...legajo } : null)
-                    setMessage({ text: '', type: '' })
-                  }
-                }}
-                disabled={saving}
-                style={{
-                  backgroundColor: editandoLegajo ? '#5C7A5E' : '#BF4E30',
-                  color: 'white', padding: '6px 14px', borderRadius: '6px',
-                  border: 'none', cursor: 'pointer', fontSize: '12px',
-                  fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                  letterSpacing: '0.5px', opacity: saving ? 0.5 : 1
-                }}
-              >
-                {editandoLegajo ? (saving ? 'Guardando...' : '💾 Guardar') : '✏️ Editar Legajo'}
-              </button>
-            )}
-          </div>
+                }
+              }}
+              disabled={saving}
+              style={{
+                backgroundColor: editandoLegajo ? '#5C7A5E' : '#BF4E30',
+                color: 'white', padding: '6px 14px', borderRadius: '6px',
+                border: 'none', cursor: 'pointer', fontSize: '12px',
+                fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                letterSpacing: '0.5px', opacity: saving ? 0.5 : 1
+              }}
+            >
+              {editandoLegajo ? (saving ? 'Guardando...' : '💾 Guardar') : '✏️ Editar Legajo'}
+            </button>
+          )}
         </div>
 
         {message.text && message.type !== 'error' && (
@@ -930,104 +965,121 @@ export default function BeneficiarioDetalle() {
           </div>
         )}
 
-        <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '2px solid #D1C9B4', overflow: 'hidden' }}>
-          <div style={{ overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'Oswald, sans-serif', fontSize: '13px' }}>
-              <thead style={{ backgroundColor: '#24352A' }}>
-                <tr>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', color: '#F3ECD8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '35%' }}>Documento</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'center', color: '#F3ECD8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '10%' }}>Estado</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', color: '#F3ECD8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '25%' }}>Observaciones</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'center', color: '#F3ECD8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '15%' }}>Fecha</th>
-                </tr>
-              </thead>
-              <tbody>
-                {campos.map((campo, index) => {
-                  const valor = data[campo.key as keyof typeof data] as boolean || false
-                  const obs = data[campo.obsKey as keyof typeof data] as string || ''
-                  const fecha = campo.fechaKey ? (data[campo.fechaKey as keyof typeof data] as string || '') : ''
-                  const esEditable = editandoLegajo && puedeEditarLegajo
+        {/* TARJETAS COMPACTAS */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {campos.map((campo) => {
+            const valor = data[campo.key as keyof typeof data] as boolean || false
+            const obs = data[campo.obsKey as keyof typeof data] as string || ''
+            const fecha = campo.fechaKey ? (data[campo.fechaKey as keyof typeof data] as string || '') : ''
+            const esEditable = editandoLegajo && puedeEditarLegajo
 
-                  return (
-                    <tr key={campo.key} style={{
-                      borderBottom: index === campos.length - 1 ? 'none' : '1px solid #E8DEC4',
-                      backgroundColor: index % 2 === 0 ? 'white' : '#FAF8F4'
+            return (
+              <div
+                key={campo.key}
+                style={{
+                  backgroundColor: valor ? '#F0F7F0' : '#FFFFFF',
+                  border: `2px solid ${valor ? '#B8D4B8' : '#E8DEC4'}`,
+                  borderRadius: '10px',
+                  padding: '10px 12px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {esEditable ? (
+                    <input
+                      type="checkbox"
+                      checked={valor}
+                      onChange={(e) => handleCheckChange(campo.key, e.target.checked)}
+                      disabled={saving}
+                      style={{ width: '22px', height: '22px', cursor: 'pointer', accentColor: COL.verdeScout, flexShrink: 0 }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '20px', flexShrink: 0 }}>
+                      {valor ? '✅' : '❌'}
+                    </span>
+                  )}
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: 'Oswald, sans-serif',
+                      fontSize: 'clamp(12px, 3vw, 14px)',
+                      fontWeight: '600',
+                      color: COL.textoPrincipal,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px'
                     }}>
-                      <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A' }}>{campo.label}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                        {esEditable ? (
-                          <input
-                            type="checkbox"
-                            checked={valor}
-                            onChange={(e) => handleCheckChange(campo.key, e.target.checked)}
-                            disabled={saving}
-                            style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#24352A' }}
-                          />
-                        ) : (
-                          <span style={{
-                            display: 'inline-block', padding: '2px 10px', borderRadius: '12px',
-                            fontSize: '11px', fontWeight: '500', textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            backgroundColor: valor ? '#D1FAE5' : '#FEE2E2',
-                            color: valor ? '#5C7A5E' : '#BF4E30'
-                          }}>
-                            {valor ? '✅ OK' : '❌ Falta'}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        {esEditable ? (
-                          <input
-                            type="text"
-                            value={obs}
-                            onChange={(e) => handleObsChange(campo.obsKey, e.target.value)}
-                            placeholder="Observaciones..."
-                            style={{
-                              width: '100%', padding: '4px 8px', fontSize: '13px',
-                              border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                              fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                            }}
-                            disabled={saving}
-                          />
-                        ) : (
-                          <span style={{ fontSize: '13px', color: '#7A7364' }}>{obs || '-'}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                        {campo.fechaKey ? (
-                          esEditable ? (
-                            <input
-                              type="date"
-                              value={fecha}
-                              onChange={(e) => handleFechaChange(campo.fechaKey!, e.target.value)}
-                              style={{
-                                width: '100%', padding: '4px 8px', fontSize: '13px',
-                                border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                                fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                              }}
-                              disabled={saving}
-                            />
-                          ) : (
-                            <span style={{ fontSize: '13px', color: '#7A7364' }}>{fecha ? formatFecha(fecha) : '-'}</span>
-                          )
-                        ) : (
-                          <span style={{ fontSize: '13px', color: '#D1C9B4' }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                      {campo.label}
+                    </div>
+                    {campo.fechaKey && fecha && (
+                      <div style={{
+                        fontFamily: 'Oswald, sans-serif',
+                        fontSize: 'clamp(10px, 2.5vw, 12px)',
+                        color: COL.textoSecundario,
+                        marginTop: '2px'
+                      }}>
+                        📅 {formatFecha(fecha)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {campo.fechaKey && esEditable && (
+                  <div style={{ marginTop: '8px' }}>
+                    <input
+                      type="date"
+                      value={fecha}
+                      onChange={(e) => handleFechaChange(campo.fechaKey!, e.target.value)}
+                      style={{
+                        width: '100%', padding: '6px 10px', fontSize: '13px',
+                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
+                        boxSizing: 'border-box'
+                      }}
+                      disabled={saving}
+                    />
+                  </div>
+                )}
+
+                {!esEditable && obs && obs.trim() !== '' && (
+                  <div style={{
+                    marginTop: '6px',
+                    fontSize: 'clamp(11px, 2.5vw, 13px)',
+                    color: COL.textoSecundario,
+                    fontFamily: 'Oswald, sans-serif',
+                    fontStyle: 'italic'
+                  }}>
+                    {obs}
+                  </div>
+                )}
+
+                {esEditable && (
+                  <div style={{ marginTop: '8px' }}>
+                    <input
+                      type="text"
+                      value={obs}
+                      onChange={(e) => handleObsChange(campo.obsKey, e.target.value)}
+                      placeholder="Observaciones..."
+                      style={{
+                        width: '100%', padding: '6px 10px', fontSize: '13px',
+                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
+                        boxSizing: 'border-box'
+                      }}
+                      disabled={saving}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
 
+        {/* Observaciones Generales */}
         <div style={{
           marginTop: '16px', backgroundColor: 'white', borderRadius: '12px',
           padding: '12px 16px', border: '2px solid #D1C9B4'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '14px', color: '#24352A', fontWeight: '600' }}>
+            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '14px', color: COL.textoPrincipal, fontWeight: '600' }}>
               📝 Observaciones Generales
             </span>
           </div>
@@ -1043,12 +1095,13 @@ export default function BeneficiarioDetalle() {
               style={{
                 width: '100%', marginTop: '8px', padding: '8px 12px', fontSize: '14px',
                 border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', resize: 'vertical'
+                fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', resize: 'vertical',
+                boxSizing: 'border-box'
               }}
               disabled={saving}
             />
           ) : (
-            <div style={{ marginTop: '8px', fontSize: '14px', color: '#7A7364', fontFamily: 'Oswald, sans-serif', padding: '4px 0' }}>
+            <div style={{ marginTop: '8px', fontSize: '14px', color: COL.textoSecundario, fontFamily: 'Oswald, sans-serif', padding: '4px 0' }}>
               {data.observaciones_generales || '-'}
             </div>
           )}
@@ -1175,8 +1228,7 @@ export default function BeneficiarioDetalle() {
             fecha_inicio: campamentoFecha,
             tipo: tipoFinal,
             ubicacion: null,
-            descripcion: null,
-            estado: 'planificado'
+            descripcion: null
           })
           .select()
           .single()
@@ -1930,360 +1982,9 @@ export default function BeneficiarioDetalle() {
 
   const promesaInfo = getPromesaInfo()
 
-  const renderProgresion = () => {
-    if (!beneficiario) return null
-    const rama = beneficiario.rama
-
-    if (rama === 'Manada' && progresionManada) {
-      return (
-        <div>
-          <div style={{ marginBottom: '12px' }}>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Progresión Actual:
-            </span>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '18px', color: '#24352A', fontWeight: '700', marginLeft: '8px' }}>
-              {progresionManada.progresion_actual || 'Sin asignar'}
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <EditableDate label="Pata Tierna" value={progresionManada.fecha_pata_tierna} onSave={(val) => updateProgresionManada('fecha_pata_tierna', val)} disabled={!canEdit()} />
-            <EditableDate label="Saltador" value={progresionManada.fecha_saltador} onSave={(val) => updateProgresionManada('fecha_saltador', val)} disabled={!canEdit()} />
-            <EditableDate label="Rastreador" value={progresionManada.fecha_rastreador} onSave={(val) => updateProgresionManada('fecha_rastreador', val)} disabled={!canEdit()} />
-            <EditableDate label="Cazador" value={progresionManada.fecha_cazador} onSave={(val) => updateProgresionManada('fecha_cazador', val)} disabled={!canEdit()} />
-          </div>
-        </div>
-      )
-    }
-
-    if (rama === 'Unidad Scout' && progresionUnidad) {
-      return (
-        <div>
-          <div style={{ marginBottom: '12px' }}>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Progresión Actual:
-            </span>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '18px', color: '#24352A', fontWeight: '700', marginLeft: '8px' }}>
-              {progresionUnidad.progresion_actual || 'Sin asignar'}
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <EditableDate label="Pista" value={progresionUnidad.fecha_pista} onSave={(val) => updateProgresionUnidad('fecha_pista', val)} disabled={!canEdit()} />
-            <EditableDate label="Senda" value={progresionUnidad.fecha_senda} onSave={(val) => updateProgresionUnidad('fecha_senda', val)} disabled={!canEdit()} />
-            <EditableDate label="Rumbo" value={progresionUnidad.fecha_rumbo} onSave={(val) => updateProgresionUnidad('fecha_rumbo', val)} disabled={!canEdit()} />
-            <EditableDate label="Travesía" value={progresionUnidad.fecha_travesia} onSave={(val) => updateProgresionUnidad('fecha_travesia', val)} disabled={!canEdit()} />
-          </div>
-        </div>
-      )
-    }
-
-    if (rama === 'Caminantes' && progresionCaminantes) {
-      const elementos = Array.isArray(progresionCaminantes.elemento_elegido)
-        ? progresionCaminantes.elemento_elegido
-        : []
-      const elementosValidos = elementos.filter(Boolean) as string[]
-      const cantidad = elementosValidos.length
-
-      const getElementoDeEtapa = (num: 1 | 2 | 3 | 4): string | null => {
-        return (elementos[num - 1] as string) || null
-      }
-
-      const getElementosUsadosExcluyendo = (num: 1 | 2 | 3 | 4): string[] => {
-        return elementosValidos.filter((_, idx) => idx !== num - 1)
-      }
-
-      return (
-        <div>
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Progresión Actual:
-            </span>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '18px', color: '#24352A', fontWeight: '700', marginLeft: '8px' }}>
-              {progresionCaminantes.progresion_actual || 'Sin asignar'}
-            </span>
-          </div>
-
-          <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Elementos:
-            </span>
-            {elementosValidos.length === 0 ? (
-              <span style={{ fontSize: '13px', color: '#A89E86' }}>Ninguno todavía</span>
-            ) : (
-              <>
-                {elementosValidos.map((elem, i) => <ElementoBadge key={i} elemento={elem} />)}
-              </>
-            )}
-            <span style={{
-              fontFamily: 'Oswald, sans-serif', fontSize: '13px', fontWeight: '600',
-              color: cantidad === 4 ? '#5C7A5E' : '#7A7364', marginLeft: '4px'
-            }}>
-              ({cantidad}/4)
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <EditableDate
-              label="Ceremonia de Bienvenida"
-              value={progresionCaminantes.fecha_ceremonia_bienvenida}
-              onSave={(val) => updateProgresionCaminantes('fecha_ceremonia_bienvenida', val)}
-              disabled={!canEdit()}
-            />
-
-            {[1, 2, 3, 4].map((num) => {
-              const numEtapa = num as 1 | 2 | 3 | 4
-              const fechaKey = `fecha_etapa${num}` as 'fecha_etapa1' | 'fecha_etapa2' | 'fecha_etapa3' | 'fecha_etapa4'
-              const fechaRaw = progresionCaminantes?.[fechaKey]
-              const fechaValor = (fechaRaw && String(fechaRaw).trim() !== '') ? String(fechaRaw) : null
-              const elementoActual = getElementoDeEtapa(numEtapa)
-              const usadosExcluyendo = getElementosUsadosExcluyendo(numEtapa)
-              const hayFecha = !!fechaValor
-
-              return (
-                <div
-                  key={num}
-                  style={{
-                    backgroundColor: '#FAF8F4',
-                    border: '2px solid #E8DEC4',
-                    borderRadius: '8px',
-                    padding: '10px 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px'
-                  }}
-                >
-                  <div style={{
-                    fontFamily: 'Oswald, sans-serif',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    color: '#24352A',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    Etapa {num}
-                  </div>
-
-                  <div>
-                    <div style={{
-                      fontFamily: 'Oswald, sans-serif',
-                      fontSize: '10px',
-                      color: '#7A7364',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      marginBottom: '2px'
-                    }}>
-                      Fecha
-                    </div>
-                    <EditableDate
-                      label=""
-                      value={fechaValor}
-                      onSave={(val) => actualizarFechaDeEtapa(numEtapa, val)}
-                      disabled={!canEdit()}
-                    />
-                  </div>
-
-                  <div>
-                    <div style={{
-                      fontFamily: 'Oswald, sans-serif',
-                      fontSize: '10px',
-                      color: '#7A7364',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      marginBottom: '2px'
-                    }}>
-                      Elemento
-                    </div>
-                    <ElementoSelector
-                      valor={elementoActual}
-                      elementosUsados={usadosExcluyendo}
-                      onCambio={(nuevo) => {
-                        if (!nuevo && fechaValor) {
-                          setMessage({
-                            text: `⚠️ No podés quitar el elemento de Etapa ${num} porque ya tiene fecha. Borrá la fecha primero.`,
-                            type: 'warning'
-                          })
-                          return
-                        }
-                        actualizarElementoDeEtapa(numEtapa, nuevo)
-                      }}
-                      disabled={!canEdit()}
-                      requiereFecha={true}
-                      hayFecha={hayFecha}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )
-    }
-
-    if (rama === 'Rovers' && progresionRovers) {
-      return (
-        <div>
-          <div style={{ marginBottom: '12px' }}>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Progresión Actual:
-            </span>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '18px', color: '#24352A', fontWeight: '700', marginLeft: '8px' }}>
-              {progresionRovers.progresion_actual || 'Sin asignar'}
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <EditableDate label="Encuentro" value={progresionRovers.fecha_encuentro} onSave={(val) => updateProgresionRovers('fecha_encuentro', val)} disabled={!canEdit()} />
-            <EditableDate label="Compromiso" value={progresionRovers.fecha_compromiso} onSave={(val) => updateProgresionRovers('fecha_compromiso', val)} disabled={!canEdit()} />
-            <EditableDate label="Proyección" value={progresionRovers.fecha_proyeccion} onSave={(val) => updateProgresionRovers('fecha_proyeccion', val)} disabled={!canEdit()} />
-            <EditableDate label="Partida" value={progresionRovers.fecha_partida} onSave={(val) => updateProgresionRovers('fecha_partida', val)} disabled={!canEdit()} />
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <div style={{ textAlign: 'center', padding: '24px 0', color: '#7A7364' }}>
-        No hay información de progresión disponible
-      </div>
-    )
-  }
-
-  const renderHistorialScout = () => {
-    if (!beneficiario) return null
-
-    const eventos: { fecha: string, titulo: string, detalle: string, icono: string, color: string }[] = []
-
-    if (beneficiario.fecha_ingreso_grupo) {
-      eventos.push({ fecha: beneficiario.fecha_ingreso_grupo, titulo: '📋 Ingreso al Grupo', detalle: 'Ingreso al grupo scout', icono: '📋', color: '#24352A' })
-    }
-
-    if (beneficiario.fecha_entrega_uniforme) {
-      eventos.push({ fecha: beneficiario.fecha_entrega_uniforme, titulo: '👕 Entrega de Uniforme', detalle: 'Recibió su uniforme scout', icono: '👕', color: '#BF4E30' })
-    }
-
-    if (progresionManada && progresionManada.tiene_promesa_manada && progresionManada.fecha_promesa_manada) {
-      eventos.push({ fecha: progresionManada.fecha_promesa_manada, titulo: '🤝 Promesa de Manada', detalle: 'Promesa de Manada', icono: '🤝', color: '#5C7A5E' })
-    }
-
-    let promesaScoutFecha = ''
-    let promesaScoutPadrino = ''
-    let promesaScoutRama = ''
-
-    if (progresionUnidad && progresionUnidad.tiene_promesa_scout && progresionUnidad.fecha_promesa_scout) {
-      promesaScoutFecha = progresionUnidad.fecha_promesa_scout
-      promesaScoutPadrino = progresionUnidad.padrino_promesa_scout || ''
-      promesaScoutRama = 'Unidad'
-    } else if (progresionCaminantes && progresionCaminantes.tiene_promesa_scout && progresionCaminantes.fecha_promesa_scout) {
-      promesaScoutFecha = progresionCaminantes.fecha_promesa_scout
-      promesaScoutPadrino = progresionCaminantes.padrino_promesa_scout || ''
-      promesaScoutRama = 'Caminantes'
-    } else if (progresionRovers && progresionRovers.tiene_promesa_scout && progresionRovers.fecha_promesa_scout) {
-      promesaScoutFecha = progresionRovers.fecha_promesa_scout
-      promesaScoutPadrino = progresionRovers.padrino_promesa_scout || ''
-      promesaScoutRama = 'Rovers'
-    }
-
-    if (promesaScoutFecha) {
-      eventos.push({
-        fecha: promesaScoutFecha,
-        titulo: `🤝 Promesa Scout`,
-        detalle: promesaScoutPadrino ? `Padrino/Madrina: ${promesaScoutPadrino} (${promesaScoutRama})` : `Promesa Scout (${promesaScoutRama})`,
-        icono: '🤝',
-        color: '#C48A2A'
-      })
-    }
-
-    if (progresionManada && progresionManada.fecha_ingreso_manada) {
-      eventos.push({ fecha: progresionManada.fecha_ingreso_manada, titulo: '🐺 Ingreso a Manada', detalle: 'Ingreso a la Manada', icono: '🐺', color: '#5C7A5E' })
-    }
-
-    if (progresionUnidad && progresionUnidad.fecha_ingreso_unidad) {
-      eventos.push({ fecha: progresionUnidad.fecha_ingreso_unidad, titulo: '⚜️ Ingreso a Unidad', detalle: 'Ingreso a la Unidad Scout', icono: '⚜️', color: '#C48A2A' })
-    }
-
-    if (progresionCaminantes && progresionCaminantes.fecha_ingreso_caminantes) {
-      eventos.push({ fecha: progresionCaminantes.fecha_ingreso_caminantes, titulo: '🏔️ Ingreso a Caminantes', detalle: 'Ingreso a Caminantes', icono: '🏔️', color: '#D97A3E' })
-    }
-
-    if (progresionRovers && progresionRovers.fecha_ingreso_rovers) {
-      eventos.push({ fecha: progresionRovers.fecha_ingreso_rovers, titulo: '🔥 Ingreso a Rovers', detalle: 'Ingreso a Rovers', icono: '🔥', color: '#8B4513' })
-    }
-
-    eventos.sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
-
-    const puedeEditarHistorial = canEdit()
-
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div>
-            <h3 style={{ fontFamily: 'Oswald, sans-serif', fontSize: '16px', color: '#24352A', margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>
-              📜 Historial Scout
-            </h3>
-            <p style={{ fontFamily: 'Oswald, sans-serif', fontSize: '12px', color: '#7A7364', margin: '4px 0 0 0' }}>
-              Línea de tiempo del recorrido scout de {beneficiario.nombre}
-            </p>
-          </div>
-          {puedeEditarHistorial && (
-            <button
-              onClick={openHistorialEditModal}
-              style={{
-                backgroundColor: '#BF4E30', color: 'white', padding: '6px 14px',
-                borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px',
-                fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px'
-              }}
-            >
-              ✏️ Editar Historial
-            </button>
-          )}
-        </div>
-
-        {eventos.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: '#7A7364' }}>
-            No hay eventos en el historial scout
-          </div>
-        ) : (
-          <div style={{ position: 'relative', paddingLeft: '24px' }}>
-            <div style={{ position: 'absolute', left: '4px', top: '0', bottom: '0', width: '2px', backgroundColor: '#D1C9B4' }} />
-
-            {eventos.map((evento, index) => (
-              <div key={index} style={{ position: 'relative', marginBottom: '20px' }}>
-                <div style={{
-                  position: 'absolute', left: '-20px', top: '4px', width: '12px', height: '12px',
-                  borderRadius: '50%', backgroundColor: evento.color,
-                  border: '2px solid #F3ECD8', boxShadow: '0 0 0 2px ' + evento.color
-                }} />
-
-                <div style={{
-                  backgroundColor: 'white', borderRadius: '8px', padding: '12px 16px',
-                  border: '1px solid #E8DEC4', boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: '16px', fontWeight: '600', color: '#24352A' }}>
-                        {evento.titulo}
-                      </div>
-                      <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: '#7A7364', marginTop: '2px' }}>
-                        {evento.detalle}
-                      </div>
-                    </div>
-                    {evento.fecha && (
-                      <div style={{
-                        fontFamily: 'Oswald, sans-serif', fontSize: '12px', color: '#7A7364',
-                        backgroundColor: '#F3ECD8', padding: '2px 10px', borderRadius: '12px',
-                        whiteSpace: 'nowrap', marginLeft: '12px'
-                      }}>
-                        {formatFecha(evento.fecha)}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
-
+  // =============================================
+  // SWIPE
+  // =============================================
   const handleSwipeLeft = () => {
     if (posicionActual < todosLosIds.length - 1) {
       const nuevoId = todosLosIds[posicionActual + 1]
@@ -2342,11 +2043,18 @@ export default function BeneficiarioDetalle() {
   const total = todosLosIds.length
   const actual = posicionActual + 1
 
+  // Pagos a mostrar (3 visibles)
+  const pagosMostrar = verTodosPagos ? pagos : pagos.slice(0, 3)
+
+  // =============================================
+  // RENDER PRINCIPAL
+  // =============================================
   return (
     <div
       style={{
         transform: `translateX(${dragOffset}px)`,
-        transition: dragOffset === 0 ? 'transform 0.3s ease-out' : 'none'
+        transition: dragOffset === 0 ? 'transform 0.3s ease-out' : 'none',
+        fontFamily: 'Oswald, sans-serif'
       }}
     >
       {/* Navegación */}
@@ -2379,7 +2087,8 @@ export default function BeneficiarioDetalle() {
                 opacity: posicionActual <= 0 ? 0.5 : 1
               }}
             >◀</button>
-            <button              onClick={irAlSiguiente}
+            <button
+              onClick={irAlSiguiente}
               disabled={posicionActual >= total - 1}
               style={{
                 backgroundColor: posicionActual >= total - 1 ? '#E8DEC4' : '#24352A',
@@ -2394,543 +2103,614 @@ export default function BeneficiarioDetalle() {
         </div>
       </div>
 
-      {/* Encabezado */}
-      <div style={{
-        backgroundColor: '#24352A', borderRadius: '12px', padding: '16px',
-        border: '2px solid #D1C9B4', marginBottom: '24px'
-      }}>
+{/* ============================================ */}
+{/* ENCABEZADO NUEVO - tipo PERFIL */}
+{/* ============================================ */}
+<div style={{
+  backgroundColor: '#24352A',
+  borderRadius: '16px',
+  padding: '24px 16px 20px 16px',
+  marginBottom: '16px',
+  border: '2px solid #BF4E30',
+  boxShadow: '0 0 0 2px #111111',
+  position: 'relative'
+}}>
+        {/* Botón Editar arriba a la derecha */}
+        {canEdit() && (
+          <button
+            onClick={openEditModal}
+            style={{
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              backgroundColor: '#BF4E30',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              cursor: 'pointer',
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: '12px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              zIndex: 2
+            }}
+            title="Editar datos principales"
+          >
+            ✏️ <span className="btn-text-editar">Editar</span>
+          </button>
+        )}
+
+        {/* Título PERFIL */}
         <div style={{
-          display: 'flex',
-          flexDirection: window.innerWidth < 768 ? 'column' : 'row',
-          alignItems: 'center',
-          gap: window.innerWidth < 768 ? '12px' : '24px',
-          textAlign: window.innerWidth < 768 ? 'center' : 'left'
+          fontFamily: 'Oswald, sans-serif',
+          fontSize: 'clamp(11px, 2.5vw, 13px)',
+          color: '#C48A2A',
+          letterSpacing: '3px',
+          textTransform: 'uppercase',
+          marginBottom: '16px',
+          textAlign: 'center'
         }}>
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <div style={{
-              width: '200px', height: '200px', borderRadius: '12px', overflow: 'hidden',
-              backgroundColor: '#F3ECD8', border: '3px solid #D1C9B4', flexShrink: 0
-            }}>
-              <img
-                src={fotoUrl}
-                alt={nombreCompleto}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement
-                  const iniciales = `${beneficiario.nombre.charAt(0)}${beneficiario.apellido.charAt(0)}`.toUpperCase()
-                  target.style.display = 'none'
-                  const parent = target.parentElement
-                  if (parent) {
-                    const fallback = document.createElement('div')
-                    fallback.style.cssText = `
-                      width: 100%; height: 100%;
-                      display: flex; align-items: center; justify-content: center;
-                      background-color: #24352A; color: white;
-                      font-family: Oswald, sans-serif; font-size: 32px; font-weight: 700;
-                    `
-                    fallback.textContent = iniciales || 'U'
-                    parent.appendChild(fallback)
-                  }
-                }}
-              />
-            </div>
+          ⚜️ Perfil ⚜️
+        </div>
+
+        {/* Foto */}
+        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+          <div style={{ position: 'relative', display: 'inline-block' }}>
+            <img
+              src={fotoUrl}
+              alt={nombreCompleto}
+              style={{
+                width: '180px',
+                height: '180px',
+                objectFit: 'cover',
+                borderRadius: '16px',
+                boxShadow: '0 0 0 2px #BF4E30, 0 0 0 4px #111111',
+                display: 'block',
+                margin: '0 auto'
+              }}
+            />
             {canEdit() && (
               <button
                 onClick={() => setShowPhotoModal(true)}
                 style={{
-                  position: 'absolute', bottom: '-6px', right: '-6px',
-                  backgroundColor: '#BF4E30', color: 'white',
-                  border: '2px solid #F3ECD8', borderRadius: '50%',
-                  width: '28px', height: '28px', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', fontSize: '14px', padding: 0
+                  position: 'absolute',
+                  bottom: '-8px',
+                  right: '-8px',
+                  backgroundColor: '#BF4E30',
+                  color: 'white',
+                  border: '2px solid #F3ECD8',
+                  borderRadius: '50%',
+                  width: '34px',
+                  height: '34px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  padding: 0
                 }}
                 title="Cambiar foto"
               >📷</button>
             )}
           </div>
+        </div>
 
-          <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
-            <h1 style={{
-              fontFamily: 'Oswald, sans-serif', fontWeight: '700',
-              fontSize: 'clamp(16px, 5vw, 26px)', color: '#F3ECD8',
-              textTransform: 'uppercase', letterSpacing: '1px',
-              margin: 0, lineHeight: 1.2, wordBreak: 'break-word'
-            }}>
-              {nombreCompleto}
-            </h1>
-            <div style={{
-              display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap',
-              justifyContent: window.innerWidth < 768 ? 'center' : 'flex-start'
-            }}>
-              <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(11px, 3vw, 14px)', color: '#D1C9B4', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {getRamaLabel(beneficiario.rama)}
-              </span>
-              <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(11px, 3vw, 14px)', color: '#D1C9B4', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {edad !== null ? `${edad} años` : 'Edad no disponible'}
-              </span>
-              <span style={{
-                display: 'inline-block', padding: '2px 10px', borderRadius: '12px',
-                fontSize: 'clamp(10px, 2.5vw, 12px)', fontWeight: '500',
-                textTransform: 'uppercase', letterSpacing: '0.5px',
-                backgroundColor: beneficiario.estado === 'activo' ? '#D1FAE5' : '#FEE2E2',
-                color: beneficiario.estado === 'activo' ? '#5C7A5E' : '#BF4E30'
-              }}>
-                {beneficiario.estado === 'inactivo' ? 'Ex miembro' : beneficiario.estado}
-              </span>
-            </div>
-          </div>
+        {/* Nombre */}
+        <h1 style={{
+          fontFamily: 'Oswald, sans-serif',
+          fontWeight: '700',
+          fontSize: 'clamp(18px, 5vw, 24px)',
+          color: '#F3ECD8',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+          margin: '0 0 12px 0',
+          textAlign: 'center',
+          wordBreak: 'break-word'
+        }}>
+          {nombreCompleto}
+        </h1>
 
-          {canEdit() && (
-            <button
-              onClick={openEditModal}
-              style={{
-                backgroundColor: '#BF4E30', color: 'white', padding: '8px 16px',
-                borderRadius: '6px', border: 'none', cursor: 'pointer',
-                fontSize: 'clamp(11px, 2.5vw, 13px)', fontFamily: 'Oswald, sans-serif',
-                textTransform: 'uppercase', letterSpacing: '0.5px',
-                width: window.innerWidth < 768 ? '100%' : 'auto', flexShrink: 0
-              }}
-            >✏️ Editar</button>
-          )}
+        {/* Chips: Rama · Edad · Estado */}
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          alignItems: 'center'
+        }}>
+          <span style={{
+            display: 'inline-block',
+            padding: '4px 14px',
+            backgroundColor: '#BF4E30',
+            color: '#FFFFFF',
+            borderRadius: '20px',
+            fontSize: 'clamp(11px, 2.5vw, 13px)',
+            fontFamily: 'Oswald, sans-serif',
+            letterSpacing: '0.5px',
+            textTransform: 'uppercase'
+          }}>
+            {getRamaLabel(beneficiario.rama)}
+          </span>
+          <span style={{
+            fontFamily: 'Oswald, sans-serif',
+            fontSize: 'clamp(11px, 2.5vw, 13px)',
+            color: '#D1C9B4',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            • {edad !== null ? `${edad} años` : 'Edad no disponible'}
+          </span>
+          <span style={{
+            display: 'inline-block',
+            padding: '2px 10px',
+            borderRadius: '12px',
+            fontSize: 'clamp(10px, 2.5vw, 12px)',
+            fontWeight: '500',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            backgroundColor: beneficiario.estado === 'activo' ? '#D1FAE5' : '#FEE2E2',
+            color: beneficiario.estado === 'activo' ? '#5C7A5E' : '#BF4E30'
+          }}>
+            {beneficiario.estado === 'inactivo' ? 'Ex miembro' : beneficiario.estado}
+          </span>
         </div>
       </div>
 
-      {/* Tabs tipo pills */}
-      <div style={{
-        display: 'flex',
-        gap: '6px',
-        marginBottom: '16px',
-        flexWrap: 'wrap',
-        justifyContent: 'flex-start'
-      }}>
-        {['info', 'progresion', 'pagos', 'campamentos', 'legajo', 'historial'].map((tab) => {
-          const labels: Record<string, string> = {
-            'info': '📋 Info',
-            'progresion': '📈 Progresión',
-            'pagos': '💰 Pagos',
-            'campamentos': '🏕️ Campamentos',
-            'legajo': '📁 Legajo',
-            'historial': '📜 Historial Scout'
-          }
-          const labelsMobile: Record<string, string> = {
-            'info': '📋 Info',
-            'progresion': '📈 Progresión',
-            'pagos': '💰 Pagos',
-            'campamentos': '🏕️ Campamentos',
-            'legajo': '📁 Legajo',
-            'historial': '📜 Historial'
-          }
-          const activo = activeTab === tab
-          return (
+      {/* Mensaje general */}
+      {message.text && (
+        <div style={{
+          padding: '10px 14px',
+          borderRadius: '10px',
+          marginBottom: '16px',
+          fontSize: 'clamp(11px, 2.5vw, 13px)',
+          border: '2px solid',
+          fontFamily: 'Oswald, sans-serif',
+          ...(message.type === 'error' ? {
+            backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA'
+          } : message.type === 'warning' ? {
+            backgroundColor: '#FEF3C7', color: '#C48A2A', borderColor: '#FDE68A'
+          } : {
+            backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0'
+          })
+        }}>
+          {message.text}
+        </div>
+      )}
+
+      {/* ============================================ */}
+      {/* BLOQUE 1: INFORMACIÓN */}
+      {/* ============================================ */}
+      <Seccion
+        icono="📋"
+        titulo="Información"
+        color={COL.verdeScout}
+      >
+        {/* Fecha nacimiento + edad */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div>
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Fecha de Nacimiento</p>
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, fontWeight: '600', margin: '4px 0 0 0' }}>
+              {formatFecha(beneficiario.fecha_nacimiento)}
+            </p>
+          </div>
+          <div>
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Edad</p>
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, fontWeight: '600', margin: '4px 0 0 0' }}>
+              {edad !== null ? `${edad} años` : 'No disponible'}
+            </p>
+          </div>
+        </div>
+
+        {/* Uniforme */}
+        <div style={{ marginBottom: '12px' }}>
+          <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Uniforme</p>
+          <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
+            {beneficiario.tiene_uniforme ? '✅ Sí' : '❌ No'}
+            {beneficiario.fecha_entrega_uniforme && ` · ${formatFecha(beneficiario.fecha_entrega_uniforme)}`}
+          </p>
+        </div>
+
+        {/* Promesa */}
+        <div style={{ marginBottom: '12px' }}>
+          <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Promesa</p>
+          <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
+            {promesaInfo.tiene ? '✅ Sí' : '❌ No'}
+            {promesaInfo.fecha && ` · ${formatFecha(promesaInfo.fecha)}`}
+            {promesaInfo.padrino && ` · Padrino/Madrina: ${promesaInfo.padrino}`}
+          </p>
+        </div>
+
+        {/* Tótem (solo Rovers) */}
+        {beneficiario.rama === 'Rovers' && progresionRovers && (progresionRovers.nombre_totem || progresionRovers.campamento_totem) && (
+          <div style={{ marginBottom: '12px' }}>
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Tótem</p>
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
+              🦅 {progresionRovers.nombre_totem || '-'}
+              {progresionRovers.campamento_totem && ` · ${progresionRovers.campamento_totem}`}
+            </p>
+          </div>
+        )}
+
+        {/* TADA (Caminantes/Rovers) */}
+        {(beneficiario.rama === 'Caminantes' || beneficiario.rama === 'Rovers') && (
+          <div style={{ marginBottom: '12px' }}>
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>TADA</p>
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
+              {beneficiario.rama === 'Caminantes'
+                ? (progresionCaminantes?.hizo_tada ? '✅ Realizado' : '❌ No realizado')
+                : (progresionRovers?.nombre_totem ? '✅ Realizado' : '❌ No realizado')}
+            </p>
+          </div>
+        )}
+
+        {/* Observaciones - SOLO si hay datos */}
+        {beneficiario.observaciones && beneficiario.observaciones.trim() !== '' && (
+          <div style={{ marginBottom: '12px' }}>
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Observaciones</p>
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0', lineHeight: 1.5 }}>
+              {beneficiario.observaciones}
+            </p>
+          </div>
+        )}
+
+        {/* Botón Editar Info */}
+        {canEdit() && (
+          <button
+            onClick={openInfoEditModal}
+            style={{
+              backgroundColor: '#BF4E30', color: 'white', padding: '8px 16px',
+              borderRadius: '8px', border: 'none', cursor: 'pointer',
+              fontSize: '12px', fontFamily: 'Oswald, sans-serif',
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+              width: '100%', marginTop: '8px'
+            }}
+          >✏️ Editar Información</button>
+        )}
+      </Seccion>
+
+      {/* ============================================ */}
+      {/* BLOQUE 2: PAGOS */}
+      {/* ============================================ */}
+      <Seccion
+        icono="💰"
+        titulo="Pagos"
+        color={COL.terracota}
+        accion={
+          canEdit() && (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={handleAbrirFormPago}
               style={{
-                padding: window.innerWidth < 768 ? '6px 12px' : '8px 16px',
-                backgroundColor: activo ? '#24352A' : 'white',
-                color: activo ? '#F3ECD8' : '#7A7364',
-                border: `2px solid ${activo ? '#24352A' : '#D1C9B4'}`,
-                cursor: 'pointer',
-                fontSize: window.innerWidth < 768 ? '11px' : '13px',
-                fontFamily: 'Oswald, sans-serif',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                borderRadius: '20px',
-                transition: 'all 0.2s ease',
-                whiteSpace: 'nowrap',
-                fontWeight: activo ? '700' : '500',
-                boxShadow: activo ? '0 2px 6px rgba(36, 53, 42, 0.25)' : 'none'
-              }}
-              onMouseEnter={(e) => {
-                if (!activo) {
-                  e.currentTarget.style.backgroundColor = '#F3ECD8'
-                  e.currentTarget.style.borderColor = '#24352A'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!activo) {
-                  e.currentTarget.style.backgroundColor = 'white'
-                  e.currentTarget.style.borderColor = '#D1C9B4'
-                }
+                backgroundColor: '#24352A', color: 'white', padding: '6px 14px',
+                borderRadius: '6px', border: 'none', cursor: 'pointer',
+                fontSize: '11px', fontFamily: 'Oswald, sans-serif',
+                textTransform: 'uppercase', letterSpacing: '0.5px',
+                fontWeight: 600
               }}
             >
-              {window.innerWidth < 768 ? labelsMobile[tab] : labels[tab]}
+              {showPagoForm ? '✕ Cancelar' : '+ Nuevo Pago'}
             </button>
           )
-        })}
-      </div>
+        }
+      >
+        {/* Formulario nuevo pago */}
+        {showPagoForm && (
+          <div style={{
+            backgroundColor: '#F3ECD8', borderRadius: '8px', padding: '14px',
+            marginBottom: '14px', border: '2px solid #D1C9B4'
+          }}>
+            <h4 style={{
+              fontFamily: 'Oswald, sans-serif', fontSize: '13px', color: COL.textoPrincipal,
+              margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.5px'
+            }}>
+              Nuevo Pago
+            </h4>
+            <form onSubmit={handleNuevoPago} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '10px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Recibo *</label>
+                <input
+                  type="text" value={nuevoPago.recibo}
+                  onChange={(e) => setNuevoPago({ ...nuevoPago, recibo: e.target.value })}
+                  style={{ width: '100%', padding: '6px 10px', fontSize: '13px', border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: '#F3F4F6' }}
+                  readOnly
+                />
+              </div>
 
-      {/* Contenido de tabs */}
-      <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '20px', border: '2px solid #D1C9B4' }}>
-        {activeTab === 'info' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-              {canEdit() && (
-                <button
-                  onClick={openInfoEditModal}
-                  style={{
-                    backgroundColor: '#BF4E30', color: 'white', padding: '6px 16px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '12px', fontFamily: 'Oswald, sans-serif',
-                    textTransform: 'uppercase', letterSpacing: '0.5px'
-                  }}
-                >✏️ Editar Información</button>
-              )}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <p style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Fecha de Nacimiento</p>
-                <p style={{ fontSize: '16px', color: '#24352A', margin: '4px 0 0 0' }}>{formatFecha(beneficiario.fecha_nacimiento)}</p>
+                <label style={{ fontSize: '10px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Monto *</label>
+                <input
+                  type="number" step="0.01" value={nuevoPago.monto}
+                  onChange={(e) => setNuevoPago({ ...nuevoPago, monto: e.target.value })}
+                  placeholder="0.00"
+                  style={{ width: '100%', padding: '6px 10px', fontSize: '13px', border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                  required
+                />
               </div>
+
               <div>
-                <p style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Edad</p>
-                <p style={{ fontSize: '16px', color: '#24352A', margin: '4px 0 0 0' }}>{edad !== null ? `${edad} años` : 'No disponible'}</p>
+                <label style={{ fontSize: '10px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Fecha *</label>
+                <input
+                  type="date" value={nuevoPago.fecha_pago}
+                  onChange={(e) => setNuevoPago({ ...nuevoPago, fecha_pago: e.target.value })}
+                  style={{ width: '100%', padding: '6px 10px', fontSize: '13px', border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                  required
+                />
               </div>
+
               <div>
-                <p style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Tiene Uniforme?</p>
-                <p style={{ fontSize: '16px', color: '#24352A', margin: '4px 0 0 0' }}>
-                  {beneficiario.tiene_uniforme ? '✅ Sí' : '❌ No'}
-                  {beneficiario.fecha_entrega_uniforme && ` (${formatFecha(beneficiario.fecha_entrega_uniforme)})`}
-                </p>
+                <label style={{ fontSize: '10px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Categoría *</label>
+                <select
+                  value={nuevoPago.categoria}
+                  onChange={(e) => setNuevoPago({
+                    ...nuevoPago, categoria: e.target.value,
+                    categoria_otro: e.target.value !== 'OTRO' ? '' : nuevoPago.categoria_otro
+                  })}
+                  style={{ width: '100%', padding: '6px 10px', fontSize: '13px', border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                  required
+                >
+                  <option value="">Seleccionar categoría</option>
+                  {categorias.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
+                </select>
               </div>
-              <div>
-                <p style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Tiene Promesa Scout?</p>
-                <p style={{ fontSize: '16px', color: '#24352A', margin: '4px 0 0 0' }}>
-                  {promesaInfo.tiene ? '✅ Sí' : '❌ No'}
-                  {promesaInfo.fecha && ` (${formatFecha(promesaInfo.fecha)})`}
-                </p>
-                {promesaInfo.padrino && (
-                  <p style={{ fontSize: '14px', color: '#7A7364', margin: '2px 0 0 0' }}>Padrino: {promesaInfo.padrino}</p>
-                )}
-              </div>
-              {beneficiario.rama === 'Rovers' && progresionRovers && (
-                <div>
-                  <p style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}> Tótem</p>
-                  <p style={{ fontSize: '16px', color: '#24352A', margin: '4px 0 0 0' }}>
-                    {progresionRovers.nombre_totem || '-'}
-                    {progresionRovers.campamento_totem && ` (${progresionRovers.campamento_totem})`}
-                  </p>
+
+              {nuevoPago.categoria === 'OTRO' && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: '10px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Especificar Categoría *</label>
+                  <input
+                    type="text" value={nuevoPago.categoria_otro}
+                    onChange={(e) => setNuevoPago({ ...nuevoPago, categoria_otro: e.target.value })}
+                    placeholder="Ej: Pañuelo, Insignias, etc."
+                    style={{ width: '100%', padding: '6px 10px', fontSize: '13px', border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                    required
+                  />
                 </div>
               )}
-              {(beneficiario.rama === 'Caminantes' || beneficiario.rama === 'Rovers') && (
-                <div>
-                  <p style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}> REALIZO EL TADA?</p>
-                  <p style={{ fontSize: '16px', color: '#24352A', margin: '4px 0 0 0' }}>
-                    {beneficiario.rama === 'Caminantes'
-                      ? (progresionCaminantes?.hizo_tada ? '✅ Realizado' : '❌ No realizado')
-                      : beneficiario.rama === 'Rovers'
-                        ? (progresionRovers?.nombre_totem ? '✅ Realizado' : '❌ No realizado')
-                        : 'No aplica'}
-                  </p>
-                </div>
-              )}
+
+              <div>
+                <label style={{ fontSize: '10px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Medio de Pago *</label>
+                <select
+                  value={nuevoPago.medio_pago}
+                  onChange={(e) => setNuevoPago({ ...nuevoPago, medio_pago: e.target.value })}
+                  style={{ width: '100%', padding: '6px 10px', fontSize: '13px', border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                  required
+                >
+                  <option value="">Seleccionar medio</option>
+                  {mediosPago.map(mp => <option key={mp} value={mp}>{mp}</option>)}
+                </select>
+              </div>
+
               <div style={{ gridColumn: '1 / -1' }}>
-                <p style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Observaciones</p>
-                <p style={{ fontSize: '16px', color: '#24352A', margin: '4px 0 0 0' }}>{beneficiario.observaciones || '-'}</p>
+                <label style={{ fontSize: '10px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Observaciones</label>
+                <input
+                  type="text" value={nuevoPago.observaciones}
+                  onChange={(e) => setNuevoPago({ ...nuevoPago, observaciones: e.target.value })}
+                  placeholder="Observaciones..."
+                  style={{ width: '100%', padding: '6px 10px', fontSize: '13px', border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                />
               </div>
-            </div>
+
+              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowPagoForm(false); setMessage({ text: '', type: '' }) }}
+                  style={{ padding: '6px 16px', fontSize: '12px', backgroundColor: '#E8DEC4', color: '#24352A', border: 'none', borderRadius: '4px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+                >Cancelar</button>
+                <button
+                  type="submit" disabled={saving}
+                  style={{ padding: '6px 16px', fontSize: '12px', backgroundColor: '#24352A', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1 }}
+                >{saving ? 'Guardando...' : 'Guardar Pago'}</button>
+              </div>
+            </form>
           </div>
         )}
 
-        {activeTab === 'progresion' && <div>{renderProgresion()}</div>}
+        {/* Lista de pagos */}
+        {pagos.length > 0 ? (
+          <>
+            {pagosMostrar.map((pago) => (
+              <div
+                key={pago.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  borderBottom: '1px solid #E8DEC4',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <div style={{ flex: 1, minWidth: '120px' }}>
+                  <div style={{
+                    fontFamily: 'Oswald, sans-serif',
+                    fontSize: 'clamp(12px, 3vw, 14px)',
+                    color: COL.textoPrincipal,
+                    fontWeight: '600'
+                  }}>
+                    {pago.recibo || '-'} · ${pago.monto.toLocaleString()}
+                  </div>
+                  <div style={{
+                    fontFamily: 'Oswald, sans-serif',
+                    fontSize: 'clamp(10px, 2.5vw, 12px)',
+                    color: COL.textoSecundario,
+                    marginTop: '2px'
+                  }}>
+                    {formatFecha(pago.fecha_pago)} · {pago.categoria}
+                  </div>
+                </div>
+              </div>
+            ))}
 
-        {activeTab === 'pagos' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontFamily: 'Oswald, sans-serif', fontSize: '16px', color: '#24352A', margin: 0 }}>Historial de Pagos</h3>
-              {canEdit() && (
+            {/* Botón Ver todos / Ver menos - más visible */}
+            {pagos.length > 3 && (
+              <div style={{ textAlign: 'center', marginTop: '12px' }}>
                 <button
-                  onClick={handleAbrirFormPago}
+                  onClick={() => setVerTodosPagos(!verTodosPagos)}
                   style={{
-                    backgroundColor: '#24352A', color: 'white', padding: '6px 14px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '12px', fontFamily: 'Oswald, sans-serif',
-                    textTransform: 'uppercase', letterSpacing: '0.5px'
+                    backgroundColor: 'transparent',
+                    border: `2px solid ${COL.terracota}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    color: COL.terracota,
+                    fontFamily: 'Oswald, sans-serif',
+                    fontSize: 'clamp(11px, 2.5vw, 13px)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontWeight: 600,
+                    padding: '8px 16px'
                   }}
                 >
-                  {showPagoForm ? '✕ Cancelar' : '+ Nuevo Pago'}
+                  {verTodosPagos ? '↑ Ver menos' : `Ver todos (${pagos.length}) →`}
                 </button>
-              )}
-            </div>
-
-            {showPagoForm && (
-              <div style={{
-                backgroundColor: '#F3ECD8', borderRadius: '8px', padding: '16px',
-                marginBottom: '16px', border: '2px solid #D1C9B4'
-              }}>
-                <h4 style={{
-                  fontFamily: 'Oswald, sans-serif', fontSize: '14px', color: '#24352A',
-                  margin: '0 0 12px 0', textTransform: 'uppercase', letterSpacing: '0.5px'
-                }}>
-                  Nuevo Pago - {beneficiario.apellido}, {beneficiario.nombre}
-                </h4>
-                <form onSubmit={handleNuevoPago} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Recibo *</label>
-                    <input
-                      type="text" value={nuevoPago.recibo}
-                      onChange={(e) => setNuevoPago({ ...nuevoPago, recibo: e.target.value })}
-                      style={{
-                        width: '100%', padding: '6px 10px', fontSize: '13px',
-                        border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: '#F3F4F6'
-                      }}
-                      readOnly
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Monto *</label>
-                    <input
-                      type="number" step="0.01" value={nuevoPago.monto}
-                      onChange={(e) => setNuevoPago({ ...nuevoPago, monto: e.target.value })}
-                      placeholder="0.00"
-                      style={{
-                        width: '100%', padding: '6px 10px', fontSize: '13px',
-                        border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Fecha *</label>
-                    <input
-                      type="date" value={nuevoPago.fecha_pago}
-                      onChange={(e) => setNuevoPago({ ...nuevoPago, fecha_pago: e.target.value })}
-                      style={{
-                        width: '100%', padding: '6px 10px', fontSize: '13px',
-                        border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Categoría *</label>
-                    <select
-                      value={nuevoPago.categoria}
-                      onChange={(e) => setNuevoPago({
-                        ...nuevoPago, categoria: e.target.value,
-                        categoria_otro: e.target.value !== 'OTRO' ? '' : nuevoPago.categoria_otro
-                      })}
-                      style={{
-                        width: '100%', padding: '6px 10px', fontSize: '13px',
-                        border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
-                      required
-                    >
-                      <option value="">Seleccionar categoría</option>
-                      {categorias.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
-                    </select>
-                  </div>
-
-                  {nuevoPago.categoria === 'OTRO' && (
-                    <div>
-                      <label style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Especificar Categoría *</label>
-                      <input
-                        type="text" value={nuevoPago.categoria_otro}
-                        onChange={(e) => setNuevoPago({ ...nuevoPago, categoria_otro: e.target.value })}
-                        placeholder="Ej: Pañuelo, Insignias, etc."
-                        style={{
-                          width: '100%', padding: '6px 10px', fontSize: '13px',
-                          border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                          fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                        }}
-                        required={nuevoPago.categoria === 'OTRO'}
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Medio de Pago *</label>
-                    <select
-                      value={nuevoPago.medio_pago}
-                      onChange={(e) => setNuevoPago({ ...nuevoPago, medio_pago: e.target.value })}
-                      style={{
-                        width: '100%', padding: '6px 10px', fontSize: '13px',
-                        border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
-                      required
-                    >
-                      <option value="">Seleccionar medio</option>
-                      {mediosPago.map(mp => <option key={mp} value={mp}>{mp}</option>)}
-                    </select>
-                  </div>
-
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '2px' }}>Observaciones</label>
-                    <input
-                      type="text" value={nuevoPago.observaciones}
-                      onChange={(e) => setNuevoPago({ ...nuevoPago, observaciones: e.target.value })}
-                      placeholder="Observaciones..."
-                      style={{
-                        width: '100%', padding: '6px 10px', fontSize: '13px',
-                        border: '2px solid #D1C9B4', borderRadius: '4px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      onClick={() => { setShowPagoForm(false); setMessage({ text: '', type: '' }) }}
-                      style={{
-                        padding: '6px 16px', fontSize: '12px', backgroundColor: '#E8DEC4',
-                        color: '#24352A', border: 'none', borderRadius: '4px',
-                        cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase', letterSpacing: '0.5px'
-                      }}
-                    >Cancelar</button>
-                    <button
-                      type="submit" disabled={saving}
-                      style={{
-                        padding: '6px 16px', fontSize: '12px', backgroundColor: '#24352A',
-                        color: 'white', border: 'none', borderRadius: '4px',
-                        cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase', letterSpacing: '0.5px',
-                        opacity: saving ? 0.5 : 1
-                      }}
-                    >{saving ? 'Guardando...' : 'Guardar Pago'}</button>
-                  </div>
-                </form>
               </div>
             )}
-
-            {message.text && (
-              <div style={{
-                padding: '8px 12px', borderRadius: '6px', marginBottom: '12px',
-                fontSize: '13px', fontFamily: 'Oswald, sans-serif',
-                ...(message.type === 'error' ? {
-                  backgroundColor: '#FEE2E2', color: '#BF4E30', border: '1px solid #FECACA'
-                } : message.type === 'warning' ? {
-                  backgroundColor: '#FEF3C7', color: '#C48A2A', border: '1px solid #FDE68A'
-                } : {
-                  backgroundColor: '#D1FAE5', color: '#5C7A5E', border: '1px solid #A7F3D0'
-                })
-              }}>{message.text}</div>
-            )}
-
-            {pagos.length > 0 ? (
-              <div style={{ overflow: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'Oswald, sans-serif' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #D1C9B4' }}>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Recibo</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Fecha</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Categoría</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Monto</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Medio</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pagos.map((pago) => (
-                      <tr key={pago.id} style={{ borderBottom: '1px solid #E8DEC4' }}>
-                        <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A' }}>{pago.recibo || '-'}</td>
-                        <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A' }}>{formatFecha(pago.fecha_pago)}</td>
-                        <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A' }}>{pago.categoria}</td>
-                        <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A', textAlign: 'right' }}>${pago.monto.toLocaleString()}</td>
-                        <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A' }}>{pago.medio_pago}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: '#7A7364' }}>No hay pagos registrados</div>
-            )}
+          </>
+        ) : (
+          <div style={{
+            textAlign: 'center', padding: '24px 0',
+            color: COL.textoSecundario,
+            fontSize: 'clamp(12px, 3vw, 14px)'
+          }}>
+            No hay pagos registrados
           </div>
         )}
+      </Seccion>
 
-        {activeTab === 'campamentos' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontFamily: 'Oswald, sans-serif', fontSize: '16px', color: '#24352A', margin: 0 }}>Campamentos Asistidos</h3>
-              {canEdit() && (
-                <button
-                  onClick={abrirModalCampamentos}
-                  style={{
-                    backgroundColor: '#24352A', color: 'white', padding: '6px 14px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '12px', fontFamily: 'Oswald, sans-serif',
-                    textTransform: 'uppercase', letterSpacing: '0.5px'
-                  }}
-                >+ Agregar Campamento</button>
-              )}
-            </div>
+      {/* ============================================ */}
+      {/* BLOQUE 3: LEGAJO (colapsable) */}
+      {/* ============================================ */}
+      <div style={{
+        backgroundColor: '#FFFFFF',
+        border: `2px solid ${COL.bordeSuave}`,
+        borderRadius: '16px',
+        padding: '16px',
+        marginBottom: '16px',
+        fontFamily: 'Oswald, sans-serif'
+      }}>
+        <button
+          onClick={() => setLegajoAbierto(!legajoAbierto)}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            width: '100%',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            gap: '10px'
+          }}
+        >
+          <span style={{
+            fontSize: 'clamp(14px, 3.5vw, 17px)',
+            fontWeight: '700',
+            color: COL.verdeClaro,
+            textTransform: 'uppercase',
+            letterSpacing: '1px',
+            textAlign: 'left'
+          }}>
+            📁 Legajo
+          </span>
+          <span style={{
+            fontSize: '20px',
+            color: COL.verdeClaro,
+            flexShrink: 0
+          }}>
+            {legajoAbierto ? '▲' : '▼'}
+          </span>
+        </button>
 
-            {campamentos.length > 0 ? (
-              <div style={{ overflow: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'Oswald, sans-serif', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #D1C9B4' }}>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Campamento</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Fecha</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tipo</th>
-                      {canEdit() && <th style={{ padding: '8px 12px', textAlign: 'center', fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Acción</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {campamentos.map((campamento) => (
-                      <tr key={campamento.id} style={{ borderBottom: '1px solid #E8DEC4' }}>
-                        <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A' }}>{campamento.nombre}</td>
-                        <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A' }}>{formatFecha(campamento.fecha_inicio)}</td>
-                        <td style={{ padding: '8px 12px', fontSize: '14px', color: '#24352A' }}>{campamento.tipo || '-'}</td>
-                        {canEdit() && (
-                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                            <button
-                              onClick={() => handleQuitarCampamento(campamento.id, campamento.nombre)}
-                              disabled={saving}
-                              style={{
-                                padding: '4px 10px', fontSize: '11px', backgroundColor: '#FEE2E2',
-                                color: '#BF4E30', border: '2px solid #FECACA', borderRadius: '4px',
-                                cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                                textTransform: 'uppercase', letterSpacing: '0.5px',
-                                opacity: saving ? 0.5 : 1
-                              }}
-                            >✕ Quitar</button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: '#7A7364' }}>
-                No hay campamentos registrados para este beneficiario
-              </div>
-            )}
+        {legajoAbierto && (
+          <div style={{
+            marginTop: '16px',
+            paddingTop: '16px',
+            borderTop: `2px dashed ${COL.bordeSuave}`
+          }}>
+            {renderLegajo()}
           </div>
         )}
-
-        {activeTab === 'legajo' && <div>{renderLegajo()}</div>}
-        {activeTab === 'historial' && <div>{renderHistorialScout()}</div>}
       </div>
 
+      {/* ============================================ */}
+      {/* BLOQUE 4: VIDA SCOUT (link) */}
+      {/* ============================================ */}
+      <div
+        onClick={() => navigate(`/beneficiario/${id}/vida-scout`)}
+        style={{
+          backgroundColor: '#FFFFFF',
+          border: `2px solid ${COL.bordeSuave}`,
+          borderRadius: '16px',
+          padding: '20px',
+          marginBottom: '16px',
+          cursor: 'pointer',
+          fontFamily: 'Oswald, sans-serif',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          transition: 'all 0.2s'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = '#F0F7F0'
+          e.currentTarget.style.borderColor = COL.verdeClaro
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = '#FFFFFF'
+          e.currentTarget.style.borderColor = COL.bordeSuave
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 'clamp(15px, 4vw, 18px)',
+            fontWeight: '700',
+            color: COL.verdeClaro,
+            textTransform: 'uppercase',
+            letterSpacing: '1px'
+          }}>
+            📜 Vida Scout
+          </div>
+          <div style={{
+            fontSize: 'clamp(11px, 2.5vw, 13px)',
+            color: COL.textoSecundario,
+            marginTop: '4px'
+          }}>
+            Progresión · Campamentos · Historial
+          </div>
+        </div>
+        <span style={{
+          fontSize: '24px',
+          color: COL.verdeClaro,
+          flexShrink: 0
+        }}>
+          →
+        </span>
+      </div>
+
+      {/* ============================================ */}
       {/* MODALES */}
-      {/* Modal foto */}
+      {/* ============================================ */}
+
+      {/* Modal subir foto */}
       {showPhotoModal && (
         <div
           onClick={() => { if (!uploading) { setShowPhotoModal(false); setSelectedFile(null); setPreviewUrl(null); setMessage({ text: '', type: '' }) } }}
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px'
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+            boxSizing: 'border-box'
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '28px',
+              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
               maxWidth: '480px', width: '100%', border: '2px solid #D1C9B4',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)', boxSizing: 'border-box'
             }}
           >
             <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
@@ -3011,15 +2791,17 @@ export default function BeneficiarioDetalle() {
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px'
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+            boxSizing: 'border-box'
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '28px',
+              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
               maxWidth: '560px', width: '100%', border: '2px solid #D1C9B4',
-              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              boxSizing: 'border-box'
             }}
           >
             <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
@@ -3033,11 +2815,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="text" value={editForm.nombre}
                     onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     required disabled={editLoading}
                   />
                 </div>
@@ -3046,11 +2824,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="text" value={editForm.apellido}
                     onChange={(e) => setEditForm({ ...editForm, apellido: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     required disabled={editLoading}
                   />
                 </div>
@@ -3059,11 +2833,7 @@ export default function BeneficiarioDetalle() {
                   <select
                     value={editForm.rama}
                     onChange={(e) => setEditForm({ ...editForm, rama: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editLoading}
                   >
                     <option value="Manada">Manada</option>
@@ -3077,11 +2847,7 @@ export default function BeneficiarioDetalle() {
                   <select
                     value={editForm.estado}
                     onChange={(e) => setEditForm({ ...editForm, estado: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editLoading}
                   >
                     <option value="activo">Activo</option>
@@ -3093,11 +2859,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="date" value={editForm.fecha_nacimiento}
                     onChange={(e) => setEditForm({ ...editForm, fecha_nacimiento: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editLoading}
                   />
                 </div>
@@ -3148,15 +2910,17 @@ export default function BeneficiarioDetalle() {
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px'
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+            boxSizing: 'border-box'
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '28px',
+              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
               maxWidth: '560px', width: '100%', border: '2px solid #D1C9B4',
-              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              boxSizing: 'border-box'
             }}
           >
             <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
@@ -3182,11 +2946,7 @@ export default function BeneficiarioDetalle() {
                     <input
                       type="date" value={infoEditForm.fecha_entrega_uniforme}
                       onChange={(e) => setInfoEditForm({ ...infoEditForm, fecha_entrega_uniforme: e.target.value })}
-                      style={{
-                        width: '100%', padding: '8px 12px', fontSize: '14px',
-                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                       disabled={editLoading}
                     />
                   </div>
@@ -3210,11 +2970,7 @@ export default function BeneficiarioDetalle() {
                       <input
                         type="date" value={infoEditForm.fecha_promesa}
                         onChange={(e) => setInfoEditForm({ ...infoEditForm, fecha_promesa: e.target.value })}
-                        style={{
-                          width: '100%', padding: '8px 12px', fontSize: '14px',
-                          border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                          fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                        }}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                         disabled={editLoading}
                       />
                     </div>
@@ -3224,11 +2980,7 @@ export default function BeneficiarioDetalle() {
                         type="text" value={infoEditForm.padrino}
                         onChange={(e) => setInfoEditForm({ ...infoEditForm, padrino: e.target.value })}
                         placeholder="Nombre del padrino/madrina"
-                        style={{
-                          width: '100%', padding: '8px 12px', fontSize: '14px',
-                          border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                          fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                        }}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                         disabled={editLoading}
                       />
                     </div>
@@ -3242,11 +2994,7 @@ export default function BeneficiarioDetalle() {
                     onChange={(e) => setInfoEditForm({ ...infoEditForm, observaciones: e.target.value })}
                     rows={3}
                     placeholder="Observaciones sobre el beneficiario..."
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', resize: 'vertical'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', resize: 'vertical', boxSizing: 'border-box' }}
                     disabled={editLoading}
                   />
                 </div>
@@ -3286,15 +3034,17 @@ export default function BeneficiarioDetalle() {
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px'
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+            boxSizing: 'border-box'
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '28px',
+              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
               maxWidth: '560px', width: '100%', border: '2px solid #D1C9B4',
-              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              boxSizing: 'border-box'
             }}
           >
             <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
@@ -3308,11 +3058,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="date" value={historialEditForm.fecha_ingreso_grupo}
                     onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_grupo: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editHistorialLoading}
                   />
                 </div>
@@ -3321,11 +3067,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="date" value={historialEditForm.fecha_entrega_uniforme}
                     onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_entrega_uniforme: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editHistorialLoading}
                   />
                 </div>
@@ -3334,11 +3076,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="date" value={historialEditForm.fecha_ingreso_manada}
                     onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_manada: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editHistorialLoading}
                   />
                 </div>
@@ -3347,11 +3085,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="date" value={historialEditForm.fecha_ingreso_unidad}
                     onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_unidad: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editHistorialLoading}
                   />
                 </div>
@@ -3360,11 +3094,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="date" value={historialEditForm.fecha_ingreso_caminantes}
                     onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_caminantes: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editHistorialLoading}
                   />
                 </div>
@@ -3373,11 +3103,7 @@ export default function BeneficiarioDetalle() {
                   <input
                     type="date" value={historialEditForm.fecha_ingreso_rovers}
                     onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_rovers: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={editHistorialLoading}
                   />
                 </div>
@@ -3399,11 +3125,7 @@ export default function BeneficiarioDetalle() {
                       <input
                         type="date" value={historialEditForm.fecha_promesa}
                         onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_promesa: e.target.value })}
-                        style={{
-                          width: '100%', padding: '8px 12px', fontSize: '14px',
-                          border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                          fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                        }}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                         disabled={editHistorialLoading}
                       />
                     </div>
@@ -3413,11 +3135,7 @@ export default function BeneficiarioDetalle() {
                         type="text" value={historialEditForm.padrino_promesa}
                         onChange={(e) => setHistorialEditForm({ ...historialEditForm, padrino_promesa: e.target.value })}
                         placeholder="Nombre del padrino/madrina"
-                        style={{
-                          width: '100%', padding: '8px 12px', fontSize: '14px',
-                          border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                          fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                        }}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                         disabled={editHistorialLoading}
                       />
                     </div>
@@ -3459,15 +3177,17 @@ export default function BeneficiarioDetalle() {
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px'
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+            boxSizing: 'border-box'
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '28px',
+              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
               maxWidth: '520px', width: '100%', border: '2px solid #D1C9B4',
-              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              boxSizing: 'border-box'
             }}
           >
             <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
@@ -3508,11 +3228,7 @@ export default function BeneficiarioDetalle() {
                       <select
                         value={campamentoSeleccionado}
                         onChange={(e) => setCampamentoSeleccionado(e.target.value)}
-                        style={{
-                          width: '100%', padding: '8px 12px', fontSize: '14px',
-                          border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                          fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                        }}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                         disabled={saving}
                       >
                         <option value="">Seleccionar...</option>
@@ -3526,24 +3242,13 @@ export default function BeneficiarioDetalle() {
                       <button
                         type="button"
                         onClick={() => { setShowCampamentoModal(false); setMessage({ text: '', type: '' }) }}
-                        style={{
-                          padding: '8px 20px', fontSize: '14px', backgroundColor: '#E8DEC4',
-                          color: '#24352A', border: 'none', borderRadius: '6px',
-                          cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                          textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1
-                        }}
+                        style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#E8DEC4', color: '#24352A', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1 }}
                         disabled={saving}
                       >Cancelar</button>
                       <button
                         onClick={handleAgregarCampamentoExistente}
                         disabled={!campamentoSeleccionado || saving}
-                        style={{
-                          padding: '8px 20px', fontSize: '14px', backgroundColor: '#24352A',
-                          color: 'white', border: 'none', borderRadius: '6px',
-                          cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                          textTransform: 'uppercase', letterSpacing: '0.5px',
-                          opacity: (!campamentoSeleccionado || saving) ? 0.5 : 1
-                        }}
+                        style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#24352A', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: (!campamentoSeleccionado || saving) ? 0.5 : 1 }}
                       >{saving ? 'Guardando...' : 'Agregar Campamento'}</button>
                     </div>
                   </>
@@ -3564,11 +3269,7 @@ export default function BeneficiarioDetalle() {
                     type="text" value={nuevoCampamentoNombre}
                     onChange={(e) => setNuevoCampamentoNombre(e.target.value)}
                     placeholder="Ej: Campamento de Verano 2026"
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: '14px',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={saving} required
                   />
                 </div>
@@ -3579,11 +3280,7 @@ export default function BeneficiarioDetalle() {
                     <input
                       type="date" value={nuevoCampamentoFecha}
                       onChange={(e) => setNuevoCampamentoFecha(e.target.value)}
-                      style={{
-                        width: '100%', padding: '8px 12px', fontSize: '14px',
-                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                       disabled={saving}
                     />
                   </div>
@@ -3597,11 +3294,7 @@ export default function BeneficiarioDetalle() {
                         if (value !== 'De Rama') setNuevoCampamentoRama('')
                         if (value !== 'Otro') setNuevoCampamentoOtro('')
                       }}
-                      style={{
-                        width: '100%', padding: '8px 12px', fontSize: '14px',
-                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                       disabled={saving}
                     >
                       <option value="Anual">Anual</option>
@@ -3618,11 +3311,7 @@ export default function BeneficiarioDetalle() {
                     <select
                       value={nuevoCampamentoRama}
                       onChange={(e) => setNuevoCampamentoRama(e.target.value)}
-                      style={{
-                        width: '100%', padding: '8px 12px', fontSize: '14px',
-                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                       disabled={saving}
                     >
                       <option value="">Seleccionar rama...</option>
@@ -3641,11 +3330,7 @@ export default function BeneficiarioDetalle() {
                       type="text" value={nuevoCampamentoOtro}
                       onChange={(e) => setNuevoCampamentoOtro(e.target.value)}
                       placeholder="Ej: Jornada, Peregrinación, etc."
-                      style={{
-                        width: '100%', padding: '8px 12px', fontSize: '14px',
-                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                      }}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                       disabled={saving}
                     />
                   </div>
@@ -3655,24 +3340,13 @@ export default function BeneficiarioDetalle() {
                   <button
                     type="button"
                     onClick={() => { setShowCampamentoModal(false); setMessage({ text: '', type: '' }) }}
-                    style={{
-                      padding: '8px 20px', fontSize: '14px', backgroundColor: '#E8DEC4',
-                      color: '#24352A', border: 'none', borderRadius: '6px',
-                      cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                      textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1
-                    }}
+                    style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#E8DEC4', color: '#24352A', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1 }}
                     disabled={saving}
                   >Cancelar</button>
                   <button
                     onClick={handleCrearYAgregarCampamento}
                     disabled={!nuevoCampamentoNombre.trim() || saving}
-                    style={{
-                      padding: '8px 20px', fontSize: '14px', backgroundColor: '#24352A',
-                      color: 'white', border: 'none', borderRadius: '6px',
-                      cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                      textTransform: 'uppercase', letterSpacing: '0.5px',
-                      opacity: (!nuevoCampamentoNombre.trim() || saving) ? 0.5 : 1
-                    }}
+                    style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#24352A', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: (!nuevoCampamentoNombre.trim() || saving) ? 0.5 : 1 }}
                   >{saving ? 'Guardando...' : 'Crear y Asignar'}</button>
                 </div>
               </div>

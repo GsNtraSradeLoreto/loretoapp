@@ -147,15 +147,15 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Header */}
       <header style={{
-        backgroundColor: '#24352A',
-        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-        borderBottom: '4px solid #BF4E30',
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        flexShrink: 0,
-        width: '100%'
-      }}>
+  backgroundColor: '#24352A',
+  borderBottom: '3px solid #111111',
+  boxShadow: 'inset 0 -2px 0 0 #BF4E30, 0 4px 6px -1px rgba(0,0,0,0.1)',
+  position: 'sticky',
+  top: 0,
+  zIndex: 10,
+  flexShrink: 0,
+  width: '100%'
+}}>
         <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' }}>
 
