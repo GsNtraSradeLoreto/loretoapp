@@ -98,6 +98,17 @@ export default function Pagos() {
 
   const mediosPago = ['Efectivo', 'Mercadopago']
 
+  // ============================================
+  // 🎯 HELPER: formatea fecha YYYY-MM-DD → DD/MM/YYYY
+  // Sin usar new Date() para evitar el bug de timezone
+  // ============================================
+  const formatFecha = (fecha: string | null | undefined) => {
+    if (!fecha) return '-'
+    const partes = fecha.split('-')
+    if (partes.length !== 3) return '-'
+    return `${partes[2]}/${partes[1]}/${partes[0]}`
+  }
+
   useEffect(() => {
     loadBeneficiarios()
   }, [])
@@ -537,43 +548,53 @@ export default function Pagos() {
 
   // ✅ Ya no filtramos en el frontend: los filtros se aplican en la query
   const pagosOrdenados = [...pagos].sort((a, b) => {
-    let valorA: any
-    let valorB: any
+  let valorA: any
+  let valorB: any
 
-    switch (sortColumn) {
-      case 'recibo':
-        valorA = a.reciboNumero || 0
-        valorB = b.reciboNumero || 0
-        break
-      case 'beneficiario':
-        valorA = `${a.beneficiario_apellido} ${a.beneficiario_nombre}`.toLowerCase()
-        valorB = `${b.beneficiario_apellido} ${b.beneficiario_nombre}`.toLowerCase()
-        break
-      case 'monto':
-        valorA = a.monto
-        valorB = b.monto
-        break
-      case 'fecha':
-        valorA = new Date(a.fecha_pago).getTime()
-        valorB = new Date(b.fecha_pago).getTime()
-        break
-      case 'categoria':
-        valorA = (a.categoria || '').toLowerCase()
-        valorB = (b.categoria || '').toLowerCase()
-        break
-      case 'observaciones':
-        valorA = (a.observaciones || '').toLowerCase()
-        valorB = (b.observaciones || '').toLowerCase()
-        break
-      default:
-        valorA = a.reciboNumero || 0
-        valorB = b.reciboNumero || 0
+  switch (sortColumn) {
+    case 'recibo':
+      valorA = a.reciboNumero || 0
+      valorB = b.reciboNumero || 0
+      break
+    case 'beneficiario':
+      valorA = `${a.beneficiario_apellido} ${a.beneficiario_nombre}`.toLowerCase()
+      valorB = `${b.beneficiario_apellido} ${b.beneficiario_nombre}`.toLowerCase()
+      break
+    case 'monto':
+      valorA = a.monto
+      valorB = b.monto
+      break
+    case 'fecha':
+      // 🎯 Fecha como criterio principal
+      valorA = a.fecha_pago
+      valorB = b.fecha_pago
+      break
+    case 'categoria':
+      valorA = (a.categoria || '').toLowerCase()
+      valorB = (b.categoria || '').toLowerCase()
+      break
+    case 'observaciones':
+      valorA = (a.observaciones || '').toLowerCase()
+      valorB = (b.observaciones || '').toLowerCase()
+      break
+    default:
+      valorA = a.fecha_pago
+      valorB = b.fecha_pago
+  }
+
+  // 🎯 DESEMPATE: si fecha es igual, ordenar por número de recibo
+  if (valorA === valorB && sortColumn === 'fecha') {
+    const reciboA = a.reciboNumero || 0
+    const reciboB = b.reciboNumero || 0
+    if (reciboA !== reciboB) {
+      return sortDirection === 'asc' ? reciboA - reciboB : reciboB - reciboA
     }
+  }
 
-    if (valorA < valorB) return sortDirection === 'asc' ? -1 : 1
-    if (valorA > valorB) return sortDirection === 'asc' ? 1 : -1
-    return 0
-  })
+  if (valorA < valorB) return sortDirection === 'asc' ? -1 : 1
+  if (valorA > valorB) return sortDirection === 'asc' ? 1 : -1
+  return 0
+})
 
   const getRamasMostrar = () => {
     if (verTodas) {
@@ -1181,7 +1202,7 @@ export default function Pagos() {
                     ${pago.monto.toLocaleString()}
                   </td>
                   <td style={{ padding: '6px 8px', fontSize: 'clamp(10px, 2vw, 13px)', color: '#24352A', borderRight: '1px solid #E8DEC4', whiteSpace: 'nowrap' }}>
-                    {new Date(pago.fecha_pago).toLocaleDateString('es-AR')}
+                    {formatFecha(pago.fecha_pago)}
                   </td>
                   <td style={{ padding: '6px 8px', fontSize: 'clamp(9px, 1.8vw, 12px)', color: '#24352A', borderRight: '1px solid #E8DEC4', whiteSpace: 'nowrap' }}>
                     <span style={{
@@ -1334,7 +1355,7 @@ export default function Pagos() {
               <div>
                 <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Fecha</p>
                 <p style={{ fontSize: 'clamp(12px, 2.5vw, 16px)', color: '#24352A', margin: '2px 0 0 0' }}>
-                  {new Date(selectedPago.fecha_pago).toLocaleDateString('es-AR')}
+                  {formatFecha(selectedPago.fecha_pago)}
                 </p>
               </div>
               <div>
