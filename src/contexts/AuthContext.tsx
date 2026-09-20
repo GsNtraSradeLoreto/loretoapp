@@ -51,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         if (session?.user) {
           setUser(session.user)
-          await getProfile(session.user.id)
+          await getProfile(session.user.id, session.user.email)
         }
         setLoading(false)
       } catch (error) {
@@ -66,7 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       async (_event, session) => {
         setUser(session?.user ?? null)
         if (session?.user) {
-          await getProfile(session.user.id)
+          await getProfile(session.user.id, session.user.email)
         } else {
           setProfile(null)
         }
@@ -77,7 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe()
   }, [])
 
-  const getProfile = async (userId: string) => {
+  const getProfile = async (userId: string, email?: string) => {
     try {
       const { data, error } = await supabase
         .from('usuarios')
@@ -85,28 +85,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .single()
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          const { data: newProfile, error: insertError } = await supabase
-            .from('usuarios')
-            .insert({
-              id: userId,
-              nombre: 'Usuario',
-              apellido: '',
-              email: user?.email || '',
-              rol: 'viewer',
-              rama_asignada: null,
-              activo: true
-            })
-            .select()
-            .single()
+if (error) {
+  if (error.code === 'PGRST116') {
+    const { data: newProfile, error: insertError } = await supabase
+      .from('usuarios')
+      .insert({
+        id: userId,
+        nombre: 'Usuario',
+        apellido: '',
+email: email || '',
+        rol: 'viewer',
+        rama_asignada: null,
+        activo: true
+      })
+      .select()
+      .single()
 
-          if (!insertError && newProfile) {
-            setProfile(newProfile)
-          }
-        }
-        return
-      }
+    if (!insertError && newProfile) {
+      setProfile(newProfile)
+    }
+  }
+  return
+}
 
       setProfile(data)
     } catch (error) {

@@ -57,11 +57,14 @@ export default function Login() {
           return
         }
 
-        const { count } = await supabase
-          .from('usuarios')
-          .select('*', { count: 'exact', head: true })
+// Contar cuántos SUPER_ADMIN hay. Si no hay ninguno, este usuario será el primero.
+const { count, error: countError } = await supabase
+  .from('usuarios')
+  .select('*', { count: 'exact', head: true })
+  .eq('rol', 'SUPER_ADMIN')
 
-        const esPrimerUsuario = count === 0
+// Si hay error de RLS o count es null, asumimos que NO es el primero (más seguro)
+const esPrimerUsuario = !countError && count === 0
 
         const { data: authData, error: signUpError } = await supabase.auth.signUp({
           email,
@@ -90,38 +93,54 @@ export default function Login() {
         }
 
         if (authData.user) {
-          const { error: profileError } = await supabase
-            .from('usuarios')
-            .insert({
-              id: authData.user.id,
-              nombre: nombre.trim(),
-              apellido: apellido.trim() || '',
-              email: email,
-              rol: esPrimerUsuario ? 'SUPER_ADMIN' : 'viewer',
-              activo: true
-            })
+  // El trigger de Supabase ya crea el perfil automáticamente.
+  // Intentamos crearlo igual por las dudas, pero si falla por RLS o duplicado, lo ignoramos.
+  const { error: profileError } = await supabase
+    .from('usuarios')
+    .insert({
+      id: authData.user.id,
+      nombre: nombre.trim(),
+      apellido: apellido.trim() || '',
+      email: email,
+      rol: esPrimerUsuario ? 'SUPER_ADMIN' : 'viewer',
+      activo: true
+    })
 
-          if (profileError) {
-            console.error('Error al crear perfil:', profileError)
-            setMessage({ 
-              text: `⚠️ Error al crear el perfil. Contactá al administrador.`, 
-              type: 'error' 
-            })
-            setLoading(false)
-            return
-          }
+  if (profileError) {
+    // 42501 = RLS bloqueó → el trigger lo creó igual
+    // 23505 = Duplicado → el trigger lo creó primero
+    const esErrorEsperado = 
+      profileError.code === '42501' || 
+      profileError.code === '23505' ||
+      profileError.message.includes('duplicate') ||
+      profileError.message.includes('row-level security')
 
-          setMessage({ 
-            text: `✅ ¡Usuario creado! ${esPrimerUsuario ? 'Eres el primer usuario (SUPER_ADMIN).' : ''}`, 
-            type: 'success' 
-          })
-          setNombre('')
-          setApellido('')
-          setEmail('')
-          setPassword('')
-          setIsLogin(true)
-        }
-        setLoading(false)
+    if (!esErrorEsperado) {
+      // Es un error REAL, sí avisamos
+      console.error('Error inesperado al crear perfil:', profileError)
+      setMessage({ 
+        text: `⚠️ Error al crear el perfil. Contactá al administrador.`, 
+        type: 'error' 
+      })
+      setLoading(false)
+      return
+    }
+    
+    // Error esperado → el trigger ya creó el perfil, seguimos
+    console.log('ℹ️ El trigger creó el perfil automáticamente')
+  }
+
+  setMessage({ 
+    text: `✅ ¡Usuario creado! Ya podés iniciar sesión.`, 
+    type: 'success' 
+  })
+  setNombre('')
+  setApellido('')
+  setEmail('')
+  setPassword('')
+  setIsLogin(true)
+}
+setLoading(false)
       }
     } catch (error: any) {
       setMessage({ 
