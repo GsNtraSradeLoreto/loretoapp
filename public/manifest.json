@@ -1,22 +1,21 @@
 {
+  "name": "LoretApp",
   "short_name": "LoretApp",
-  "name": "LoretApp - Sistema de Gestión Scout",
-  "icons": [
-    {
-      "src": "/logo-grupo.png",
-      "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "/logo-grupo.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any maskable"
-    }
-  ],
-  "start_url": "/",
+  "description": "Sistema de gestión del GS Ntra. Sra. de Loreto",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#E8DEC4",
   "theme_color": "#24352A",
-  "display": "standalone",
-  "orientation": "portrait"
+  "lang": "es-AR",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/logo-pwa.png",
+      "sizes": "488x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
 }
