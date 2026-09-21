@@ -147,19 +147,19 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Header */}
       <header style={{
-  backgroundColor: '#24352A',
-  borderBottom: '3px solid #111111',
-  boxShadow: 'inset 0 -2px 0 0 #BF4E30, 0 4px 6px -1px rgba(0,0,0,0.1)',
-  position: 'sticky',
-  top: 0,
-  zIndex: 10,
-  flexShrink: 0,
-  width: '100%'
-}}>
+        backgroundColor: '#24352A',
+        borderBottom: '3px solid #111111',
+        boxShadow: 'inset 0 -2px 0 0 #BF4E30, 0 4px 6px -1px rgba(0,0,0,0.1)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
+        flexShrink: 0,
+        width: '100%'
+      }}>
         <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' }}>
 
-             <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+            <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
               <img
                 src="/logo-grupo.png"
                 alt="LoretApp"
@@ -269,7 +269,7 @@ export default function Layout({ children }: LayoutProps) {
                   }}>
                     {nombreCompleto.charAt(0).toUpperCase()}
                   </div>
-                                   {!esCelular && (
+                  {!esCelular && (
                     <span style={{
                       fontSize: '14px',
                       fontWeight: '500',
@@ -430,6 +430,31 @@ export default function Layout({ children }: LayoutProps) {
                       >
                         <span style={{ marginRight: '8px' }}>⚙️</span>
                         Administración
+                      </Link>
+                    )}
+
+                    {(isSuperAdmin || isJefatura) && (
+                      <Link
+                        to="/formacion"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '8px 16px',
+                          color: '#24352A',
+                          textDecoration: 'none',
+                          fontSize: '14px',
+                          fontFamily: 'Oswald, sans-serif',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          borderBottom: '1px solid #D1C9B4',
+                          margin: '2px 0'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        onClick={() => setShowMenu(false)}
+                      >
+                        <span style={{ marginRight: '8px' }}>🎓</span>
+                        Formación
                       </Link>
                     )}
 
