@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
 import { useSwipe } from '../hooks/useSwipe'
+import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
 
 interface Beneficiario {
   id: string
@@ -101,14 +102,6 @@ const COL = {
   bordeSuave: '#E8DEC4',
   bordeFotoRojo: '#BF4E30',
   bordeFotoNegro: '#111111'
-}
-
-// Orden de ramas para el sort
-const ORDEN_RAMAS: Record<string, number> = {
-  'Manada': 1,
-  'Unidad Scout': 2,
-  'Caminantes': 3,
-  'Rovers': 4
 }
 
 // Elementos Caminantes
@@ -240,7 +233,7 @@ const Subtitulo = ({ texto }: { texto: string }) => (
 export default function VidaScout() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { isSuperAdmin, isJefatura, getRolData } = useAuth()
+  const { isSuperAdmin, isJefatura, isAdministrador, isTesorero, getRolData } = useAuth()
 
   const [beneficiario, setBeneficiario] = useState<Beneficiario | null>(null)
   const [progresionManada, setProgresionManada] = useState<ProgresionManada | null>(null)
@@ -334,6 +327,9 @@ export default function VidaScout() {
   const esSuperAdmin = isSuperAdmin
   const esJefatura = isJefatura
 
+  // ✅ Visibilidad: superadmin/jefatura/admin/tesorero ven TODO
+  const puedeVerInactivos = isSuperAdmin || isJefatura || isAdministrador || isTesorero
+
   // ✅ ¿Hay alguna edición abierta? Bloquea el swipe
   const hayEdicionAbierta = editandoManada || editandoUnidad || editandoCaminantes || editandoRovers
 
@@ -364,13 +360,14 @@ export default function VidaScout() {
     try {
       let query = supabase
         .from('beneficiarios')
-        .select('id, rama, estado')
-        .order('apellido', { ascending: true })
+        .select('id, nombre, apellido, rama, estado')
 
-      if (!esSuperAdmin) {
+      // ✅ Solo se filtran activos para quienes NO pueden ver inactivos
+      if (!puedeVerInactivos) {
         query = query.eq('estado', 'activo')
       }
 
+      // ✅ Jefes y ayudantes ven solo su rama
       if ((esJefe || esAyudante) && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
       }
@@ -378,23 +375,9 @@ export default function VidaScout() {
       const { data, error } = await query
       if (error) throw error
 
-      // Ordenar igual que en BeneficiarioDetalle:
-      // activos primero → rama → apellido → nombre
-      const ordenados = (data || []).sort((a: any, b: any) => {
-        const aActivo = a.estado === 'activo' ? 0 : 1
-        const bActivo = b.estado === 'activo' ? 0 : 1
-        if (aActivo !== bActivo) return aActivo - bActivo
-
-        const ordenA = ORDEN_RAMAS[a.rama] || 99
-        const ordenB = ORDEN_RAMAS[b.rama] || 99
-        if (ordenA !== ordenB) return ordenA - ordenB
-
-        const cmpApellido = (a.apellido || '').localeCompare(b.apellido || '')
-        if (cmpApellido !== 0) return cmpApellido
-        return (a.nombre || '').localeCompare(b.nombre || '')
-      })
-
-      setTodosLosIds(ordenados.map((item: any) => item.id))
+      // ✅ Orden unificado: activos → rama → apellido → nombre
+      const ordenados = ordenarListaBeneficiarios(data || [])
+      setTodosLosIds(ordenados.map(item => item.id))
     } catch (error) {
       console.error('Error al cargar lista de IDs:', error)
     }
@@ -469,52 +452,11 @@ export default function VidaScout() {
       if (beneficiarioRes.error) throw beneficiarioRes.error
       setBeneficiario(beneficiarioRes.data)
 
-      // AUTO-REPARADOR
-      let manada = manadaRes.data
-      let unidad = unidadRes.data
-      let caminantes = caminantesRes.data
-      let rovers = roversRes.data
-
-      if (!manada) {
-        const { data } = await supabase
-          .from('progresion_manada')
-          .insert({ beneficiario_id: id })
-          .select()
-          .single()
-        manada = data
-      }
-
-      if (!unidad) {
-        const { data } = await supabase
-          .from('progresion_unidad')
-          .insert({ beneficiario_id: id })
-          .select()
-          .single()
-        unidad = data
-      }
-
-      if (!caminantes) {
-        const { data } = await supabase
-          .from('progresion_caminantes')
-          .insert({ beneficiario_id: id })
-          .select()
-          .single()
-        caminantes = data
-      }
-
-      if (!rovers) {
-        const { data } = await supabase
-          .from('progresion_rovers')
-          .insert({ beneficiario_id: id })
-          .select()
-          .single()
-        rovers = data
-      }
-
-      setProgresionManada(manada || null)
-      setProgresionUnidad(unidad || null)
-      setProgresionCaminantes(caminantes || null)
-      setProgresionRovers(rovers || null)
+            // ✅ Solo lectura. No creamos registros automáticamente para no ensuciar la auditoría.
+      setProgresionManada(manadaRes.data || null)
+      setProgresionUnidad(unidadRes.data || null)
+      setProgresionCaminantes(caminantesRes.data || null)
+      setProgresionRovers(roversRes.data || null)
 
       if (campamentosRes.data) {
         const mapeados = campamentosRes.data.map((c: any) => ({

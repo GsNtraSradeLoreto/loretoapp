@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
 import { useSwipe } from '../hooks/useSwipe'
+import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
 
 interface Beneficiario {
   id: string
@@ -459,7 +460,7 @@ const Seccion = ({
 export default function BeneficiarioDetalle() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { isSuperAdmin, isJefatura, getRolData } = useAuth()
+  const { isSuperAdmin, isJefatura, isAdministrador, isTesorero, getRolData } = useAuth()
   const [beneficiario, setBeneficiario] = useState<Beneficiario | null>(null)
   const [todosLosIds, setTodosLosIds] = useState<string[]>([])
   const [posicionActual, setPosicionActual] = useState<number>(-1)
@@ -552,6 +553,9 @@ export default function BeneficiarioDetalle() {
   const esSuperAdmin = isSuperAdmin
   const esJefatura = isJefatura
 
+  // ✅ Visibilidad: superadmin/jefatura/admin/tesorero ven TODO
+  const puedeVerInactivos = isSuperAdmin || isJefatura || isAdministrador || isTesorero
+
   const categorias = [
     { value: 'AFILIACION', label: 'Afiliación' },
     { value: 'CUOTAS', label: 'Cuotas' },
@@ -604,13 +608,14 @@ export default function BeneficiarioDetalle() {
     try {
       let query = supabase
         .from('beneficiarios')
-        .select('id, rama, estado')
-        .order('apellido', { ascending: true })
+        .select('id, nombre, apellido, rama, estado')
 
-      if (!esSuperAdmin) {
+      // ✅ Solo se filtran activos para quienes NO pueden ver inactivos
+      if (!puedeVerInactivos) {
         query = query.eq('estado', 'activo')
       }
 
+      // ✅ Jefes y ayudantes ven solo su rama
       if ((esJefe || rolData.tipo === 'ayudante') && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
       }
@@ -618,8 +623,9 @@ export default function BeneficiarioDetalle() {
       const { data, error } = await query
       if (error) throw error
 
-      const ids = data?.map(item => item.id) || []
-      setTodosLosIds(ids)
+      // ✅ Orden unificado: activos → rama → apellido → nombre
+      const ordenados = ordenarListaBeneficiarios(data || [])
+      setTodosLosIds(ordenados.map(item => item.id))
     } catch (error) {
       console.error('Error al cargar lista de IDs:', error)
     }
@@ -718,34 +724,16 @@ export default function BeneficiarioDetalle() {
 
       if (error && error.code !== 'PGRST116') throw error
 
-      if (data) {
+            if (data) {
         setLegajo(data)
         setLegajoForm(data)
       } else {
-        const { data: newLegajo, error: createError } = await supabase
-          .from('legajos')
-          .insert({
-            beneficiario_id: beneficiario.id,
-            ficha_datos_personales: false,
-            ficha_seguimiento: false,
-            autorizacion_ingreso: false,
-            salidas_cercanas: false,
-            uso_imagen: false,
-            declaracion_jurada_salud: false,
-            autorizacion_retirarse: false,
-            fotocopia_dni_beneficiario: false,
-            fotocopia_dni_padre: false,
-            fotocopia_dni_madre: false,
-            fotocopia_vacunas: false,
-            otros: false
-          })
-          .select()
-          .single()
-
-        if (createError) throw createError
-        setLegajo(newLegajo)
-        setLegajoForm(newLegajo)
+        // ✅ Si no existe, NO lo creamos automáticamente (evita ruido en auditoría).
+        // Se creará recién cuando el usuario guarde cambios por primera vez.
+        setLegajo(null)
+        setLegajoForm(null)
       }
+
     } catch (error) {
       console.error('Error en cargarLegajo:', error)
     } finally {
@@ -2531,7 +2519,7 @@ export default function BeneficiarioDetalle() {
                     color: COL.textoPrincipal,
                     fontWeight: '600'
                   }}>
-                    {pago.recibo || '-'} · ${pago.monto.toLocaleString()}
+                    {pago.recibo || '-'} · ${(pago.monto || 0).toLocaleString()}
                   </div>
                   <div style={{
                     fontFamily: 'Oswald, sans-serif',

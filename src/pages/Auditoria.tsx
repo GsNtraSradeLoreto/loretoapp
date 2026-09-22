@@ -108,28 +108,38 @@ export default function Auditoria() {
     }
   }
 
-  useEffect(() => {
-    if (!isSuperAdmin && !isJefatura) return
+useEffect(() => {
+  if (!isSuperAdmin && !isJefatura) return
 
-    supabase
-      .rpc('contar_novedades_auditoria')
-      .then(({ data, error }) => {
-        if (!error && typeof data === 'number' && data > 0) {
-          setNovedades(data)
-          setMostrarBanner(true)
+  let isMounted = true
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+  supabase
+    .rpc('contar_novedades_auditoria')
+    .then(({ data, error }) => {
+      if (!isMounted) return
+
+      if (!error && typeof data === 'number' && data > 0) {
+        setNovedades(data)
+        setMostrarBanner(true)
+      }
+
+      timeoutId = setTimeout(() => {
+        if (!isMounted) return
+        if (!yaMarcoVisto.current) {
+          yaMarcoVisto.current = true
+          supabase.rpc('marcar_auditoria_vista').then(() => {
+            if (isMounted) setMostrarBanner(false)
+          })
         }
+      }, 2000)
+    })
 
-        setTimeout(() => {
-          if (!yaMarcoVisto.current) {
-            yaMarcoVisto.current = true
-            supabase.rpc('marcar_auditoria_vista').then(() => {
-              setMostrarBanner(false)
-            })
-          }
-        }, 2000)
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperAdmin, isJefatura])
+  return () => {
+    isMounted = false
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}, [isSuperAdmin, isJefatura])  
 
   useEffect(() => {
     supabase
@@ -150,16 +160,18 @@ export default function Auditoria() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroEntidad, filtroAccion, filtroUsuario, busqueda, fechaDesde, fechaHasta])
 
-  const formatearFecha = (iso: string) => {
-    const d = new Date(iso)
-    return d.toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
+  const formatearFecha = (iso: string | null | undefined) => {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '-'
+  return d.toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 
   const colorAccion = (accion: string) => {
     if (accion === 'INSERT') return '#2E7D32'

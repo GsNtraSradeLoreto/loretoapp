@@ -129,11 +129,114 @@ export default function Campamentos() {
     }
   }, [filterRama, filterTipo, searchTerm, sortColumn, sortDirection])
 
+  // ===== Carga inicial (con guard de unmount) =====
   useEffect(() => {
-    if (puedeVerPagina) {
-      loadData()
+    if (!puedeVerPagina) return
+
+    let isMounted = true
+
+    const cargar = async () => {
+      try {
+        setLoading(true)
+
+        const [campamentosRes, conteosRes, beneficiariosRes] = await Promise.all([
+          supabase
+            .from('campamentos')
+            .select('id, nombre, fecha_inicio, fecha_fin, tipo, rama_principal, descripcion, ubicacion')
+            .order('fecha_inicio', { ascending: false }),
+          supabase.rpc('conteo_asistentes_campamentos'),
+          supabase
+            .from('beneficiarios')
+            .select('id, nombre, apellido, rama, estado, tiene_hermanos')
+            .eq('estado', 'activo')
+            .order('apellido', { ascending: true })
+        ])
+
+        if (!isMounted) return
+
+        if (campamentosRes.error) {
+          console.error('❌ Error al cargar campamentos:', campamentosRes.error)
+          setMessage({ text: `❌ Error: ${campamentosRes.error.message}`, type: 'error' })
+          return
+        }
+
+        const conteosMap: { [id: string]: number } = {}
+        if (conteosRes.data) {
+          conteosRes.data.forEach((c: any) => {
+            conteosMap[c.campamento_id] = Number(c.total) || 0
+          })
+        }
+
+        const campamentosConConteo: Campamento[] = (campamentosRes.data || []).map(c => ({
+          ...c,
+          asistentes_count: conteosMap[c.id] || 0
+        }))
+
+        setCampamentos(campamentosConConteo)
+
+        if (!beneficiariosRes.error) {
+          setBeneficiarios(beneficiariosRes.data || [])
+        }
+      } catch (error) {
+        if (!isMounted) return
+        console.error('❌ Error general:', error)
+        setMessage({ text: '❌ Error al cargar los datos', type: 'error' })
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    cargar()
+
+    return () => {
+      isMounted = false
     }
   }, [puedeVerPagina])
+
+  // ===== Recargar (para después de guardar cambios) =====
+  const loadData = async () => {
+    try {
+      const [campamentosRes, conteosRes, beneficiariosRes] = await Promise.all([
+        supabase
+          .from('campamentos')
+          .select('id, nombre, fecha_inicio, fecha_fin, tipo, rama_principal, descripcion, ubicacion')
+          .order('fecha_inicio', { ascending: false }),
+        supabase.rpc('conteo_asistentes_campamentos'),
+        supabase
+          .from('beneficiarios')
+          .select('id, nombre, apellido, rama, estado, tiene_hermanos')
+          .eq('estado', 'activo')
+          .order('apellido', { ascending: true })
+      ])
+
+      if (campamentosRes.error) {
+        console.error('❌ Error al cargar campamentos:', campamentosRes.error)
+        setMessage({ text: `❌ Error: ${campamentosRes.error.message}`, type: 'error' })
+        return
+      }
+
+      const conteosMap: { [id: string]: number } = {}
+      if (conteosRes.data) {
+        conteosRes.data.forEach((c: any) => {
+          conteosMap[c.campamento_id] = Number(c.total) || 0
+        })
+      }
+
+      const campamentosConConteo: Campamento[] = (campamentosRes.data || []).map(c => ({
+        ...c,
+        asistentes_count: conteosMap[c.id] || 0
+      }))
+
+      setCampamentos(campamentosConConteo)
+
+      if (!beneficiariosRes.error) {
+        setBeneficiarios(beneficiariosRes.data || [])
+      }
+    } catch (error) {
+      console.error('❌ Error general:', error)
+      setMessage({ text: '❌ Error al cargar los datos', type: 'error' })
+    }
+  }
 
   const formatFecha = (fecha: string) => {
     if (!fecha) return '-'
@@ -155,57 +258,6 @@ export default function Campamentos() {
       return `De Rama (${ramaPrincipal})`
     }
     return tipo
-  }
-
-  // ===== Cargar campamentos + conteo de asistentes =====
-  const loadData = async () => {
-    try {
-      setLoading(true)
-
-      const [campamentosRes, conteosRes, beneficiariosRes] = await Promise.all([
-        supabase
-          .from('campamentos')
-          .select('id, nombre, fecha_inicio, fecha_fin, tipo, rama_principal, descripcion, ubicacion')
-          .order('fecha_inicio', { ascending: false }),
-        supabase.rpc('conteo_asistentes_campamentos'),
-        supabase
-          .from('beneficiarios')
-          .select('id, nombre, apellido, rama, estado, tiene_hermanos')
-          .eq('estado', 'activo')
-          .order('apellido', { ascending: true })
-      ])
-
-      if (campamentosRes.error) {
-        console.error('❌ Error al cargar campamentos:', campamentosRes.error)
-        setMessage({ text: `❌ Error: ${campamentosRes.error.message}`, type: 'error' })
-        setLoading(false)
-        return
-      }
-
-      const conteosMap: { [id: string]: number } = {}
-      if (conteosRes.data) {
-        conteosRes.data.forEach((c: any) => {
-          conteosMap[c.campamento_id] = Number(c.total) || 0
-        })
-      }
-
-      const campamentosConConteo: Campamento[] = (campamentosRes.data || []).map(c => ({
-        ...c,
-        asistentes_count: conteosMap[c.id] || 0
-      }))
-
-      setCampamentos(campamentosConConteo)
-
-      if (!beneficiariosRes.error) {
-        setBeneficiarios(beneficiariosRes.data || [])
-      }
-
-    } catch (error) {
-      console.error('❌ Error general:', error)
-      setMessage({ text: '❌ Error al cargar los datos', type: 'error' })
-    } finally {
-      setLoading(false)
-    }
   }
 
   // ===== Cargar asistencias de un campamento (lazy) =====
@@ -1308,12 +1360,12 @@ export default function Campamentos() {
                     </div>
                   ) : (
                     asistencias
-  .sort((a, b) => {
-    const ordenA = ({ 'Manada': 1, 'Unidad Scout': 2, 'Caminantes': 3, 'Rovers': 4 } as Record<string, number>)[a.rama] || 99
-    const ordenB = ({ 'Manada': 1, 'Unidad Scout': 2, 'Caminantes': 3, 'Rovers': 4 } as Record<string, number>)[b.rama] || 99
-    if (ordenA !== ordenB) return ordenA - ordenB
-    return a.nombre_completo.localeCompare(b.nombre_completo)
-  })
+                      .sort((a, b) => {
+                        const ordenA = ({ 'Manada': 1, 'Unidad Scout': 2, 'Caminantes': 3, 'Rovers': 4 } as Record<string, number>)[a.rama] || 99
+                        const ordenB = ({ 'Manada': 1, 'Unidad Scout': 2, 'Caminantes': 3, 'Rovers': 4 } as Record<string, number>)[b.rama] || 99
+                        if (ordenA !== ordenB) return ordenA - ordenB
+                        return a.nombre_completo.localeCompare(b.nombre_completo)
+                      })
                       .map((item) => (
                         <div
                           key={item.beneficiario_id}

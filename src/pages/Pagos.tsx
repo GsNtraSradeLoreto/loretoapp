@@ -561,8 +561,8 @@ export default function Pagos() {
       valorB = `${b.beneficiario_apellido} ${b.beneficiario_nombre}`.toLowerCase()
       break
     case 'monto':
-      valorA = a.monto
-      valorB = b.monto
+      valorA = a.monto || 0
+      valorB = b.monto || 0
       break
     case 'fecha':
       // 🎯 Fecha como criterio principal
@@ -626,7 +626,7 @@ export default function Pagos() {
       return a.apellido.localeCompare(b.apellido)
     })
 
-  const totalMonto = pagos.reduce((sum, p) => sum + p.monto, 0)
+  const totalMonto = pagos.reduce((sum, p) => sum + (p.monto || 0), 0)
 
   if (loading && pagos.length === 0) {
     return (
@@ -1199,7 +1199,7 @@ export default function Pagos() {
                   <td style={{ padding: '6px 8px', fontSize: 'clamp(10px, 2vw, 13px)', color: '#24352A', fontWeight: '600', borderRight: '1px solid #E8DEC4', whiteSpace: 'nowrap' }}>{pago.recibo || '-'}</td>
                   <td style={{ padding: '6px 8px', fontSize: 'clamp(10px, 2vw, 13px)', color: '#24352A', borderRight: '1px solid #E8DEC4', whiteSpace: 'nowrap' }}>{nombreCompleto || 'Sin nombre'}</td>
                   <td style={{ padding: '6px 8px', fontSize: 'clamp(10px, 2vw, 13px)', color: '#24352A', textAlign: 'right', fontWeight: '600', borderRight: '1px solid #E8DEC4', whiteSpace: 'nowrap' }}>
-                    ${pago.monto.toLocaleString()}
+                    ${(pago.monto || 0).toLocaleString()}
                   </td>
                   <td style={{ padding: '6px 8px', fontSize: 'clamp(10px, 2vw, 13px)', color: '#24352A', borderRight: '1px solid #E8DEC4', whiteSpace: 'nowrap' }}>
                     {formatFecha(pago.fecha_pago)}
@@ -1361,7 +1361,7 @@ export default function Pagos() {
               <div>
                 <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Monto</p>
                 <p style={{ fontSize: 'clamp(14px, 3vw, 18px)', color: '#24352A', fontWeight: '700', margin: '2px 0 0 0' }}>
-                  ${selectedPago.monto.toLocaleString()}
+                  ${(selectedPago.monto || 0).toLocaleString()}
                 </p>
               </div>
               <div>

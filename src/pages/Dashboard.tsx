@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
+import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
 
 interface Beneficiario {
   id: string
@@ -21,33 +22,6 @@ interface Stats {
   unidad: number
   caminantes: number
   rovers: number
-}
-
-const ORDEN_RAMAS: Record<string, number> = {
-  'Manada': 1,
-  'Unidad Scout': 2,
-  'Caminantes': 3,
-  'Rovers': 4
-}
-
-// ✅ Orden: activos → rama → apellido → nombre | inactivos al final
-const ordenarBeneficiarios = (a: Beneficiario, b: Beneficiario) => {
-  // 1) Activos primero
-  const aActivo = a.estado === 'activo' ? 0 : 1
-  const bActivo = b.estado === 'activo' ? 0 : 1
-  if (aActivo !== bActivo) return aActivo - bActivo
-
-  // 2) Rama
-  const ordenA = ORDEN_RAMAS[a.rama] || 99
-  const ordenB = ORDEN_RAMAS[b.rama] || 99
-  if (ordenA !== ordenB) return ordenA - ordenB
-
-  // 3) Apellido
-  const cmpApellido = (a.apellido || '').localeCompare(b.apellido || '')
-  if (cmpApellido !== 0) return cmpApellido
-
-  // 4) Nombre
-  return (a.nombre || '').localeCompare(b.nombre || '')
 }
 
 export default function Dashboard() {
@@ -75,6 +49,7 @@ export default function Dashboard() {
   const ramaAsignada = rolData.rama
 
   const verTodas = isSuperAdmin || isJefatura || isAdministrador || isTesorero
+  const puedeVerInactivos = verTodas // ✅ superadmin, jefatura, admin y tesorero ven todo
   const esSuperAdmin = isSuperAdmin
 
   useEffect(() => {
@@ -87,10 +62,12 @@ export default function Dashboard() {
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, estado, tiene_hermanos, foto_url, fecha_nacimiento')
 
-      if (!esSuperAdmin) {
+      // ✅ Solo se filtran activos para quienes NO pueden ver inactivos
+      if (!puedeVerInactivos) {
         query = query.eq('estado', 'activo')
       }
 
+      // ✅ Jefes y ayudantes ven solo su rama
       if (esDirigente && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
         setFilterRama(ramaAsignada)
@@ -99,15 +76,14 @@ export default function Dashboard() {
       const { data: beneficiariosData, error: beneficiariosError } = await query
       if (beneficiariosError) throw beneficiariosError
 
-      const ordenados = [...(beneficiariosData || [])].sort(ordenarBeneficiarios)
+      // ✅ Orden unificado desde el util compartido
+      const ordenados = ordenarListaBeneficiarios(beneficiariosData || [])
 
       setBeneficiarios(ordenados)
       setFiltered(ordenados)
 
-      let activos = ordenados
-      if (!esSuperAdmin) {
-        activos = ordenados.filter(b => b.estado === 'activo')
-      }
+      // ✅ Stats: siempre cuentan SOLO activos (refleja "el grupo hoy")
+      const activos = ordenados.filter(b => b.estado === 'activo')
 
       setStats({
         total: activos.length,
@@ -131,7 +107,8 @@ export default function Dashboard() {
       result = result.filter(b => b.rama === filterRama)
     }
 
-    if ((isSuperAdmin || isJefatura) && filterEstado !== 'todos') {
+    // ✅ El filtro por estado se habilita para todos los que ven inactivos
+    if (puedeVerInactivos && filterEstado !== 'todos') {
       if (filterEstado === 'activos') {
         result = result.filter(b => b.estado === 'activo')
       } else if (filterEstado === 'inactivos') {
@@ -148,8 +125,8 @@ export default function Dashboard() {
     }
 
     // ✅ Volvemos a ordenar después de filtrar (mantiene activos primero)
-    setFiltered([...result].sort(ordenarBeneficiarios))
-  }, [searchTerm, filterRama, filterEstado, beneficiarios, isSuperAdmin, isJefatura])
+    setFiltered(ordenarListaBeneficiarios(result))
+  }, [searchTerm, filterRama, filterEstado, beneficiarios, puedeVerInactivos])
 
   const handleFilterByRama = (rama: string) => {
     setFilterRama(rama)
@@ -403,7 +380,7 @@ export default function Dashboard() {
               <option value="rama:Unidad Scout">Unidad</option>
               <option value="rama:Caminantes">Caminantes</option>
               <option value="rama:Rovers">Rovers</option>
-              {(isSuperAdmin || isJefatura) && (
+              {puedeVerInactivos && (
                 <>
                   <option value="estado:activos">✅ Solo activos</option>
                   <option value="estado:inactivos">❌ Solo ex miembros</option>
