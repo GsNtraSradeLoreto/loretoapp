@@ -257,12 +257,18 @@ export default function VidaScout() {
   const [unidadAbierto, setUnidadAbierto] = useState(false)
   const [caminantesAbierto, setCaminantesAbierto] = useState(false)
   const [roversAbierto, setRoversAbierto] = useState(false)
+  const [ingresoGrupoAbierto, setIngresoGrupoAbierto] = useState(false)
 
   // UI: modales de edición por rama
   const [editandoManada, setEditandoManada] = useState(false)
   const [editandoUnidad, setEditandoUnidad] = useState(false)
   const [editandoCaminantes, setEditandoCaminantes] = useState(false)
   const [editandoRovers, setEditandoRovers] = useState(false)
+
+  // ✅ NUEVO: edición de ingreso al grupo
+  const [editandoIngresoGrupo, setEditandoIngresoGrupo] = useState(false)
+  const [valorIngresoGrupo, setValorIngresoGrupo] = useState('')
+  const [savingIngresoGrupo, setSavingIngresoGrupo] = useState(false)
 
   // Formularios de edición
   const [formManada, setFormManada] = useState({
@@ -331,8 +337,11 @@ export default function VidaScout() {
   // ✅ Visibilidad: superadmin/jefatura/admin/tesorero ven TODO
   const puedeVerInactivos = isSuperAdmin || isJefatura || isAdministrador || isTesorero
 
+  // ✅ Permiso para editar ingreso al grupo: solo superadmin y jefatura
+  const puedeEditarIngresoGrupo = isSuperAdmin || isJefatura
+
   // ✅ ¿Hay alguna edición abierta? Bloquea el swipe
-  const hayEdicionAbierta = editandoManada || editandoUnidad || editandoCaminantes || editandoRovers
+  const hayEdicionAbierta = editandoManada || editandoUnidad || editandoCaminantes || editandoRovers || editandoIngresoGrupo
 
   // ✅ Permisos: ¿puedo VER los bloques de esta rama?
   const puedeVerRama = (rama: string): boolean => {
@@ -363,12 +372,10 @@ export default function VidaScout() {
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, estado')
 
-      // ✅ Solo se filtran activos para quienes NO pueden ver inactivos
       if (!puedeVerInactivos) {
         query = query.eq('estado', 'activo')
       }
 
-      // ✅ Jefes y ayudantes ven solo su rama
       if ((esJefe || esAyudante) && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
       }
@@ -376,7 +383,6 @@ export default function VidaScout() {
       const { data, error } = await query
       if (error) throw error
 
-      // ✅ Orden unificado: activos → rama → apellido → nombre
       const ordenados = ordenarListaBeneficiarios(data || [])
       setTodosLosIds(ordenados.map(item => item.id))
     } catch (error) {
@@ -403,10 +409,12 @@ export default function VidaScout() {
     setCaminantesAbierto(false)
     setRoversAbierto(false)
     setCampamentosAbierto(false)
+    setIngresoGrupoAbierto(false)
     setEditandoManada(false)
     setEditandoUnidad(false)
     setEditandoCaminantes(false)
     setEditandoRovers(false)
+    setEditandoIngresoGrupo(false)
     setMessage({ text: '', type: '' })
 
     // Si es jefe o ayudante, abrir su bloque por defecto
@@ -453,7 +461,6 @@ export default function VidaScout() {
       if (beneficiarioRes.error) throw beneficiarioRes.error
       setBeneficiario(beneficiarioRes.data)
 
-            // ✅ Solo lectura. No creamos registros automáticamente para no ensuciar la auditoría.
       setProgresionManada(manadaRes.data || null)
       setProgresionUnidad(unidadRes.data || null)
       setProgresionCaminantes(caminantesRes.data || null)
@@ -500,6 +507,45 @@ export default function VidaScout() {
       caminantes: progresionCaminantes,
       rovers: progresionRovers
     })
+  }
+
+  // ============================================
+  // ✅ NUEVO: GUARDAR INGRESO AL GRUPO
+  // ============================================
+  const abrirEditarIngresoGrupo = () => {
+    setValorIngresoGrupo(beneficiario?.fecha_ingreso_grupo || '')
+    setEditandoIngresoGrupo(true)
+    setIngresoGrupoAbierto(true)
+  }
+
+  const cancelarEditarIngresoGrupo = () => {
+    setEditandoIngresoGrupo(false)
+    setValorIngresoGrupo('')
+  }
+
+  const guardarIngresoGrupo = async () => {
+    if (!beneficiario) return
+    setSavingIngresoGrupo(true)
+    setMessage({ text: '', type: '' })
+
+    try {
+      const { error } = await supabase
+        .from('beneficiarios')
+        .update({ fecha_ingreso_grupo: valorIngresoGrupo || null })
+        .eq('id', beneficiario.id)
+
+      if (error) throw error
+
+      setMessage({ text: '✅ Fecha de ingreso al grupo actualizada', type: 'success' })
+      setEditandoIngresoGrupo(false)
+      await loadData()
+      setTimeout(() => setMessage({ text: '', type: '' }), 3000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+    } finally {
+      setSavingIngresoGrupo(false)
+    }
   }
 
   // ============================================
@@ -793,7 +839,7 @@ export default function VidaScout() {
     threshold: 100,
     onDrag: handleDrag,
     onDragEnd: handleDragEnd,
-    enabled: !hayEdicionAbierta   // 👈 deshabilitado cuando hay edición abierta
+    enabled: !hayEdicionAbierta
   })
 
   // ============================================
@@ -931,6 +977,123 @@ export default function VidaScout() {
       )}
     </div>
   )
+
+  // ============================================
+  // ✅ NUEVO: RENDER INGRESO AL GRUPO
+  // ============================================
+  const renderIngresoGrupo = () => {
+    const abierto = ingresoGrupoAbierto || editandoIngresoGrupo
+
+    return (
+      <Seccion
+        icono="📅"
+        titulo="Ingreso al Grupo"
+        color={COL.verdeScout}
+        colapsable={!editandoIngresoGrupo}
+        abierto={abierto}
+        onToggle={() => !editandoIngresoGrupo && setIngresoGrupoAbierto(!ingresoGrupoAbierto)}
+      >
+        {editandoIngresoGrupo ? (
+          <>
+            <CampoFecha
+              label="Fecha de ingreso al grupo"
+              value={valorIngresoGrupo}
+              onChange={v => setValorIngresoGrupo(v)}
+            />
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              marginTop: '16px',
+              borderTop: `2px dashed ${COL.bordeSuave}`,
+              paddingTop: '14px',
+              justifyContent: 'flex-end',
+              flexWrap: 'wrap'
+            }}>
+              <button
+                type="button"
+                onClick={cancelarEditarIngresoGrupo}
+                disabled={savingIngresoGrupo}
+                style={{
+                  backgroundColor: '#E8DEC4',
+                  color: COL.textoPrincipal,
+                  padding: '8px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: savingIngresoGrupo ? 'not-allowed' : 'pointer',
+                  fontSize: '12px',
+                  fontFamily: 'Oswald, sans-serif',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  opacity: savingIngresoGrupo ? 0.5 : 1,
+                  fontWeight: 600
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={guardarIngresoGrupo}
+                disabled={savingIngresoGrupo}
+                style={{
+                  backgroundColor: COL.verdeScout,
+                  color: 'white',
+                  padding: '8px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: savingIngresoGrupo ? 'wait' : 'pointer',
+                  fontSize: '12px',
+                  fontFamily: 'Oswald, sans-serif',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  opacity: savingIngresoGrupo ? 0.6 : 1,
+                  fontWeight: 600
+                }}
+              >
+                {savingIngresoGrupo ? 'Guardando...' : '💾 Guardar'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            <span style={{
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: 'clamp(13px, 3vw, 15px)',
+              color: beneficiario?.fecha_ingreso_grupo ? COL.textoPrincipal : COL.textoSecundario,
+              fontWeight: beneficiario?.fecha_ingreso_grupo ? '600' : '400'
+            }}>
+              {beneficiario?.fecha_ingreso_grupo
+                ? formatFecha(beneficiario.fecha_ingreso_grupo)
+                : 'Sin cargar'}
+            </span>
+            <button
+              onClick={abrirEditarIngresoGrupo}
+              style={{
+                padding: '6px 14px',
+                fontSize: '11px',
+                backgroundColor: '#24352A',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600
+              }}
+            >
+              ✏️ Editar
+            </button>
+          </div>
+        )}
+      </Seccion>
+    )
+  }
 
   // ============================================
   // RENDER DE PROGRESIÓN POR RAMA
@@ -1792,6 +1955,9 @@ export default function VidaScout() {
           )}
         </div>
       </div>
+
+      {/* ✅ NUEVO: Ingreso al Grupo (solo superadmin + jefatura) */}
+      {puedeEditarIngresoGrupo && renderIngresoGrupo()}
 
       {/* Progresiones */}
       {progresionManada && puedeVerRama('Manada') && renderProgresionManada()}
