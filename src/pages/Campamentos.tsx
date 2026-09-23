@@ -36,7 +36,7 @@ interface Asistencia {
 type SortColumn = 'nombre' | 'fecha' | 'tipo'
 type SortDirection = 'asc' | 'desc'
 
-type VistaModal = 'detalle' | 'asistentes' | 'editar'
+type VistaExpandida = 'detalle' | 'asistentes' | 'editar'
 
 const STORAGE_KEY = 'campamentos_filtros_v1'
 
@@ -51,9 +51,8 @@ export default function Campamentos() {
   const [message, setMessage] = useState({ text: '', type: '' })
   const [saving, setSaving] = useState(false)
 
-  // Modal único
-  const [campamentoAbierto, setCampamentoAbierto] = useState<Campamento | null>(null)
-  const [vistaModal, setVistaModal] = useState<VistaModal>('detalle')
+  const [campamentoExpandidoId, setCampamentoExpandidoId] = useState<string | null>(null)
+  const [vistaExpandida, setVistaExpandida] = useState<VistaExpandida>('detalle')
   const [asistencias, setAsistencias] = useState<Asistencia[]>([])
   const [cargandoAsistencias, setCargandoAsistencias] = useState(false)
   const [editFormData, setEditFormData] = useState({
@@ -62,12 +61,17 @@ export default function Campamentos() {
     fecha_fin: '',
     ubicacion: '',
     tipo: 'Anual',
-    rama_principal: 'Todas',
+    rama_principal: '',
     descripcion: ''
   })
 
+  const [bannerCreacion, setBannerCreacion] = useState<{
+    visible: boolean
+    campamentoId: string | null
+    nombre: string
+  }>({ visible: false, campamentoId: null, nombre: '' })
+
   // Filtros y orden
-  const [filterRama, setFilterRama] = useState('Todas')
   const [filterTipo, setFilterTipo] = useState('Todos')
   const [searchTerm, setSearchTerm] = useState('')
   const [sortColumn, setSortColumn] = useState<SortColumn>('fecha')
@@ -78,8 +82,7 @@ export default function Campamentos() {
     fecha_inicio: new Date().toISOString().split('T')[0],
     fecha_fin: new Date().toISOString().split('T')[0],
     tipo: 'Anual',
-    rama: '',
-    otro_tipo: '',
+    rama_principal: '',
     ubicacion: '',
     descripcion: ''
   })
@@ -90,7 +93,6 @@ export default function Campamentos() {
   const puedeVerPagina = isSuperAdmin || isJefatura
 
   const tiposCampamento = ['Anual', 'Corto', 'De Rama', 'Otro']
-  const ramas = ['Todas', 'Manada', 'Unidad Scout', 'Caminantes', 'Rovers']
 
   const canCreate = (): boolean => isSuperAdmin || isJefatura || isAdministrador
   const canEdit = (): boolean => isSuperAdmin || isJefatura || isAdministrador
@@ -103,7 +105,6 @@ export default function Campamentos() {
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) {
         const data = JSON.parse(saved)
-        if (data.filterRama) setFilterRama(data.filterRama)
         if (data.filterTipo) setFilterTipo(data.filterTipo)
         if (data.searchTerm) setSearchTerm(data.searchTerm)
         if (data.sortColumn) setSortColumn(data.sortColumn)
@@ -118,7 +119,6 @@ export default function Campamentos() {
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        filterRama,
         filterTipo,
         searchTerm,
         sortColumn,
@@ -127,9 +127,9 @@ export default function Campamentos() {
     } catch (e) {
       console.error('Error guardando filtros:', e)
     }
-  }, [filterRama, filterTipo, searchTerm, sortColumn, sortDirection])
+  }, [filterTipo, searchTerm, sortColumn, sortDirection])
 
-  // ===== Carga inicial (con guard de unmount) =====
+  // ===== Carga inicial =====
   useEffect(() => {
     if (!puedeVerPagina) return
 
@@ -250,25 +250,29 @@ export default function Campamentos() {
     return `${partes[2]}/${partes[1]}/${partes[0].slice(-2)}`
   }
 
-  const formatTipo = (tipo: string, ramaPrincipal: string) => {
-    if (tipo.startsWith('De Rama (') && tipo.endsWith(')')) {
+  // ✅ Nuevo formato: Tipo (Detalle) usando tipo + rama_principal
+  const formatTipoConDetalle = (tipo: string, detalle: string) => {
+    const detalleLimpio = (detalle || '').trim()
+    const esTodas = !detalleLimpio || detalleLimpio.toLowerCase() === 'todas'
+
+    if (esTodas || tipo === 'Anual' || tipo === 'Corto') {
       return tipo
     }
-    if (tipo === 'De Rama' && ramaPrincipal && ramaPrincipal !== 'Todas') {
-      return `De Rama (${ramaPrincipal})`
-    }
-    return tipo
+    return `${tipo} (${detalleLimpio})`
   }
 
-  // ===== Cargar asistencias de un campamento (lazy) =====
+  // ===== Cargar asistencias de un campamento =====
   const cargarAsistencias = async (campamentoId: string) => {
     setCargandoAsistencias(true)
+    let isMounted = true
+
     try {
       const { data: asistenciasData, error } = await supabase
         .from('campamentos_asistidos')
         .select('beneficiario_id')
         .eq('campamento_id', campamentoId)
 
+      if (!isMounted) return
       if (error) throw error
 
       const idsAsistentes = asistenciasData?.map(a => a.beneficiario_id) || []
@@ -281,49 +285,55 @@ export default function Campamentos() {
         seleccionado: idsAsistentes.includes(b.id)
       }))
 
+      if (!isMounted) return
       setAsistencias(lista)
-
     } catch (error) {
+      if (!isMounted) return
       console.error('Error al cargar asistencias:', error)
       setMessage({ text: '❌ Error al cargar asistencias', type: 'error' })
     } finally {
-      setCargandoAsistencias(false)
+      if (isMounted) setCargandoAsistencias(false)
+      isMounted = false
     }
   }
 
-  // ===== Abrir modal con detalle =====
-  const abrirCampamento = async (campamento: Campamento) => {
-    setCampamentoAbierto(campamento)
-    setVistaModal('detalle')
+  // ===== Toggle expandir campamento =====
+  const toggleExpandir = (campamentoId: string) => {
+    if (campamentoExpandidoId === campamentoId) {
+      setCampamentoExpandidoId(null)
+      setVistaExpandida('detalle')
+      setAsistencias([])
+      return
+    }
+
+    setBannerCreacion({ visible: false, campamentoId: null, nombre: '' })
+    setCampamentoExpandidoId(campamentoId)
+    setVistaExpandida('detalle')
+    setAsistencias([])
     setMessage({ text: '', type: '' })
   }
 
-  // ===== Cambiar a vista asistentes =====
-  const irAVistaAsistentes = async () => {
-    if (!campamentoAbierto) return
-    setVistaModal('asistentes')
-    await cargarAsistencias(campamentoAbierto.id)
+  const irAVistaAsistentes = async (campamentoId: string) => {
+    setVistaExpandida('asistentes')
+    await cargarAsistencias(campamentoId)
   }
 
-  // ===== Cambiar a vista editar =====
-  const irAVistaEditar = () => {
-    if (!campamentoAbierto) return
+  const irAVistaEditar = (campamento: Campamento) => {
     setEditFormData({
-      nombre: campamentoAbierto.nombre,
-      fecha_inicio: campamentoAbierto.fecha_inicio,
-      fecha_fin: campamentoAbierto.fecha_fin || '',
-      ubicacion: campamentoAbierto.ubicacion || '',
-      tipo: campamentoAbierto.tipo,
-      rama_principal: campamentoAbierto.rama_principal,
-      descripcion: campamentoAbierto.descripcion || ''
+      nombre: campamento.nombre,
+      fecha_inicio: campamento.fecha_inicio,
+      fecha_fin: campamento.fecha_fin || '',
+      ubicacion: campamento.ubicacion || '',
+      tipo: campamento.tipo,
+      rama_principal: campamento.rama_principal === 'Todas' ? '' : (campamento.rama_principal || ''),
+      descripcion: campamento.descripcion || ''
     })
-    setVistaModal('editar')
+    setVistaExpandida('editar')
   }
 
-  // ===== Cerrar modal =====
-  const cerrarModal = () => {
-    setCampamentoAbierto(null)
-    setVistaModal('detalle')
+  const cerrarExpandido = () => {
+    setCampamentoExpandidoId(null)
+    setVistaExpandida('detalle')
     setAsistencias([])
     setMessage({ text: '', type: '' })
   }
@@ -335,12 +345,9 @@ export default function Campamentos() {
     setMessage({ text: '', type: '' })
 
     try {
-      let tipoFinal = formData.tipo
-      if (formData.tipo === 'De Rama' && formData.rama) {
-        tipoFinal = `De Rama (${formData.rama})`
-      } else if (formData.tipo === 'Otro' && formData.otro_tipo) {
-        tipoFinal = formData.otro_tipo
-      }
+      // ✅ Nuevo: tipo guarda el tipo base, rama_principal guarda el detalle
+      const tipoFinal = formData.tipo
+      const detalleFinal = formData.rama_principal.trim() || 'Todas'
 
       const { data: campamento, error: campamentoError } = await supabase
         .from('campamentos')
@@ -350,7 +357,7 @@ export default function Campamentos() {
           fecha_fin: formData.fecha_fin || null,
           ubicacion: formData.ubicacion || null,
           tipo: tipoFinal,
-          rama_principal: formData.rama || 'Todas',
+          rama_principal: detalleFinal,
           descripcion: formData.descripcion || null
         })
         .select()
@@ -366,20 +373,18 @@ export default function Campamentos() {
         return
       }
 
-      setMessage({ text: `✅ Campamento "${formData.nombre}" creado correctamente`, type: 'success' })
       setShowForm(false)
       resetForm()
       await loadData()
 
       if (campamento) {
-        const nuevo: Campamento = {
-          ...campamento,
-          asistentes_count: 0
-        }
-        setCampamentoAbierto(nuevo)
-        setVistaModal('detalle')
+        setBannerCreacion({
+          visible: true,
+          campamentoId: campamento.id,
+          nombre: campamento.nombre
+        })
+        setMessage({ text: `✅ Campamento "${campamento.nombre}" creado correctamente`, type: 'success' })
       }
-
     } catch (error: any) {
       console.error('Error:', error)
       setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
@@ -388,15 +393,38 @@ export default function Campamentos() {
     }
   }
 
+  const handleAgregarParticipantesAhora = async () => {
+    if (!bannerCreacion.campamentoId) return
+
+    const campamento = campamentos.find(c => c.id === bannerCreacion.campamentoId)
+    if (!campamento) return
+
+    setBannerCreacion({ visible: false, campamentoId: null, nombre: '' })
+    setCampamentoExpandidoId(campamento.id)
+    setVistaExpandida('asistentes')
+    await cargarAsistencias(campamento.id)
+  }
+
+  const handleNoAgregarParticipantes = () => {
+    setBannerCreacion({ visible: false, campamentoId: null, nombre: '' })
+    setMessage({ text: '', type: '' })
+  }
+
   // ===== Guardar edición =====
   const handleEditCampamento = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!campamentoAbierto) return
+    if (!campamentoExpandidoId) return
+
+    const campamentoOriginal = campamentos.find(c => c.id === campamentoExpandidoId)
+    if (!campamentoOriginal) return
 
     setSaving(true)
     setMessage({ text: '', type: '' })
 
     try {
+      const tipoFinal = editFormData.tipo
+      const detalleFinal = editFormData.rama_principal.trim() || 'Todas'
+
       const { error } = await supabase
         .from('campamentos')
         .update({
@@ -404,38 +432,26 @@ export default function Campamentos() {
           fecha_inicio: editFormData.fecha_inicio,
           fecha_fin: editFormData.fecha_fin || null,
           ubicacion: editFormData.ubicacion || null,
-          tipo: editFormData.tipo,
-          rama_principal: editFormData.rama_principal,
+          tipo: tipoFinal,
+          rama_principal: detalleFinal,
           descripcion: editFormData.descripcion || null
         })
-        .eq('id', campamentoAbierto.id)
+        .eq('id', campamentoExpandidoId)
 
       if (error) throw error
 
-      // Si cambió el nombre, actualizar en campamentos_asistidos
-      if (campamentoAbierto.nombre !== editFormData.nombre) {
+      if (campamentoOriginal.nombre !== editFormData.nombre) {
         await supabase
           .from('campamentos_asistidos')
           .update({ nombre_campamento: editFormData.nombre })
-          .eq('campamento_id', campamentoAbierto.id)
+          .eq('campamento_id', campamentoExpandidoId)
       }
 
-      // Actualizar el campamento abierto
-      setCampamentoAbierto({
-        ...campamentoAbierto,
-        nombre: editFormData.nombre,
-        fecha_inicio: editFormData.fecha_inicio,
-        fecha_fin: editFormData.fecha_fin,
-        ubicacion: editFormData.ubicacion,
-        tipo: editFormData.tipo,
-        rama_principal: editFormData.rama_principal,
-        descripcion: editFormData.descripcion
-      })
-
       setMessage({ text: '✅ Campamento actualizado correctamente', type: 'success' })
-      setVistaModal('detalle')
+      setVistaExpandida('detalle')
       await loadData()
 
+      setTimeout(() => setMessage({ text: '', type: '' }), 3000)
     } catch (error: any) {
       console.error('Error:', error)
       setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
@@ -445,10 +461,8 @@ export default function Campamentos() {
   }
 
   // ===== Eliminar campamento =====
-  const handleDeleteCampamento = async () => {
-    if (!campamentoAbierto) return
-
-    if (!confirm(`¿Estás seguro de que querés eliminar el campamento "${campamentoAbierto.nombre}" y todas sus asistencias?`)) {
+  const handleDeleteCampamento = async (campamento: Campamento) => {
+    if (!confirm(`¿Estás seguro de que querés eliminar el campamento "${campamento.nombre}" y todas sus asistencias?`)) {
       return
     }
 
@@ -459,21 +473,22 @@ export default function Campamentos() {
       const { error: deleteAsistidosError } = await supabase
         .from('campamentos_asistidos')
         .delete()
-        .eq('campamento_id', campamentoAbierto.id)
+        .eq('campamento_id', campamento.id)
 
       if (deleteAsistidosError) throw deleteAsistidosError
 
       const { error: deleteCampamentoError } = await supabase
         .from('campamentos')
         .delete()
-        .eq('id', campamentoAbierto.id)
+        .eq('id', campamento.id)
 
       if (deleteCampamentoError) throw deleteCampamentoError
 
       setMessage({ text: `✅ Campamento eliminado correctamente`, type: 'success' })
-      cerrarModal()
+      cerrarExpandido()
       await loadData()
 
+      setTimeout(() => setMessage({ text: '', type: '' }), 3000)
     } catch (error: any) {
       console.error('Error al eliminar campamento:', error)
       setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
@@ -501,8 +516,8 @@ export default function Campamentos() {
 
   // ===== Guardar asistencias =====
   const guardarAsistencias = async () => {
-    if (!campamentoAbierto) return
-    const campamentoId = campamentoAbierto.id
+    if (!campamentoExpandidoId) return
+    const campamentoId = campamentoExpandidoId
 
     setSaving(true)
     setMessage({ text: '', type: '' })
@@ -551,14 +566,8 @@ export default function Campamentos() {
         type: 'success'
       })
 
-      // Actualizar el conteo del campamento abierto
-      setCampamentoAbierto({
-        ...campamentoAbierto,
-        asistentes_count: seleccionados.length
-      })
-
       await loadData()
-
+      setVistaExpandida('detalle')
     } catch (error: any) {
       console.error('Error:', error)
       setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
@@ -573,8 +582,7 @@ export default function Campamentos() {
       fecha_inicio: new Date().toISOString().split('T')[0],
       fecha_fin: new Date().toISOString().split('T')[0],
       tipo: 'Anual',
-      rama: '',
-      otro_tipo: '',
+      rama_principal: '',
       ubicacion: '',
       descripcion: ''
     })
@@ -599,15 +607,8 @@ export default function Campamentos() {
   // ===== Filtros y orden =====
   const campamentosFiltrados = campamentos
     .filter(c => {
-      if (filterRama !== 'Todas') {
-        if (c.rama_principal !== filterRama) return false
-      }
       if (filterTipo !== 'Todos') {
-        if (filterTipo === 'De Rama') {
-          if (!c.tipo.startsWith('De Rama')) return false
-        } else {
-          if (c.tipo !== filterTipo) return false
-        }
+        if (c.tipo !== filterTipo) return false
       }
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase()
@@ -727,6 +728,7 @@ export default function Campamentos() {
             onClick={() => {
               setShowForm(!showForm)
               setMessage({ text: '', type: '' })
+              setBannerCreacion({ visible: false, campamentoId: null, nombre: '' })
             }}
             style={{
               backgroundColor: '#24352A',
@@ -747,7 +749,78 @@ export default function Campamentos() {
         )}
       </div>
 
-      {message.text && !campamentoAbierto && (
+      {/* BANNER POST-CREACIÓN */}
+      {bannerCreacion.visible && (
+        <div style={{
+          backgroundColor: '#F0F7F0',
+          border: '2px solid #B8D4B8',
+          borderRadius: '12px',
+          padding: '14px 16px',
+          marginBottom: '16px',
+          fontFamily: 'Oswald, sans-serif'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '10px',
+            fontSize: 'clamp(12px, 2.5vw, 14px)',
+            color: '#24352A',
+            fontWeight: '600'
+          }}>
+            ✅ Campamento "{bannerCreacion.nombre}" creado
+          </div>
+          <div style={{
+            fontSize: 'clamp(12px, 2.5vw, 14px)',
+            color: '#24352A',
+            marginBottom: '12px'
+          }}>
+            ¿Querés agregar los participantes ahora?
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              onClick={handleNoAgregarParticipantes}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                fontSize: 'clamp(11px, 2.5vw, 13px)',
+                backgroundColor: '#E8DEC4',
+                color: '#24352A',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600
+              }}
+            >
+              No, después
+            </button>
+            <button
+              onClick={handleAgregarParticipantesAhora}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                fontSize: 'clamp(11px, 2.5vw, 13px)',
+                backgroundColor: '#5C7A5E',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600
+              }}
+            >
+              Sí, agregar ahora
+            </button>
+          </div>
+        </div>
+      )}
+
+      {message.text && !campamentoExpandidoId && !bannerCreacion.visible && (
         <div style={{
           padding: '10px 14px',
           borderRadius: '8px',
@@ -795,7 +868,8 @@ export default function Campamentos() {
                   width: '100%', padding: '8px 12px',
                   fontSize: 'clamp(11px, 2.5vw, 14px)',
                   border: '2px solid #D1C9B4', borderRadius: '6px',
-                  outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
+                  outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
+                  boxSizing: 'border-box'
                 }}
                 required
               />
@@ -812,7 +886,7 @@ export default function Campamentos() {
                 style={{
                   width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
                   border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
                 }}
                 required
               />
@@ -829,29 +903,22 @@ export default function Campamentos() {
                 style={{
                   width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
                   border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
                 }}
               />
             </div>
 
-            <div>
+            <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
                 Tipo *
               </label>
               <select
                 value={formData.tipo}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setFormData({
-                    ...formData, tipo: value,
-                    rama: value === 'De Rama' ? formData.rama : '',
-                    otro_tipo: value === 'Otro' ? formData.otro_tipo : ''
-                  })
-                }}
+                onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
                 style={{
                   width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
                   border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
                 }}
                 required
               >
@@ -859,49 +926,23 @@ export default function Campamentos() {
               </select>
             </div>
 
-            {formData.tipo === 'De Rama' && (
-              <div>
-                <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                  Rama *
-                </label>
-                <select
-                  value={formData.rama}
-                  onChange={(e) => setFormData({ ...formData, rama: e.target.value })}
-                  style={{
-                    width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                    border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                    fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                  }}
-                  required
-                >
-                  <option value="">Seleccionar rama...</option>
-                  <option value="Manada">🐺 Manada</option>
-                  <option value="Unidad Scout">⚜️ Unidad Scout</option>
-                  <option value="Caminantes">🏔️ Caminantes</option>
-                  <option value="Rovers">🔥 Rovers</option>
-                </select>
-              </div>
-            )}
-
-            {formData.tipo === 'Otro' && (
-              <div>
-                <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                  Especificar Tipo *
-                </label>
-                <input
-                  type="text"
-                  value={formData.otro_tipo}
-                  onChange={(e) => setFormData({ ...formData, otro_tipo: e.target.value })}
-                  placeholder="Ej: Jornada, Peregrinación"
-                  style={{
-                    width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                    border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                    fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                  }}
-                  required
-                />
-              </div>
-            )}
+            {/* ✅ Campo de texto libre "A quién pertenece" - siempre visible */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                A quién pertenece
+              </label>
+              <input
+                type="text"
+                value={formData.rama_principal}
+                onChange={(e) => setFormData({ ...formData, rama_principal: e.target.value })}
+                placeholder="Ej: Caminantes, Patrulla Pantera, Grupo, etc."
+                style={{
+                  width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                  border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                }}
+              />
+            </div>
 
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
@@ -915,7 +956,7 @@ export default function Campamentos() {
                 style={{
                   width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
                   border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
                 }}
               />
             </div>
@@ -932,7 +973,7 @@ export default function Campamentos() {
                   width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
                   border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
                   fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
-                  resize: 'vertical', minHeight: '60px'
+                  resize: 'vertical', minHeight: '60px', boxSizing: 'border-box'
                 }}
               />
             </div>
@@ -979,24 +1020,9 @@ export default function Campamentos() {
             flex: 1, minWidth: '160px', padding: '8px 12px',
             fontSize: 'clamp(11px, 2vw, 13px)', border: '2px solid #D1C9B4',
             borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif',
-            backgroundColor: 'white'
+            backgroundColor: 'white', boxSizing: 'border-box'
           }}
         />
-        <select
-          value={filterRama}
-          onChange={(e) => setFilterRama(e.target.value)}
-          style={{
-            padding: '8px 12px', fontSize: 'clamp(11px, 2vw, 13px)',
-            border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-            fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', cursor: 'pointer'
-          }}
-        >
-          <option value="Todas">Todas las ramas</option>
-          <option value="Manada">🐺 Manada</option>
-          <option value="Unidad Scout">⚜️ Unidad Scout</option>
-          <option value="Caminantes">🏔️ Caminantes</option>
-          <option value="Rovers">🔥 Rovers</option>
-        </select>
         <select
           value={filterTipo}
           onChange={(e) => setFilterTipo(e.target.value)}
@@ -1012,9 +1038,9 @@ export default function Campamentos() {
           <option value="De Rama">De Rama</option>
           <option value="Otro">Otro</option>
         </select>
-        {(filterRama !== 'Todas' || filterTipo !== 'Todos' || searchTerm) && (
+        {(filterTipo !== 'Todos' || searchTerm) && (
           <button
-            onClick={() => { setFilterRama('Todas'); setFilterTipo('Todos'); setSearchTerm('') }}
+            onClick={() => { setFilterTipo('Todos'); setSearchTerm('') }}
             style={{
               padding: '8px 12px', fontSize: 'clamp(10px, 2vw, 12px)',
               border: '2px solid #BF4E30', borderRadius: '6px',
@@ -1027,90 +1053,507 @@ export default function Campamentos() {
         )}
       </div>
 
-      {/* TABLA SIMPLE */}
-      <div style={{
-        backgroundColor: 'white', borderRadius: '12px',
-        border: '2px solid #D1C9B4', overflow: 'auto'
-      }}>
-        <table style={{
-          width: '100%', borderCollapse: 'collapse',
-          fontFamily: 'Oswald, sans-serif',
-          fontSize: 'clamp(10px, 2vw, 13px)',
-          minWidth: 'fixed'
-        }}>
-          <thead style={{ backgroundColor: '#24352A' }}>
-            <tr>
-              <th
-                onClick={() => handleSort('nombre')}
+      {/* LISTA DE CAMPAMENTOS (cards) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {campamentosFiltrados.map((campamento) => {
+          const estaExpandido = campamentoExpandidoId === campamento.id
+
+          return (
+            <div key={campamento.id}>
+              {/* CARD PRINCIPAL */}
+              <div
+                onClick={() => toggleExpandir(campamento.id)}
                 style={{
-                  padding: '10px 12px', textAlign: 'left',
-                  color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)',
-                  textTransform: 'uppercase', letterSpacing: '0.5px',
-                  cursor: 'pointer', userSelect: 'none'
-                }}
-              >
-                Nombre <SortIcon col="nombre" />
-              </th>
-              <th
-                onClick={() => handleSort('fecha')}
-                style={{
-                  padding: '10px 12px', textAlign: 'left',
-                  color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)',
-                  textTransform: 'uppercase', letterSpacing: '0.5px',
-                  cursor: 'pointer', userSelect: 'none'
-                }}
-              >
-                Fechas <SortIcon col="fecha" />
-              </th>
-              <th
-                onClick={() => handleSort('tipo')}
-                style={{
-                  padding: '10px 12px', textAlign: 'left',
-                  color: '#F3ECD8', fontSize: 'clamp(9px, 1.8vw, 11px)',
-                  textTransform: 'uppercase', letterSpacing: '0.5px',
-                  cursor: 'pointer', userSelect: 'none'
-                }}
-              >
-                Tipo <SortIcon col="tipo" />
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {campamentosFiltrados.map((campamento) => (
-              <tr
-                key={campamento.id}
-                onClick={() => abrirCampamento(campamento)}
-                style={{
-                  borderBottom: '1px solid #E8DEC4',
+                  backgroundColor: 'white',
+                  borderRadius: estaExpandido ? '12px 12px 0 0' : '12px',
+                  padding: '12px 14px',
+                  border: '2px solid #24352A',
+                  borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
                   cursor: 'pointer',
-                  transition: 'background-color 0.2s'
+                  fontFamily: 'Oswald, sans-serif',
+                  transition: 'border-color 0.2s'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F3ECD8'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
-                <td style={{
-                  padding: '12px 12px', fontSize: 'clamp(12px, 2.5vw, 15px)',
-                  color: '#24352A', fontWeight: '600'
+                <div style={{
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: '700',
+                  fontSize: 'clamp(13px, 3vw, 16px)',
+                  color: '#24352A',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '6px'
                 }}>
                   {campamento.nombre}
-                </td>
-                <td style={{
-                  padding: '12px 12px', fontSize: 'clamp(11px, 2vw, 13px)',
-                  color: '#24352A'
+                </div>
+                <div style={{
+                  display: 'flex',
+                  gap: '10px',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  fontSize: 'clamp(10px, 2.2vw, 12px)',
+                  color: '#7A7364'
                 }}>
-                  {formatFechaCorta(campamento.fecha_inicio)}
-                  {campamento.fecha_fin && ` - ${formatFechaCorta(campamento.fecha_fin)}`}
-                </td>
-                <td style={{
-                  padding: '12px 12px', fontSize: 'clamp(11px, 2vw, 13px)',
-                  color: '#24352A'
+                  <span>
+                    📅 {formatFechaCorta(campamento.fecha_inicio)}
+                    {campamento.fecha_fin && ` - ${formatFechaCorta(campamento.fecha_fin)}`}
+                  </span>
+                  <span>·</span>
+                  <span>{formatTipoConDetalle(campamento.tipo, campamento.rama_principal)}</span>
+                  <span>·</span>
+                  <span>👥 {campamento.asistentes_count || 0}</span>
+                </div>
+              </div>
+
+              {/* PANEL EXPANDIDO */}
+              {estaExpandido && (
+                <div style={{
+                  backgroundColor: '#F9F6EE',
+                  borderRadius: '0 0 12px 12px',
+                  border: '2px solid #24352A',
+                  borderTop: 'none',
+                  padding: '14px 12px',
+                  fontFamily: 'Oswald, sans-serif'
                 }}>
-                  {formatTipo(campamento.tipo, campamento.rama_principal)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  {message.text && (
+                    <div style={{
+                      padding: '8px 12px', borderRadius: '6px', marginBottom: '12px',
+                      fontSize: 'clamp(11px, 2.2vw, 13px)', border: '1px solid',
+                      ...(message.type === 'error' ? {
+                        backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA'
+                      } : message.type === 'warning' ? {
+                        backgroundColor: '#FEF3C7', color: '#C48A2A', borderColor: '#FDE68A'
+                      } : {
+                        backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0'
+                      })
+                    }}>
+                      {message.text}
+                    </div>
+                  )}
+
+                  {/* ===== VISTA DETALLE ===== */}
+                  {vistaExpandida === 'detalle' && (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                        <div>
+                          <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Fecha Inicio</p>
+                          <p style={{ fontSize: 'clamp(12px, 2.5vw, 14px)', color: '#24352A', fontWeight: '600', margin: '2px 0 0 0' }}>
+                            {formatFecha(campamento.fecha_inicio)}
+                          </p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Fecha Fin</p>
+                          <p style={{ fontSize: 'clamp(12px, 2.5vw, 14px)', color: '#24352A', fontWeight: '600', margin: '2px 0 0 0' }}>
+                            {campamento.fecha_fin ? formatFecha(campamento.fecha_fin) : '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Tipo</p>
+                          <p style={{ fontSize: 'clamp(12px, 2.5vw, 14px)', color: '#24352A', fontWeight: '600', margin: '2px 0 0 0' }}>
+                            {formatTipoConDetalle(campamento.tipo, campamento.rama_principal)}
+                          </p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Asistentes</p>
+                          <p style={{ fontSize: 'clamp(12px, 2.5vw, 14px)', color: '#24352A', fontWeight: '600', margin: '2px 0 0 0' }}>
+                            👥 {campamento.asistentes_count || 0}
+                          </p>
+                        </div>
+                        {campamento.ubicacion && (
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Ubicación</p>
+                            <p style={{ fontSize: 'clamp(12px, 2.5vw, 14px)', color: '#24352A', margin: '2px 0 0 0' }}>
+                              📍 {campamento.ubicacion}
+                            </p>
+                          </div>
+                        )}
+                        {campamento.descripcion && (
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Descripción</p>
+                            <p style={{ fontSize: 'clamp(11px, 2.2vw, 13px)', color: '#24352A', margin: '2px 0 0 0', lineHeight: 1.5 }}>
+                              {campamento.descripcion}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{
+                        display: 'flex', flexDirection: 'column', gap: '8px',
+                        marginTop: '12px', borderTop: '2px solid #E8DEC4', paddingTop: '12px'
+                      }}>
+                        {canAssign() && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              irAVistaAsistentes(campamento.id)
+                            }}
+                            style={{
+                              padding: '10px 16px', fontSize: 'clamp(12px, 2.5vw, 14px)',
+                              backgroundColor: '#5C7A5E', color: 'white', border: 'none',
+                              borderRadius: '8px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                              textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600
+                            }}
+                          >
+                            👥 Ver / editar asistentes
+                          </button>
+                        )}
+                        {canEdit() && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              irAVistaEditar(campamento)
+                            }}
+                            style={{
+                              padding: '10px 16px', fontSize: 'clamp(12px, 2.5vw, 14px)',
+                              backgroundColor: '#24352A', color: 'white', border: 'none',
+                              borderRadius: '8px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                              textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600
+                            }}
+                          >
+                            ✏️ Editar campamento
+                          </button>
+                        )}
+                        {canDelete() && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteCampamento(campamento)
+                            }}
+                            disabled={saving}
+                            style={{
+                              padding: '10px 16px', fontSize: 'clamp(12px, 2.5vw, 14px)',
+                              backgroundColor: '#FEE2E2', color: '#BF4E30',
+                              border: '2px solid #FECACA', borderRadius: '8px',
+                              cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                              textTransform: 'uppercase', letterSpacing: '0.5px',
+                              fontWeight: 600, opacity: saving ? 0.5 : 1
+                            }}
+                          >
+                            {saving ? 'Eliminando...' : '🗑️ Eliminar campamento'}
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            cerrarExpandido()
+                          }}
+                          style={{
+                            padding: '8px 16px', fontSize: 'clamp(11px, 2.2vw, 13px)',
+                            backgroundColor: 'transparent', color: '#7A7364',
+                            border: '2px solid #D1C9B4', borderRadius: '8px',
+                            cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                            textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600
+                          }}
+                        >
+                          ↑ Cerrar
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* ===== VISTA ASISTENTES ===== */}
+                  {vistaExpandida === 'asistentes' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={seleccionarTodos}
+                          style={{
+                            padding: '6px 12px', fontSize: 'clamp(10px, 2vw, 12px)',
+                            backgroundColor: '#5C7A5E', color: 'white', border: 'none',
+                            borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                            textTransform: 'uppercase', letterSpacing: '0.5px'
+                          }}
+                        >
+                          ✅ Todos
+                        </button>
+                        <button
+                          onClick={deseleccionarTodos}
+                          style={{
+                            padding: '6px 12px', fontSize: 'clamp(10px, 2vw, 12px)',
+                            backgroundColor: '#E8DEC4', color: '#24352A', border: 'none',
+                            borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                            textTransform: 'uppercase', letterSpacing: '0.5px'
+                          }}
+                        >
+                          ❌ Ninguno
+                        </button>
+                      </div>
+
+                      <div style={{
+                        maxHeight: '400px', overflowY: 'auto',
+                        border: '1px solid #E8DEC4', borderRadius: '8px', padding: '4px',
+                        backgroundColor: 'white'
+                      }}>
+                        {cargandoAsistencias ? (
+                          <div style={{ textAlign: 'center', padding: '24px', color: '#7A7364' }}>
+                            Cargando asistentes...
+                          </div>
+                        ) : (
+                          [...asistencias]
+                            .sort((a, b) => {
+                              const ordenA = ({ 'Manada': 1, 'Unidad Scout': 2, 'Caminantes': 3, 'Rovers': 4 } as Record<string, number>)[a.rama] || 99
+                              const ordenB = ({ 'Manada': 1, 'Unidad Scout': 2, 'Caminantes': 3, 'Rovers': 4 } as Record<string, number>)[b.rama] || 99
+                              if (ordenA !== ordenB) return ordenA - ordenB
+                              return a.nombre_completo.localeCompare(b.nombre_completo)
+                            })
+                            .map((item) => (
+                              <div
+                                key={item.beneficiario_id}
+                                onClick={() => toggleSeleccion(item.beneficiario_id)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '8px',
+                                  padding: '8px 10px', borderRadius: '6px', cursor: 'pointer',
+                                  backgroundColor: item.seleccionado ? '#F3ECD8' : 'transparent',
+                                  borderBottom: '1px solid #F3ECD8'
+                                }}
+                              >
+                                <div style={{
+                                  width: '20px', height: '20px', borderRadius: '4px',
+                                  border: '2px solid #D1C9B4',
+                                  backgroundColor: item.seleccionado ? '#24352A' : 'white',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  flexShrink: 0
+                                }}>
+                                  {item.seleccionado && (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{
+                                    fontFamily: 'Oswald, sans-serif',
+                                    fontSize: 'clamp(11px, 2.5vw, 14px)',
+                                    color: '#24352A',
+                                    fontWeight: item.seleccionado ? '600' : '400'
+                                  }}>
+                                    {item.nombre_completo}
+                                  </div>
+                                  <div style={{
+                                    fontFamily: 'Oswald, sans-serif',
+                                    fontSize: 'clamp(9px, 1.8vw, 11px)',
+                                    color: '#7A7364'
+                                  }}>
+                                    {item.rama}
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                        )}
+                      </div>
+
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        borderTop: '2px solid #E8DEC4', paddingTop: '12px',
+                        flexWrap: 'wrap', gap: '8px'
+                      }}>
+                        <span style={{
+                          fontFamily: 'Oswald, sans-serif',
+                          fontSize: 'clamp(10px, 2vw, 13px)', color: '#7A7364'
+                        }}>
+                          {asistencias.filter(a => a.seleccionado).length} seleccionados
+                        </span>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => setVistaExpandida('detalle')}
+                            style={{
+                              padding: '8px 16px', fontSize: 'clamp(11px, 2.5vw, 13px)',
+                              backgroundColor: '#E8DEC4', color: '#24352A', border: 'none',
+                              borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                              textTransform: 'uppercase', letterSpacing: '0.5px'
+                            }}
+                          >
+                            Volver
+                          </button>
+                          <button
+                            onClick={guardarAsistencias}
+                            disabled={saving}
+                            style={{
+                              padding: '8px 16px', fontSize: 'clamp(11px, 2.5vw, 13px)',
+                              backgroundColor: '#24352A', color: 'white', border: 'none',
+                              borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                              textTransform: 'uppercase', letterSpacing: '0.5px',
+                              opacity: saving ? 0.5 : 1
+                            }}
+                          >
+                            {saving ? 'Guardando...' : 'Guardar'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ===== VISTA EDITAR ===== */}
+                  {vistaExpandida === 'editar' && (
+                    <form
+                      onSubmit={handleEditCampamento}
+                      style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}
+                    >
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                          Nombre *
+                        </label>
+                        <input
+                          type="text"
+                          value={editFormData.nombre}
+                          onChange={(e) => setEditFormData({ ...editFormData, nombre: e.target.value })}
+                          style={{
+                            width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                            fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                          }}
+                          required
+                          disabled={saving}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                          Fecha Inicio *
+                        </label>
+                        <input
+                          type="date"
+                          value={editFormData.fecha_inicio}
+                          onChange={(e) => setEditFormData({ ...editFormData, fecha_inicio: e.target.value })}
+                          style={{
+                            width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                            fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                          }}
+                          required
+                          disabled={saving}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                          Fecha Fin
+                        </label>
+                        <input
+                          type="date"
+                          value={editFormData.fecha_fin}
+                          onChange={(e) => setEditFormData({ ...editFormData, fecha_fin: e.target.value })}
+                          style={{
+                            width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                            fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                          }}
+                          disabled={saving}
+                        />
+                      </div>
+
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                          Tipo *
+                        </label>
+                        <select
+                          value={editFormData.tipo}
+                          onChange={(e) => setEditFormData({ ...editFormData, tipo: e.target.value })}
+                          style={{
+                            width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                            fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                          }}
+                          required
+                          disabled={saving}
+                        >
+                          {tiposCampamento.map(tipo => <option key={tipo} value={tipo}>{tipo}</option>)}
+                        </select>
+                      </div>
+
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                          A quién pertenece
+                        </label>
+                        <input
+                          type="text"
+                          value={editFormData.rama_principal}
+                          onChange={(e) => setEditFormData({ ...editFormData, rama_principal: e.target.value })}
+                          placeholder="Ej: Caminantes, Patrulla Pantera, Grupo, etc."
+                          style={{
+                            width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                            fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                          }}
+                          disabled={saving}
+                        />
+                      </div>
+
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                          Ubicación
+                        </label>
+                        <input
+                          type="text"
+                          value={editFormData.ubicacion}
+                          onChange={(e) => setEditFormData({ ...editFormData, ubicacion: e.target.value })}
+                          placeholder="Ej: Parque Nacional, Ciudad, etc."
+                          style={{
+                            width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                            fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                          }}
+                          disabled={saving}
+                        />
+                      </div>
+
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                          Descripción
+                        </label>
+                        <textarea
+                          value={editFormData.descripcion}
+                          onChange={(e) => setEditFormData({ ...editFormData, descripcion: e.target.value })}
+                          placeholder="Descripción del campamento..."
+                          style={{
+                            width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                            fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
+                            resize: 'vertical', minHeight: '60px', boxSizing: 'border-box'
+                          }}
+                          disabled={saving}
+                        />
+                      </div>
+
+                      <div style={{
+                        gridColumn: '1 / -1', display: 'flex', gap: '8px',
+                        borderTop: '2px solid #E8DEC4',
+                        paddingTop: '12px', justifyContent: 'flex-end', flexWrap: 'wrap'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => setVistaExpandida('detalle')}
+                          style={{
+                            padding: '8px 20px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            backgroundColor: '#E8DEC4', color: '#24352A', border: 'none',
+                            borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                            textTransform: 'uppercase', letterSpacing: '0.5px',
+                            opacity: saving ? 0.5 : 1, flex: 1
+                          }}
+                          disabled={saving}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          style={{
+                            padding: '8px 20px', fontSize: 'clamp(11px, 2.5vw, 14px)',
+                            backgroundColor: '#24352A', color: 'white', border: 'none',
+                            borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                            textTransform: 'uppercase', letterSpacing: '0.5px',
+                            opacity: saving ? 0.5 : 1, flex: 1
+                          }}
+                        >
+                          {saving ? 'Guardando...' : 'Guardar cambios'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {campamentosFiltrados.length === 0 && campamentos.length > 0 && (
@@ -1130,501 +1573,6 @@ export default function Campamentos() {
           textTransform: 'uppercase', letterSpacing: '1px'
         }}>
           No hay campamentos registrados
-        </div>
-      )}
-
-      {/* MODAL ÚNICO */}
-      {campamentoAbierto && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '16px'
-          }}
-          onClick={() => !saving && cerrarModal()}
-        >
-          <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '16px',
-              padding: '20px',
-              maxWidth: '600px',
-              width: '100%',
-              border: '2px solid #D1C9B4',
-              maxHeight: '90vh',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header del modal */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '16px',
-              borderBottom: '2px solid #E8DEC4',
-              paddingBottom: '12px',
-              flexShrink: 0
-            }}>
-              <div>
-                <h2 style={{
-                  fontFamily: 'Oswald, sans-serif',
-                  fontWeight: '700',
-                  fontSize: 'clamp(14px, 3vw, 18px)',
-                  color: '#24352A',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  margin: 0
-                }}>
-                  🏕️ {campamentoAbierto.nombre}
-                </h2>
-              </div>
-              {!saving && (
-                <button
-                  onClick={cerrarModal}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: '24px', color: '#7A7364'
-                  }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Mensajes */}
-            {message.text && (
-              <div style={{
-                padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
-                fontSize: 'clamp(11px, 2vw, 13px)', border: '1px solid',
-                fontFamily: 'Oswald, sans-serif', flexShrink: 0,
-                ...(message.type === 'error' ? {
-                  backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA'
-                } : message.type === 'warning' ? {
-                  backgroundColor: '#FEF3C7', color: '#C48A2A', borderColor: '#FDE68A'
-                } : {
-                  backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0'
-                })
-              }}>
-                {message.text}
-              </div>
-            )}
-
-            {/* ==== VISTA DETALLE ==== */}
-            {vistaModal === 'detalle' && (
-              <div style={{ overflowY: 'auto', flex: 1 }}>
-                <div style={{
-                  display: 'grid', gridTemplateColumns: '1fr 1fr',
-                  gap: '12px', marginBottom: '16px'
-                }}>
-                  <div>
-                    <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Fecha Inicio</p>
-                    <p style={{ fontSize: 'clamp(13px, 2.5vw, 15px)', color: '#24352A', fontWeight: '600', margin: '2px 0 0 0' }}>
-                      {formatFecha(campamentoAbierto.fecha_inicio)}
-                    </p>
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Fecha Fin</p>
-                    <p style={{ fontSize: 'clamp(13px, 2.5vw, 15px)', color: '#24352A', fontWeight: '600', margin: '2px 0 0 0' }}>
-                      {campamentoAbierto.fecha_fin ? formatFecha(campamentoAbierto.fecha_fin) : '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Tipo</p>
-                    <p style={{ fontSize: 'clamp(13px, 2.5vw, 15px)', color: '#24352A', fontWeight: '600', margin: '2px 0 0 0' }}>
-                      {formatTipo(campamentoAbierto.tipo, campamentoAbierto.rama_principal)}
-                    </p>
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Asistentes</p>
-                    <p style={{ fontSize: 'clamp(13px, 2.5vw, 15px)', color: '#24352A', fontWeight: '600', margin: '2px 0 0 0' }}>
-                      👥 {campamentoAbierto.asistentes_count || 0}
-                    </p>
-                  </div>
-                  {campamentoAbierto.ubicacion && (
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Ubicación</p>
-                      <p style={{ fontSize: 'clamp(13px, 2.5vw, 15px)', color: '#24352A', margin: '2px 0 0 0' }}>
-                        📍 {campamentoAbierto.ubicacion}
-                      </p>
-                    </div>
-                  )}
-                  {campamentoAbierto.descripcion && (
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <p style={{ fontSize: '10px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Descripción</p>
-                      <p style={{ fontSize: 'clamp(12px, 2.5vw, 14px)', color: '#24352A', margin: '2px 0 0 0', lineHeight: 1.5 }}>
-                        {campamentoAbierto.descripcion}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Botones de acción */}
-                <div style={{
-                  display: 'flex', flexDirection: 'column', gap: '8px',
-                  marginTop: '16px', borderTop: '2px solid #E8DEC4', paddingTop: '16px'
-                }}>
-                  {canAssign() && (
-                    <button
-                      onClick={irAVistaAsistentes}
-                      style={{
-                        padding: '10px 16px', fontSize: 'clamp(12px, 2.5vw, 14px)',
-                        backgroundColor: '#5C7A5E', color: 'white', border: 'none',
-                        borderRadius: '8px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600
-                      }}
-                    >
-                      👥 Ver / editar asistentes
-                    </button>
-                  )}
-                  {canEdit() && (
-                    <button
-                      onClick={irAVistaEditar}
-                      style={{
-                        padding: '10px 16px', fontSize: 'clamp(12px, 2.5vw, 14px)',
-                        backgroundColor: '#24352A', color: 'white', border: 'none',
-                        borderRadius: '8px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600
-                      }}
-                    >
-                      ✏️ Editar campamento
-                    </button>
-                  )}
-                  {canDelete() && (
-                    <button
-                      onClick={handleDeleteCampamento}
-                      disabled={saving}
-                      style={{
-                        padding: '10px 16px', fontSize: 'clamp(12px, 2.5vw, 14px)',
-                        backgroundColor: '#FEE2E2', color: '#BF4E30',
-                        border: '2px solid #FECACA', borderRadius: '8px',
-                        cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase', letterSpacing: '0.5px',
-                        fontWeight: 600, opacity: saving ? 0.5 : 1
-                      }}
-                    >
-                      {saving ? 'Eliminando...' : '🗑️ Eliminar campamento'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ==== VISTA ASISTENTES ==== */}
-            {vistaModal === 'asistentes' && (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                {/* Barra de acciones asistentes */}
-                <div style={{
-                  display: 'flex', gap: '8px', marginBottom: '12px',
-                  flexWrap: 'wrap', flexShrink: 0
-                }}>
-                  <button
-                    onClick={seleccionarTodos}
-                    style={{
-                      padding: '6px 12px', fontSize: 'clamp(10px, 2vw, 12px)',
-                      backgroundColor: '#5C7A5E', color: 'white', border: 'none',
-                      borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                      textTransform: 'uppercase', letterSpacing: '0.5px'
-                    }}
-                  >
-                    ✅ Todos
-                  </button>
-                  <button
-                    onClick={deseleccionarTodos}
-                    style={{
-                      padding: '6px 12px', fontSize: 'clamp(10px, 2vw, 12px)',
-                      backgroundColor: '#E8DEC4', color: '#24352A', border: 'none',
-                      borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                      textTransform: 'uppercase', letterSpacing: '0.5px'
-                    }}
-                  >
-                    ❌ Ninguno
-                  </button>
-                </div>
-
-                {/* Lista */}
-                <div style={{
-                  flex: 1, overflowY: 'auto',
-                  border: '1px solid #E8DEC4', borderRadius: '8px', padding: '4px'
-                }}>
-                  {cargandoAsistencias ? (
-                    <div style={{ textAlign: 'center', padding: '24px', color: '#7A7364' }}>
-                      Cargando asistentes...
-                    </div>
-                  ) : (
-                    asistencias
-                      .sort((a, b) => {
-                        const ordenA = ({ 'Manada': 1, 'Unidad Scout': 2, 'Caminantes': 3, 'Rovers': 4 } as Record<string, number>)[a.rama] || 99
-                        const ordenB = ({ 'Manada': 1, 'Unidad Scout': 2, 'Caminantes': 3, 'Rovers': 4 } as Record<string, number>)[b.rama] || 99
-                        if (ordenA !== ordenB) return ordenA - ordenB
-                        return a.nombre_completo.localeCompare(b.nombre_completo)
-                      })
-                      .map((item) => (
-                        <div
-                          key={item.beneficiario_id}
-                          onClick={() => toggleSeleccion(item.beneficiario_id)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '8px',
-                            padding: '8px 10px', borderRadius: '6px', cursor: 'pointer',
-                            backgroundColor: item.seleccionado ? '#F3ECD8' : 'transparent',
-                            borderBottom: '1px solid #F3ECD8'
-                          }}
-                        >
-                          <div style={{
-                            width: '20px', height: '20px', borderRadius: '4px',
-                            border: '2px solid #D1C9B4',
-                            backgroundColor: item.seleccionado ? '#24352A' : 'white',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0
-                          }}>
-                            {item.seleccionado && (
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            )}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{
-                              fontFamily: 'Oswald, sans-serif',
-                              fontSize: 'clamp(11px, 2.5vw, 14px)',
-                              color: '#24352A',
-                              fontWeight: item.seleccionado ? '600' : '400'
-                            }}>
-                              {item.nombre_completo}
-                            </div>
-                            <div style={{
-                              fontFamily: 'Oswald, sans-serif',
-                              fontSize: 'clamp(9px, 1.8vw, 11px)',
-                              color: '#7A7364'
-                            }}>
-                              {item.rama}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                  )}
-                </div>
-
-                {/* Footer asistentes */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  marginTop: '12px', borderTop: '2px solid #E8DEC4', paddingTop: '12px',
-                  flexShrink: 0, flexWrap: 'wrap', gap: '8px'
-                }}>
-                  <span style={{
-                    fontFamily: 'Oswald, sans-serif',
-                    fontSize: 'clamp(10px, 2vw, 13px)', color: '#7A7364'
-                  }}>
-                    {asistencias.filter(a => a.seleccionado).length} seleccionados
-                  </span>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      onClick={() => setVistaModal('detalle')}
-                      style={{
-                        padding: '8px 16px', fontSize: 'clamp(11px, 2.5vw, 13px)',
-                        backgroundColor: '#E8DEC4', color: '#24352A', border: 'none',
-                        borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase', letterSpacing: '0.5px'
-                      }}
-                    >
-                      Volver
-                    </button>
-                    <button
-                      onClick={guardarAsistencias}
-                      disabled={saving}
-                      style={{
-                        padding: '8px 16px', fontSize: 'clamp(11px, 2.5vw, 13px)',
-                        backgroundColor: '#24352A', color: 'white', border: 'none',
-                        borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase', letterSpacing: '0.5px',
-                        opacity: saving ? 0.5 : 1
-                      }}
-                    >
-                      {saving ? 'Guardando...' : 'Guardar'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ==== VISTA EDITAR ==== */}
-            {vistaModal === 'editar' && (
-              <form
-                onSubmit={handleEditCampamento}
-                style={{
-                  display: 'grid', gridTemplateColumns: '1fr 1fr',
-                  gap: '10px', overflowY: 'auto', flex: 1
-                }}
-              >
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                    Nombre *
-                  </label>
-                  <input
-                    type="text"
-                    value={editFormData.nombre}
-                    onChange={(e) => setEditFormData({ ...editFormData, nombre: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
-                    required
-                    disabled={saving}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                    Fecha Inicio *
-                  </label>
-                  <input
-                    type="date"
-                    value={editFormData.fecha_inicio}
-                    onChange={(e) => setEditFormData({ ...editFormData, fecha_inicio: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
-                    required
-                    disabled={saving}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                    Fecha Fin
-                  </label>
-                  <input
-                    type="date"
-                    value={editFormData.fecha_fin}
-                    onChange={(e) => setEditFormData({ ...editFormData, fecha_fin: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
-                    disabled={saving}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                    Tipo *
-                  </label>
-                  <select
-                    value={editFormData.tipo}
-                    onChange={(e) => setEditFormData({ ...editFormData, tipo: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
-                    required
-                    disabled={saving}
-                  >
-                    {tiposCampamento.map(tipo => <option key={tipo} value={tipo}>{tipo}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                    Rama Principal
-                  </label>
-                  <select
-                    value={editFormData.rama_principal}
-                    onChange={(e) => setEditFormData({ ...editFormData, rama_principal: e.target.value })}
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
-                    disabled={saving}
-                  >
-                    {ramas.map(rama => <option key={rama} value={rama}>{rama}</option>)}
-                  </select>
-                </div>
-
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                    Ubicación
-                  </label>
-                  <input
-                    type="text"
-                    value={editFormData.ubicacion}
-                    onChange={(e) => setEditFormData({ ...editFormData, ubicacion: e.target.value })}
-                    placeholder="Ej: Parque Nacional, Ciudad, etc."
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white'
-                    }}
-                    disabled={saving}
-                  />
-                </div>
-
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: 'clamp(9px, 2vw, 11px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                    Descripción
-                  </label>
-                  <textarea
-                    value={editFormData.descripcion}
-                    onChange={(e) => setEditFormData({ ...editFormData, descripcion: e.target.value })}
-                    placeholder="Descripción del campamento..."
-                    style={{
-                      width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
-                      resize: 'vertical', minHeight: '60px'
-                    }}
-                    disabled={saving}
-                  />
-                </div>
-
-                <div style={{
-                  gridColumn: '1 / -1', display: 'flex', gap: '8px',
-                  marginTop: '8px', borderTop: '2px solid #E8DEC4',
-                  paddingTop: '16px', justifyContent: 'flex-end', flexWrap: 'wrap'
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => setVistaModal('detalle')}
-                    style={{
-                      padding: '8px 20px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      backgroundColor: '#E8DEC4', color: '#24352A', border: 'none',
-                      borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                      textTransform: 'uppercase', letterSpacing: '0.5px',
-                      opacity: saving ? 0.5 : 1, flex: 1
-                    }}
-                    disabled={saving}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    style={{
-                      padding: '8px 20px', fontSize: 'clamp(11px, 2.5vw, 14px)',
-                      backgroundColor: '#24352A', color: 'white', border: 'none',
-                      borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
-                      textTransform: 'uppercase', letterSpacing: '0.5px',
-                      opacity: saving ? 0.5 : 1, flex: 1
-                    }}
-                  >
-                    {saving ? 'Guardando...' : 'Guardar cambios'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
         </div>
       )}
     </div>

@@ -131,7 +131,15 @@ const getRamaLabel = (rama: string) => {
   }
   return labels[rama] || rama
 }
+const formatTipoConDetalle = (tipo: string, detalle: string) => {
+  const detalleLimpio = (detalle || '').trim()
+  const esTodas = !detalleLimpio || detalleLimpio.toLowerCase() === 'todas'
 
+  if (esTodas || tipo === 'Anual' || tipo === 'Corto') {
+    return tipo
+  }
+  return `${tipo} (${detalleLimpio})`
+}
 const getFotoUrl = (fotoUrl: string | null, nombre: string, apellido: string) => {
   if (fotoUrl) return fotoUrl
   const iniciales = `${nombre.charAt(0)}${apellido.charAt(0)}`.toUpperCase()
@@ -2014,16 +2022,16 @@ export default function VidaScout() {
                   {camp.fecha_fin && camp.fecha_fin !== camp.fecha_inicio && ` - ${formatFecha(camp.fecha_fin)}`}
                 </div>
                 {camp.tipo && (
-                  <div style={{
-                    fontSize: 'clamp(10px, 2vw, 12px)',
-                    color: COL.terracota,
-                    marginTop: '4px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {camp.tipo}
-                  </div>
-                )}
+  <div style={{
+    fontSize: 'clamp(10px, 2vw, 12px)',
+    color: COL.terracota,
+    marginTop: '4px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  }}>
+    {formatTipoConDetalle(camp.tipo, camp.rama_principal)}
+  </div>
+)}
               </div>
             ))}
           </div>
