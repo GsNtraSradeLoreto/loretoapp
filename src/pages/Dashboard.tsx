@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
 import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
+import { calcularProgresionActual } from '../utils/calcularProgresion'
 
 interface Beneficiario {
   id: string
@@ -24,6 +25,13 @@ interface Stats {
   rovers: number
 }
 
+interface ProgresionesBeneficiario {
+  manada: any | null
+  unidad: any | null
+  caminantes: any | null
+  rovers: any | null
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const {
@@ -42,6 +50,9 @@ export default function Dashboard() {
   const [filterRama, setFilterRama] = useState('Todas')
   const [filterEstado, setFilterEstado] = useState<'todos' | 'activos' | 'inactivos'>('todos')
 
+  // ✅ Progresiones por beneficiario
+  const [progresiones, setProgresiones] = useState<Record<string, ProgresionesBeneficiario>>({})
+
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
   const esAyudante = rolData.tipo === 'ayudante'
@@ -49,7 +60,7 @@ export default function Dashboard() {
   const ramaAsignada = rolData.rama
 
   const verTodas = isSuperAdmin || isJefatura || isAdministrador || isTesorero
-  const puedeVerInactivos = verTodas // ✅ superadmin, jefatura, admin y tesorero ven todo
+  const puedeVerInactivos = verTodas
   const esSuperAdmin = isSuperAdmin
 
   useEffect(() => {
@@ -62,27 +73,64 @@ export default function Dashboard() {
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, estado, tiene_hermanos, foto_url, fecha_nacimiento')
 
-      // ✅ Solo se filtran activos para quienes NO pueden ver inactivos
       if (!puedeVerInactivos) {
         query = query.eq('estado', 'activo')
       }
 
-      // ✅ Jefes y ayudantes ven solo su rama
       if (esDirigente && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
         setFilterRama(ramaAsignada)
       }
 
-      const { data: beneficiariosData, error: beneficiariosError } = await query
-      if (beneficiariosError) throw beneficiariosError
+      // ✅ Traemos beneficiarios + las 4 tablas de progresión en paralelo
+      const [
+        beneficiariosRes,
+        manadaRes,
+        unidadRes,
+        caminantesRes,
+        roversRes
+      ] = await Promise.all([
+        query,
+        supabase.from('progresion_manada').select(
+          'beneficiario_id, fecha_ingreso_manada, fecha_pata_tierna, fecha_saltador, fecha_rastreador, fecha_cazador'
+        ),
+        supabase.from('progresion_unidad').select(
+          'beneficiario_id, fecha_ingreso_unidad, fecha_pista, fecha_senda, fecha_rumbo, fecha_travesia'
+        ),
+        supabase.from('progresion_caminantes').select(
+          'beneficiario_id, fecha_ingreso_caminantes, fecha_etapa1, fecha_etapa2, fecha_etapa3, fecha_etapa4'
+        ),
+        supabase.from('progresion_rovers').select(
+          'beneficiario_id, fecha_ingreso_rovers, fecha_encuentro, fecha_compromiso, fecha_proyeccion, fecha_partida'
+        )
+      ])
 
-      // ✅ Orden unificado desde el util compartido
-      const ordenados = ordenarListaBeneficiarios(beneficiariosData || [])
+      if (beneficiariosRes.error) throw beneficiariosRes.error
 
+      const beneficiariosData = beneficiariosRes.data || []
+      const ordenados = ordenarListaBeneficiarios(beneficiariosData)
+
+      // ✅ Armamos un Map por beneficiario_id para acceso O(1)
+      const manadaMap = new Map((manadaRes.data || []).map(p => [p.beneficiario_id, p]))
+      const unidadMap = new Map((unidadRes.data || []).map(p => [p.beneficiario_id, p]))
+      const caminantesMap = new Map((caminantesRes.data || []).map(p => [p.beneficiario_id, p]))
+      const roversMap = new Map((roversRes.data || []).map(p => [p.beneficiario_id, p]))
+
+      // ✅ Armamos el objeto de progresiones
+      const progresionesObj: Record<string, ProgresionesBeneficiario> = {}
+      beneficiariosData.forEach(b => {
+        progresionesObj[b.id] = {
+          manada: manadaMap.get(b.id) || null,
+          unidad: unidadMap.get(b.id) || null,
+          caminantes: caminantesMap.get(b.id) || null,
+          rovers: roversMap.get(b.id) || null
+        }
+      })
+
+      setProgresiones(progresionesObj)
       setBeneficiarios(ordenados)
       setFiltered(ordenados)
 
-      // ✅ Stats: siempre cuentan SOLO activos (refleja "el grupo hoy")
       const activos = ordenados.filter(b => b.estado === 'activo')
 
       setStats({
@@ -107,7 +155,6 @@ export default function Dashboard() {
       result = result.filter(b => b.rama === filterRama)
     }
 
-    // ✅ El filtro por estado se habilita para todos los que ven inactivos
     if (puedeVerInactivos && filterEstado !== 'todos') {
       if (filterEstado === 'activos') {
         result = result.filter(b => b.estado === 'activo')
@@ -124,7 +171,6 @@ export default function Dashboard() {
       )
     }
 
-    // ✅ Volvemos a ordenar después de filtrar (mantiene activos primero)
     setFiltered(ordenarListaBeneficiarios(result))
   }, [searchTerm, filterRama, filterEstado, beneficiarios, puedeVerInactivos])
 
@@ -168,10 +214,11 @@ export default function Dashboard() {
     `)}`
   }
 
-  const labelEstado = (estado: string) => {
-    if (estado === 'activo') return 'Activo'
-    if (estado === 'inactivo') return 'Ex miembro'
-    return estado
+  // ✅ Calcula la progresión actual para un beneficiario
+  const getProgresionDeBeneficiario = (beneficiarioId: string, rama: string): string => {
+    const prog = progresiones[beneficiarioId]
+    if (!prog) return 'Sin asignar'
+    return calcularProgresionActual(rama, prog)
   }
 
   if (loading) {
@@ -432,6 +479,8 @@ export default function Dashboard() {
               beneficiario.apellido
             )
 
+            const progresion = getProgresionDeBeneficiario(beneficiario.id, beneficiario.rama)
+
             return (
               <div
                 key={beneficiario.id}
@@ -513,7 +562,9 @@ export default function Dashboard() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    {beneficiario.rama} • {labelEstado(beneficiario.estado)}
+                    {/* ✅ Mostramos la progresión + "· Ex miembro" si aplica */}
+                    {progresion}
+                    {beneficiario.estado === 'inactivo' && ' · Ex miembro'}
                   </div>
                 </div>
 

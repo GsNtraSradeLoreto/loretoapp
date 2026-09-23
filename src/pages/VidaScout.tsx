@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
 import { useSwipe } from '../hooks/useSwipe'
 import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
+import { calcularProgresionActual } from '../utils/calcularProgresion'
 
 interface Beneficiario {
   id: string
@@ -490,62 +491,15 @@ export default function VidaScout() {
   }
 
   // ============================================
-  // CALCULAR PROGRESIÓN ACTUAL
+  // CALCULAR PROGRESIÓN ACTUAL (usa util compartido)
   // ============================================
-  const calcularProgresionActual = (rama: string): string => {
-    if (rama === 'Manada' && progresionManada) {
-      const hitos = [
-        { nombre: 'Pata tierna', fecha: progresionManada.fecha_pata_tierna },
-        { nombre: 'Saltador', fecha: progresionManada.fecha_saltador },
-        { nombre: 'Rastreador', fecha: progresionManada.fecha_rastreador },
-        { nombre: 'Cazador', fecha: progresionManada.fecha_cazador }
-      ]
-      const conFecha = hitos.filter(h => h.fecha && h.fecha.trim() !== '')
-      if (conFecha.length > 0) return conFecha[conFecha.length - 1].nombre
-      if (progresionManada.fecha_ingreso_manada) return 'Período Introductorio'
-      return 'Sin asignar'
-    }
-
-    if (rama === 'Unidad Scout' && progresionUnidad) {
-      const hitos = [
-        { nombre: 'Pista', fecha: progresionUnidad.fecha_pista },
-        { nombre: 'Senda', fecha: progresionUnidad.fecha_senda },
-        { nombre: 'Rumbo', fecha: progresionUnidad.fecha_rumbo },
-        { nombre: 'Travesía', fecha: progresionUnidad.fecha_travesia }
-      ]
-      const conFecha = hitos.filter(h => h.fecha && h.fecha.trim() !== '')
-      if (conFecha.length > 0) return conFecha[conFecha.length - 1].nombre
-      if (progresionUnidad.fecha_ingreso_unidad) return 'Período Introductorio'
-      return 'Sin asignar'
-    }
-
-    if (rama === 'Caminantes' && progresionCaminantes) {
-      const hitos = [
-        { nombre: 'Etapa 1', fecha: progresionCaminantes.fecha_etapa1 },
-        { nombre: 'Etapa 2', fecha: progresionCaminantes.fecha_etapa2 },
-        { nombre: 'Etapa 3', fecha: progresionCaminantes.fecha_etapa3 },
-        { nombre: 'Etapa 4', fecha: progresionCaminantes.fecha_etapa4 }
-      ]
-      const conFecha = hitos.filter(h => h.fecha && h.fecha.trim() !== '')
-      if (conFecha.length > 0) return conFecha[conFecha.length - 1].nombre
-      if (progresionCaminantes.fecha_ingreso_caminantes) return 'Período Introductorio'
-      return 'Sin asignar'
-    }
-
-    if (rama === 'Rovers' && progresionRovers) {
-      const hitos = [
-        { nombre: 'Encuentro', fecha: progresionRovers.fecha_encuentro },
-        { nombre: 'Compromiso', fecha: progresionRovers.fecha_compromiso },
-        { nombre: 'Proyección', fecha: progresionRovers.fecha_proyeccion },
-        { nombre: 'Partida', fecha: progresionRovers.fecha_partida }
-      ]
-      const conFecha = hitos.filter(h => h.fecha && h.fecha.trim() !== '')
-      if (conFecha.length > 0) return conFecha[conFecha.length - 1].nombre
-      if (progresionRovers.fecha_ingreso_rovers) return 'Período Introductorio'
-      return 'Sin asignar'
-    }
-
-    return 'Sin asignar'
+  const calcularProgresion = (rama: string): string => {
+    return calcularProgresionActual(rama, {
+      manada: progresionManada,
+      unidad: progresionUnidad,
+      caminantes: progresionCaminantes,
+      rovers: progresionRovers
+    })
   }
 
   // ============================================
@@ -940,7 +894,7 @@ export default function VidaScout() {
           textTransform: 'uppercase',
           letterSpacing: '0.5px'
         }}>
-          {calcularProgresionActual(rama)}
+          {calcularProgresion(rama)}
         </span>
       </div>
 
