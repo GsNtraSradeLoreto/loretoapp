@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react'
+import React, { ReactNode, useRef, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import BottomNav from './BottomNav'
@@ -23,6 +23,28 @@ export default function Layout({ children }: LayoutProps) {
   const [refrescando, setRefrescando] = React.useState(false)
   const [novedades, setNovedades] = React.useState(0)
   const [dragOffset, setDragOffset] = React.useState(0)
+
+  // ✅ Ref para detectar clicks afuera del menú de perfil
+  const menuPerfilRef = useRef<HTMLDivElement>(null)
+
+  // ✅ Cerrar menú de perfil al tocar afuera
+  useEffect(() => {
+    if (!showMenu) return
+
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (menuPerfilRef.current && !menuPerfilRef.current.contains(event.target as Node)) {
+        setShowMenu(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [showMenu])
 
   const handleLogout = async () => {
     await signOut()
@@ -237,7 +259,8 @@ export default function Layout({ children }: LayoutProps) {
                 </svg>
               </button>
 
-              <div style={{ position: 'relative' }}>
+              {/* ✅ Contenedor del menú de perfil con ref para detectar clicks afuera */}
+              <div ref={menuPerfilRef} style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowMenu(!showMenu)}
                   style={{
