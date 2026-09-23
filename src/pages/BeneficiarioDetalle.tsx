@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
 import { useSwipe } from '../hooks/useSwipe'
 import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
+import { calcularProgresionActual } from '../utils/calcularProgresion'
 
 interface Beneficiario {
   id: string
@@ -1970,6 +1971,33 @@ export default function BeneficiarioDetalle() {
 
   const promesaInfo = getPromesaInfo()
 
+  // ============================================
+  // ✅ Progresión actual + Nombre de caza/tótem
+  // ============================================
+  const getProgresionActual = (): string => {
+    if (!beneficiario) return 'Sin asignar'
+    return calcularProgresionActual(beneficiario.rama, {
+      manada: progresionManada,
+      unidad: progresionUnidad,
+      caminantes: progresionCaminantes,
+      rovers: progresionRovers
+    })
+  }
+
+  const getNombreCazaOTotem = (): string | null => {
+    if (!beneficiario) return null
+    if (beneficiario.rama === 'Manada' && progresionManada?.nombre_caza) {
+      return progresionManada.nombre_caza
+    }
+    if (beneficiario.rama === 'Rovers' && progresionRovers?.nombre_totem) {
+      return progresionRovers.nombre_totem
+    }
+    return null
+  }
+
+  const progresionActual = getProgresionActual()
+  const nombreCazaOTotem = getNombreCazaOTotem()
+
   // =============================================
   // SWIPE
   // =============================================
@@ -2188,7 +2216,7 @@ export default function BeneficiarioDetalle() {
           </div>
         </div>
 
-        {/* Nombre */}
+                {/* Nombre */}
         <h1 style={{
           fontFamily: 'Oswald, sans-serif',
           fontWeight: '700',
@@ -2196,21 +2224,39 @@ export default function BeneficiarioDetalle() {
           color: '#F3ECD8',
           textTransform: 'uppercase',
           letterSpacing: '1px',
-          margin: '0 0 12px 0',
+          margin: '0 0 4px 0',
           textAlign: 'center',
           wordBreak: 'break-word'
         }}>
           {nombreCompleto}
         </h1>
 
-        {/* Chips: Rama · Edad · Estado */}
+        {/* ✅ Nombre de caza (Manada) o tótem (Rovers) */}
+        {nombreCazaOTotem && (
+          <div style={{
+            fontFamily: 'Oswald, sans-serif',
+            fontSize: 'clamp(11px, 2.5vw, 13px)',
+            color: '#D1C9B4',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            margin: '0 0 12px 0',
+            textAlign: 'center',
+            fontStyle: 'italic'
+          }}>
+            {beneficiario.rama === 'Manada' ? 'Nombre de caza' : 'Nombre de tótem'}: {nombreCazaOTotem}
+          </div>
+        )}
+
+        {/* ✅ Chips: Rama · Progresión · Ex miembro */}
         <div style={{
           display: 'flex',
           gap: '8px',
           justifyContent: 'center',
           flexWrap: 'wrap',
-          alignItems: 'center'
+          alignItems: 'center',
+          marginTop: nombreCazaOTotem ? 0 : '12px'
         }}>
+          {/* Chip de rama */}
           <span style={{
             display: 'inline-block',
             padding: '4px 14px',
@@ -2224,28 +2270,40 @@ export default function BeneficiarioDetalle() {
           }}>
             {getRamaLabel(beneficiario.rama)}
           </span>
-          <span style={{
-            fontFamily: 'Oswald, sans-serif',
-            fontSize: 'clamp(11px, 2.5vw, 13px)',
-            color: '#D1C9B4',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px'
-          }}>
-            • {edad !== null ? `${edad} años` : 'Edad no disponible'}
-          </span>
+
+          {/* Chip de progresión actual */}
           <span style={{
             display: 'inline-block',
-            padding: '2px 10px',
-            borderRadius: '12px',
-            fontSize: 'clamp(10px, 2.5vw, 12px)',
-            fontWeight: '500',
-            textTransform: 'uppercase',
+            padding: '4px 14px',
+            backgroundColor: 'rgba(243, 236, 216, 0.15)',
+            border: '1.5px solid #D1C9B4',
+            color: '#F3ECD8',
+            borderRadius: '20px',
+            fontSize: 'clamp(11px, 2.5vw, 13px)',
+            fontFamily: 'Oswald, sans-serif',
             letterSpacing: '0.5px',
-            backgroundColor: beneficiario.estado === 'activo' ? '#D1FAE5' : '#FEE2E2',
-            color: beneficiario.estado === 'activo' ? '#5C7A5E' : '#BF4E30'
+            textTransform: 'uppercase',
+            fontWeight: '500'
           }}>
-            {beneficiario.estado === 'inactivo' ? 'Ex miembro' : beneficiario.estado}
+            📈 {progresionActual}
           </span>
+
+          {/* Chip "Ex miembro" solo si aplica */}
+          {beneficiario.estado === 'inactivo' && (
+            <span style={{
+              display: 'inline-block',
+              padding: '2px 10px',
+              borderRadius: '12px',
+              fontSize: 'clamp(10px, 2.5vw, 12px)',
+              fontWeight: '500',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              backgroundColor: '#FEE2E2',
+              color: '#BF4E30'
+            }}>
+              Ex miembro
+            </span>
+          )}
         </div>
       </div>
 
@@ -2305,7 +2363,9 @@ export default function BeneficiarioDetalle() {
 
         {/* Promesa */}
         <div style={{ marginBottom: '12px' }}>
-          <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Promesa</p>
+          <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
+            {beneficiario.rama === 'Manada' ? 'Promesa de Manada' : 'Promesa Scout'}
+          </p>
           <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
             {promesaInfo.tiene ? '✅ Sí' : '❌ No'}
             {promesaInfo.fecha && ` · ${formatFecha(promesaInfo.fecha)}`}
