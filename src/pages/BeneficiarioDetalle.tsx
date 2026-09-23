@@ -458,6 +458,7 @@ const Seccion = ({
     {children}
   </div>
 )
+
 export default function BeneficiarioDetalle() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -474,7 +475,6 @@ export default function BeneficiarioDetalle() {
   const [campamentos, setCampamentos] = useState<Campamento[]>([])
   const [loading, setLoading] = useState(true)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [showInfoEditModal, setShowInfoEditModal] = useState(false)
   const [showPhotoModal, setShowPhotoModal] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
@@ -489,6 +489,19 @@ export default function BeneficiarioDetalle() {
   // NUEVO: controles de UI
   const [verTodosPagos, setVerTodosPagos] = useState(false)
   const [legajoAbierto, setLegajoAbierto] = useState(false)
+
+  // ✅ Edición inline de INFORMACIÓN
+  const [editandoInfoInline, setEditandoInfoInline] = useState(false)
+  const [infoInlineForm, setInfoInlineForm] = useState({
+    tiene_uniforme: false,
+    fecha_entrega_uniforme: '',
+    tiene_promesa: false,
+    fecha_promesa: '',
+    padrino: '',
+    observaciones: ''
+  })
+  const [savingInfoInline, setSavingInfoInline] = useState(false)
+  const [messageInfoInline, setMessageInfoInline] = useState({ text: '', type: '' })
 
   const [showCampamentoModal, setShowCampamentoModal] = useState(false)
   const [campamentosDisponibles, setCampamentosDisponibles] = useState<Campamento[]>([])
@@ -527,15 +540,6 @@ export default function BeneficiarioDetalle() {
     tiene_hermanos: false
   })
 
-  const [infoEditForm, setInfoEditForm] = useState({
-    tiene_uniforme: false,
-    fecha_entrega_uniforme: '',
-    tiene_promesa: false,
-    fecha_promesa: '',
-    padrino: '',
-    observaciones: ''
-  })
-
   const [historialEditForm, setHistorialEditForm] = useState({
     fecha_ingreso_grupo: '',
     fecha_ingreso_manada: '',
@@ -557,6 +561,19 @@ export default function BeneficiarioDetalle() {
   // ✅ Visibilidad: superadmin/jefatura/admin/tesorero ven TODO
   const puedeVerInactivos = isSuperAdmin || isJefatura || isAdministrador || isTesorero
 
+  // ✅ Datos "fijos" del header: solo superadmin y jefatura
+  const puedeEditarDatosFijos = (): boolean => {
+    return isSuperAdmin || isJefatura
+  }
+
+  // ✅ INFORMACIÓN (uniforme/promesa/obs): superadmin, jefatura y jefe de su rama
+  const puedeEditarInformacion = (): boolean => {
+    if (!beneficiario) return false
+    if (isSuperAdmin || isJefatura) return true
+    if (esJefe && ramaAsignada === beneficiario.rama) return true
+    return false
+  }
+
   const categorias = [
     { value: 'AFILIACION', label: 'Afiliación' },
     { value: 'CUOTAS', label: 'Cuotas' },
@@ -566,13 +583,6 @@ export default function BeneficiarioDetalle() {
   ]
 
   const mediosPago = ['Efectivo', 'Mercadopago']
-
-  const canEdit = (): boolean => {
-    if (!beneficiario) return false
-    if (esSuperAdmin || esJefatura) return true
-    if (esJefe && ramaAsignada === beneficiario.rama) return true
-    return false
-  }
 
   const formatFecha = (fecha: string) => {
     if (!fecha) return '-'
@@ -603,6 +613,8 @@ export default function BeneficiarioDetalle() {
     setCampamentos([])
     setVerTodosPagos(false)
     setLegajoAbierto(false)
+    setEditandoInfoInline(false)
+    setMessageInfoInline({ text: '', type: '' })
   }, [id])
 
   const cargarListaIds = async () => {
@@ -611,12 +623,10 @@ export default function BeneficiarioDetalle() {
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, estado')
 
-      // ✅ Solo se filtran activos para quienes NO pueden ver inactivos
       if (!puedeVerInactivos) {
         query = query.eq('estado', 'activo')
       }
 
-      // ✅ Jefes y ayudantes ven solo su rama
       if ((esJefe || rolData.tipo === 'ayudante') && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
       }
@@ -624,7 +634,6 @@ export default function BeneficiarioDetalle() {
       const { data, error } = await query
       if (error) throw error
 
-      // ✅ Orden unificado: activos → rama → apellido → nombre
       const ordenados = ordenarListaBeneficiarios(data || [])
       setTodosLosIds(ordenados.map(item => item.id))
     } catch (error) {
@@ -632,9 +641,6 @@ export default function BeneficiarioDetalle() {
     }
   }
 
-  // =============================================
-  // LOAD DATA OPTIMIZADO (paralelo)
-  // =============================================
   const loadData = async () => {
     try {
       setLoading(true)
@@ -670,9 +676,6 @@ export default function BeneficiarioDetalle() {
     }
   }
 
-  // =============================================
-  // CARGAR CAMPAMENTOS (lazy)
-  // =============================================
   const cargarCampamentos = async () => {
     if (!id || campamentosCargadosRef.current) return
     campamentosCargadosRef.current = true
@@ -706,9 +709,6 @@ export default function BeneficiarioDetalle() {
     }
   }
 
-  // =============================================
-  // LEGAJO (lazy)
-  // =============================================
   const cargarLegajo = useCallback(async () => {
     if (!beneficiario) return
     if (cargandoLegajoRef.current) return
@@ -725,12 +725,10 @@ export default function BeneficiarioDetalle() {
 
       if (error && error.code !== 'PGRST116') throw error
 
-            if (data) {
+      if (data) {
         setLegajo(data)
         setLegajoForm(data)
       } else {
-        // ✅ Si no existe, NO lo creamos automáticamente (evita ruido en auditoría).
-        // Se creará recién cuando el usuario guarde cambios por primera vez.
         setLegajo(null)
         setLegajoForm(null)
       }
@@ -743,16 +741,12 @@ export default function BeneficiarioDetalle() {
     }
   }, [beneficiario])
 
-  // Cargar legajo cuando se abre el colapsable
   useEffect(() => {
     if (legajoAbierto && beneficiario) {
       cargarLegajo()
     }
   }, [legajoAbierto, beneficiario, cargarLegajo])
 
-  // =============================================
-  // SUSCRIPCIÓN REALTIME LEGAJO
-  // =============================================
   useEffect(() => {
     if (!beneficiario) return
 
@@ -844,9 +838,6 @@ export default function BeneficiarioDetalle() {
     }
   }
 
-  // =============================================
-  // RENDER LEGAJO (TARJETAS COMPACTAS - Opción A)
-  // =============================================
   const renderLegajo = () => {
     const puedeEditar = (): boolean => {
       if (!beneficiario) return false
@@ -954,7 +945,6 @@ export default function BeneficiarioDetalle() {
           </div>
         )}
 
-        {/* TARJETAS COMPACTAS */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {campos.map((campo) => {
             const valor = data[campo.key as keyof typeof data] as boolean || false
@@ -1062,7 +1052,6 @@ export default function BeneficiarioDetalle() {
           })}
         </div>
 
-        {/* Observaciones Generales */}
         <div style={{
           marginTop: '16px', backgroundColor: 'white', borderRadius: '12px',
           padding: '12px 16px', border: '2px solid #D1C9B4'
@@ -1099,9 +1088,6 @@ export default function BeneficiarioDetalle() {
     )
   }
 
-  // =============================================
-  // CAMPAMENTOS (handlers)
-  // =============================================
   const cargarCampamentosDisponibles = async () => {
     try {
       const { data, error } = await supabase
@@ -1309,9 +1295,6 @@ export default function BeneficiarioDetalle() {
     setShowCampamentoModal(true)
   }
 
-  // =============================================
-  // NAVEGACIÓN
-  // =============================================
   const irAlAnterior = () => {
     if (posicionActual > 0) {
       const nuevoId = todosLosIds[posicionActual - 1]
@@ -1431,44 +1414,6 @@ export default function BeneficiarioDetalle() {
     setMessage({ text: '', type: '' })
   }
 
-  const openInfoEditModal = () => {
-    if (!beneficiario) return
-
-    let tienePromesa = false
-    let fechaPromesa = ''
-    let padrino = ''
-
-    const rama = beneficiario.rama
-    if (rama === 'Manada' && progresionManada) {
-      tienePromesa = progresionManada.tiene_promesa_manada || false
-      fechaPromesa = progresionManada.fecha_promesa_manada || ''
-      padrino = ''
-    } else if (rama === 'Unidad Scout' && progresionUnidad) {
-      tienePromesa = progresionUnidad.tiene_promesa_scout || false
-      fechaPromesa = progresionUnidad.fecha_promesa_scout || ''
-      padrino = progresionUnidad.padrino_promesa_scout || ''
-    } else if (rama === 'Caminantes' && progresionCaminantes) {
-      tienePromesa = progresionCaminantes.tiene_promesa_scout || false
-      fechaPromesa = progresionCaminantes.fecha_promesa_scout || ''
-      padrino = progresionCaminantes.padrino_promesa_scout || ''
-    } else if (rama === 'Rovers' && progresionRovers) {
-      tienePromesa = progresionRovers.tiene_promesa_scout || false
-      fechaPromesa = progresionRovers.fecha_promesa_scout || ''
-      padrino = progresionRovers.padrino_promesa_scout || ''
-    }
-
-    setInfoEditForm({
-      tiene_uniforme: beneficiario.tiene_uniforme || false,
-      fecha_entrega_uniforme: beneficiario.fecha_entrega_uniforme || '',
-      tiene_promesa: tienePromesa,
-      fecha_promesa: fechaPromesa,
-      padrino: padrino,
-      observaciones: beneficiario.observaciones || ''
-    })
-    setShowInfoEditModal(true)
-    setMessage({ text: '', type: '' })
-  }
-
   const openHistorialEditModal = () => {
     if (!beneficiario) return
 
@@ -1540,63 +1485,6 @@ export default function BeneficiarioDetalle() {
       setTimeout(() => {
         loadData()
         setShowEditModal(false)
-        setEditLoading(false)
-      }, 1000)
-    } catch (error: any) {
-      console.error('Error:', error)
-      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
-      setEditLoading(false)
-    }
-  }
-
-  const handleSaveInfoEdit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setEditLoading(true)
-    setMessage({ text: '', type: '' })
-
-    try {
-      const { error: updateError } = await supabase
-        .from('beneficiarios')
-        .update({
-          tiene_uniforme: infoEditForm.tiene_uniforme,
-          fecha_entrega_uniforme: infoEditForm.fecha_entrega_uniforme || null,
-          observaciones: infoEditForm.observaciones.trim() || null
-        })
-        .eq('id', id)
-
-      if (updateError) throw updateError
-
-      const rama = beneficiario?.rama
-      if (rama === 'Manada' && progresionManada) {
-        await supabase.from('progresion_manada').update({
-          tiene_promesa_manada: infoEditForm.tiene_promesa,
-          fecha_promesa_manada: infoEditForm.fecha_promesa || null
-        }).eq('id', progresionManada.id)
-      } else if (rama === 'Unidad Scout' && progresionUnidad) {
-        await supabase.from('progresion_unidad').update({
-          tiene_promesa_scout: infoEditForm.tiene_promesa,
-          fecha_promesa_scout: infoEditForm.fecha_promesa || null,
-          padrino_promesa_scout: infoEditForm.padrino.trim() || null
-        }).eq('id', progresionUnidad.id)
-      } else if (rama === 'Caminantes' && progresionCaminantes) {
-        await supabase.from('progresion_caminantes').update({
-          tiene_promesa_scout: infoEditForm.tiene_promesa,
-          fecha_promesa_scout: infoEditForm.fecha_promesa || null,
-          padrino_promesa_scout: infoEditForm.padrino.trim() || null
-        }).eq('id', progresionCaminantes.id)
-      } else if (rama === 'Rovers' && progresionRovers) {
-        await supabase.from('progresion_rovers').update({
-          tiene_promesa_scout: infoEditForm.tiene_promesa,
-          fecha_promesa_scout: infoEditForm.fecha_promesa || null,
-          padrino_promesa_scout: infoEditForm.padrino.trim() || null
-        }).eq('id', progresionRovers.id)
-      }
-
-      setMessage({ text: '✅ Información actualizada correctamente', type: 'success' })
-
-      setTimeout(() => {
-        loadData()
-        setShowInfoEditModal(false)
         setEditLoading(false)
       }, 1000)
     } catch (error: any) {
@@ -1971,9 +1859,6 @@ export default function BeneficiarioDetalle() {
 
   const promesaInfo = getPromesaInfo()
 
-  // ============================================
-  // ✅ Progresión actual + Nombre de caza/tótem
-  // ============================================
   const getProgresionActual = (): string => {
     if (!beneficiario) return 'Sin asignar'
     return calcularProgresionActual(beneficiario.rama, {
@@ -1997,6 +1882,109 @@ export default function BeneficiarioDetalle() {
 
   const progresionActual = getProgresionActual()
   const nombreCazaOTotem = getNombreCazaOTotem()
+
+  // ============================================
+  // ✅ EDICIÓN INLINE DE INFORMACIÓN
+  // ============================================
+  const abrirEdicionInfoInline = () => {
+    if (!beneficiario) return
+
+    let tienePromesa = false
+    let fechaPromesa = ''
+    let padrino = ''
+
+    const rama = beneficiario.rama
+    if (rama === 'Manada' && progresionManada) {
+      tienePromesa = progresionManada.tiene_promesa_manada || false
+      fechaPromesa = progresionManada.fecha_promesa_manada || ''
+      padrino = ''
+    } else if (rama === 'Unidad Scout' && progresionUnidad) {
+      tienePromesa = progresionUnidad.tiene_promesa_scout || false
+      fechaPromesa = progresionUnidad.fecha_promesa_scout || ''
+      padrino = progresionUnidad.padrino_promesa_scout || ''
+    } else if (rama === 'Caminantes' && progresionCaminantes) {
+      tienePromesa = progresionCaminantes.tiene_promesa_scout || false
+      fechaPromesa = progresionCaminantes.fecha_promesa_scout || ''
+      padrino = progresionCaminantes.padrino_promesa_scout || ''
+    } else if (rama === 'Rovers' && progresionRovers) {
+      tienePromesa = progresionRovers.tiene_promesa_scout || false
+      fechaPromesa = progresionRovers.fecha_promesa_scout || ''
+      padrino = progresionRovers.padrino_promesa_scout || ''
+    }
+
+    setInfoInlineForm({
+      tiene_uniforme: beneficiario.tiene_uniforme || false,
+      fecha_entrega_uniforme: beneficiario.fecha_entrega_uniforme || '',
+      tiene_promesa: tienePromesa,
+      fecha_promesa: fechaPromesa,
+      padrino: padrino,
+      observaciones: beneficiario.observaciones || ''
+    })
+    setEditandoInfoInline(true)
+    setMessageInfoInline({ text: '', type: '' })
+  }
+
+  const cancelarEdicionInfoInline = () => {
+    setEditandoInfoInline(false)
+    setMessageInfoInline({ text: '', type: '' })
+  }
+
+  const guardarInfoInline = async () => {
+    if (!beneficiario) return
+    setSavingInfoInline(true)
+    setMessageInfoInline({ text: '', type: '' })
+
+    try {
+      const { error: updateError } = await supabase
+        .from('beneficiarios')
+        .update({
+          tiene_uniforme: infoInlineForm.tiene_uniforme,
+          fecha_entrega_uniforme: infoInlineForm.fecha_entrega_uniforme || null,
+          observaciones: infoInlineForm.observaciones.trim() || null
+        })
+        .eq('id', beneficiario.id)
+
+      if (updateError) throw updateError
+
+      const rama = beneficiario.rama
+      if (rama === 'Manada' && progresionManada) {
+        await supabase.from('progresion_manada').update({
+          tiene_promesa_manada: infoInlineForm.tiene_promesa,
+          fecha_promesa_manada: infoInlineForm.fecha_promesa || null
+        }).eq('id', progresionManada.id)
+      } else if (rama === 'Unidad Scout' && progresionUnidad) {
+        await supabase.from('progresion_unidad').update({
+          tiene_promesa_scout: infoInlineForm.tiene_promesa,
+          fecha_promesa_scout: infoInlineForm.fecha_promesa || null,
+          padrino_promesa_scout: infoInlineForm.padrino.trim() || null
+        }).eq('id', progresionUnidad.id)
+      } else if (rama === 'Caminantes' && progresionCaminantes) {
+        await supabase.from('progresion_caminantes').update({
+          tiene_promesa_scout: infoInlineForm.tiene_promesa,
+          fecha_promesa_scout: infoInlineForm.fecha_promesa || null,
+          padrino_promesa_scout: infoInlineForm.padrino.trim() || null
+        }).eq('id', progresionCaminantes.id)
+      } else if (rama === 'Rovers' && progresionRovers) {
+        await supabase.from('progresion_rovers').update({
+          tiene_promesa_scout: infoInlineForm.tiene_promesa,
+          fecha_promesa_scout: infoInlineForm.fecha_promesa || null,
+          padrino_promesa_scout: infoInlineForm.padrino.trim() || null
+        }).eq('id', progresionRovers.id)
+      }
+
+      setMessageInfoInline({ text: '✅ Información actualizada', type: 'success' })
+      setEditandoInfoInline(false)
+
+      await loadData()
+
+      setTimeout(() => setMessageInfoInline({ text: '', type: '' }), 3000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessageInfoInline({ text: `❌ Error: ${error.message}`, type: 'error' })
+    } finally {
+      setSavingInfoInline(false)
+    }
+  }
 
   // =============================================
   // SWIPE
@@ -2059,13 +2047,10 @@ export default function BeneficiarioDetalle() {
   const total = todosLosIds.length
   const actual = posicionActual + 1
 
-  // Pagos a mostrar (3 visibles)
   const pagosMostrar = verTodosPagos ? pagos : pagos.slice(0, 3)
 
-  // =============================================
-  // RENDER PRINCIPAL
-  // =============================================
   return (
+    <>
     <div
       style={{
         transform: `translateX(${dragOffset}px)`,
@@ -2119,20 +2104,18 @@ export default function BeneficiarioDetalle() {
         </div>
       </div>
 
-{/* ============================================ */}
-{/* ENCABEZADO NUEVO - tipo PERFIL */}
-{/* ============================================ */}
-<div style={{
-  backgroundColor: '#24352A',
-  borderRadius: '16px',
-  padding: '24px 16px 20px 16px',
-  marginBottom: '16px',
-  border: '2px solid #BF4E30',
-  boxShadow: '0 0 0 2px #111111',
-  position: 'relative'
-}}>
-        {/* Botón Editar arriba a la derecha */}
-        {canEdit() && (
+      {/* ENCABEZADO */}
+      <div style={{
+        backgroundColor: '#24352A',
+        borderRadius: '16px',
+        padding: '24px 16px 20px 16px',
+        marginBottom: '16px',
+        border: '2px solid #BF4E30',
+        boxShadow: '0 0 0 2px #111111',
+        position: 'relative'
+      }}>
+        {/* Botón Editar arriba a la derecha - SOLO superadmin y jefatura */}
+        {puedeEditarDatosFijos() && (
           <button
             onClick={openEditModal}
             style={{
@@ -2190,7 +2173,7 @@ export default function BeneficiarioDetalle() {
                 margin: '0 auto'
               }}
             />
-            {canEdit() && (
+            {puedeEditarDatosFijos() && (
               <button
                 onClick={() => setShowPhotoModal(true)}
                 style={{
@@ -2216,7 +2199,7 @@ export default function BeneficiarioDetalle() {
           </div>
         </div>
 
-                {/* Nombre */}
+        {/* Nombre */}
         <h1 style={{
           fontFamily: 'Oswald, sans-serif',
           fontWeight: '700',
@@ -2231,7 +2214,7 @@ export default function BeneficiarioDetalle() {
           {nombreCompleto}
         </h1>
 
-        {/* ✅ Nombre de caza (Manada) o tótem (Rovers) */}
+        {/* Nombre de caza (Manada) o tótem (Rovers) */}
         {nombreCazaOTotem && (
           <div style={{
             fontFamily: 'Oswald, sans-serif',
@@ -2247,7 +2230,7 @@ export default function BeneficiarioDetalle() {
           </div>
         )}
 
-        {/* ✅ Chips: Rama · Progresión · Ex miembro */}
+        {/* Chips: Rama · Progresión · Ex miembro */}
         <div style={{
           display: 'flex',
           gap: '8px',
@@ -2256,7 +2239,6 @@ export default function BeneficiarioDetalle() {
           alignItems: 'center',
           marginTop: nombreCazaOTotem ? 0 : '12px'
         }}>
-          {/* Chip de rama */}
           <span style={{
             display: 'inline-block',
             padding: '4px 14px',
@@ -2271,7 +2253,6 @@ export default function BeneficiarioDetalle() {
             {getRamaLabel(beneficiario.rama)}
           </span>
 
-          {/* Chip de progresión actual */}
           <span style={{
             display: 'inline-block',
             padding: '4px 14px',
@@ -2288,7 +2269,6 @@ export default function BeneficiarioDetalle() {
             📈 {progresionActual}
           </span>
 
-          {/* Chip "Ex miembro" solo si aplica */}
           {beneficiario.estado === 'inactivo' && (
             <span style={{
               display: 'inline-block',
@@ -2335,7 +2315,70 @@ export default function BeneficiarioDetalle() {
         icono="📋"
         titulo="Información"
         color={COL.verdeScout}
+        accion={
+          puedeEditarInformacion() ? (
+            editandoInfoInline ? (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={cancelarEdicionInfoInline}
+                  disabled={savingInfoInline}
+                  style={{
+                    backgroundColor: '#E8DEC4', color: '#24352A', padding: '6px 14px',
+                    borderRadius: '6px', border: 'none',
+                    cursor: savingInfoInline ? 'not-allowed' : 'pointer',
+                    fontSize: '11px', fontFamily: 'Oswald, sans-serif',
+                    textTransform: 'uppercase', letterSpacing: '0.5px',
+                    opacity: savingInfoInline ? 0.5 : 1, fontWeight: 600
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={guardarInfoInline}
+                  disabled={savingInfoInline}
+                  style={{
+                    backgroundColor: '#5C7A5E', color: 'white', padding: '6px 14px',
+                    borderRadius: '6px', border: 'none',
+                    cursor: savingInfoInline ? 'wait' : 'pointer',
+                    fontSize: '11px', fontFamily: 'Oswald, sans-serif',
+                    textTransform: 'uppercase', letterSpacing: '0.5px',
+                    opacity: savingInfoInline ? 0.5 : 1, fontWeight: 600
+                  }}
+                >
+                  {savingInfoInline ? 'Guardando...' : '💾 Guardar'}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={abrirEdicionInfoInline}
+                style={{
+                  backgroundColor: '#BF4E30', color: 'white', padding: '6px 14px',
+                  borderRadius: '6px', border: 'none', cursor: 'pointer',
+                  fontSize: '11px', fontFamily: 'Oswald, sans-serif',
+                  textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600
+                }}
+              >
+                ✏️ Editar
+              </button>
+            )
+          ) : null
+        }
       >
+        {/* Mensaje edición inline */}
+        {messageInfoInline.text && (
+          <div style={{
+            padding: '8px 12px', borderRadius: '6px', marginBottom: '12px',
+            fontSize: '13px', fontFamily: 'Oswald, sans-serif',
+            ...(messageInfoInline.type === 'error' ? {
+              backgroundColor: '#FEE2E2', color: '#BF4E30', border: '1px solid #FECACA'
+            } : {
+              backgroundColor: '#D1FAE5', color: '#5C7A5E', border: '1px solid #A7F3D0'
+            })
+          }}>
+            {messageInfoInline.text}
+          </div>
+        )}
+
         {/* Fecha nacimiento + edad */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
           <div>
@@ -2355,10 +2398,40 @@ export default function BeneficiarioDetalle() {
         {/* Uniforme */}
         <div style={{ marginBottom: '12px' }}>
           <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Uniforme</p>
-          <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
-            {beneficiario.tiene_uniforme ? '✅ Sí' : '❌ No'}
-            {beneficiario.fecha_entrega_uniforme && ` · ${formatFecha(beneficiario.fecha_entrega_uniforme)}`}
-          </p>
+          {editandoInfoInline ? (
+            <div style={{ marginTop: '6px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '6px' }}>
+                <input
+                  type="checkbox"
+                  checked={infoInlineForm.tiene_uniforme}
+                  onChange={(e) => setInfoInlineForm({ ...infoInlineForm, tiene_uniforme: e.target.checked })}
+                  disabled={savingInfoInline}
+                  style={{ width: '18px', height: '18px', accentColor: COL.verdeScout }}
+                />
+                <span style={{ fontSize: '14px', fontFamily: 'Oswald, sans-serif', color: COL.textoPrincipal }}>
+                  Tiene uniforme
+                </span>
+              </label>
+              {infoInlineForm.tiene_uniforme && (
+                <input
+                  type="date"
+                  value={infoInlineForm.fecha_entrega_uniforme}
+                  onChange={(e) => setInfoInlineForm({ ...infoInlineForm, fecha_entrega_uniforme: e.target.value })}
+                  disabled={savingInfoInline}
+                  style={{
+                    width: '100%', padding: '6px 10px', fontSize: '13px',
+                    border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                    fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                  }}
+                />
+              )}
+            </div>
+          ) : (
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
+              {beneficiario.tiene_uniforme ? '✅ Sí' : '❌ No'}
+              {beneficiario.fecha_entrega_uniforme && ` · ${formatFecha(beneficiario.fecha_entrega_uniforme)}`}
+            </p>
+          )}
         </div>
 
         {/* Promesa */}
@@ -2366,14 +2439,60 @@ export default function BeneficiarioDetalle() {
           <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
             {beneficiario.rama === 'Manada' ? 'Promesa de Manada' : 'Promesa Scout'}
           </p>
-          <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
-            {promesaInfo.tiene ? '✅ Sí' : '❌ No'}
-            {promesaInfo.fecha && ` · ${formatFecha(promesaInfo.fecha)}`}
-            {promesaInfo.padrino && ` · Padrino/Madrina: ${promesaInfo.padrino}`}
-          </p>
+          {editandoInfoInline ? (
+            <div style={{ marginTop: '6px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '6px' }}>
+                <input
+                  type="checkbox"
+                  checked={infoInlineForm.tiene_promesa}
+                  onChange={(e) => setInfoInlineForm({ ...infoInlineForm, tiene_promesa: e.target.checked })}
+                  disabled={savingInfoInline}
+                  style={{ width: '18px', height: '18px', accentColor: COL.verdeScout }}
+                />
+                <span style={{ fontSize: '14px', fontFamily: 'Oswald, sans-serif', color: COL.textoPrincipal }}>
+                  Tiene promesa
+                </span>
+              </label>
+              {infoInlineForm.tiene_promesa && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <input
+                    type="date"
+                    value={infoInlineForm.fecha_promesa}
+                    onChange={(e) => setInfoInlineForm({ ...infoInlineForm, fecha_promesa: e.target.value })}
+                    disabled={savingInfoInline}
+                    style={{
+                      width: '100%', padding: '6px 10px', fontSize: '13px',
+                      border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                      fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                    }}
+                  />
+                  {beneficiario.rama !== 'Manada' && (
+                    <input
+                      type="text"
+                      value={infoInlineForm.padrino}
+                      onChange={(e) => setInfoInlineForm({ ...infoInlineForm, padrino: e.target.value })}
+                      placeholder="Padrino/Madrina"
+                      disabled={savingInfoInline}
+                      style={{
+                        width: '100%', padding: '6px 10px', fontSize: '13px',
+                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box'
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
+              {promesaInfo.tiene ? '✅ Sí' : '❌ No'}
+              {promesaInfo.fecha && ` · ${formatFecha(promesaInfo.fecha)}`}
+              {promesaInfo.padrino && ` · Padrino/Madrina: ${promesaInfo.padrino}`}
+            </p>
+          )}
         </div>
 
-        {/* Tótem (solo Rovers) */}
+        {/* Tótem (solo Rovers) - solo lectura */}
         {beneficiario.rama === 'Rovers' && progresionRovers && (progresionRovers.nombre_totem || progresionRovers.campamento_totem) && (
           <div style={{ marginBottom: '12px' }}>
             <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Tótem</p>
@@ -2384,7 +2503,7 @@ export default function BeneficiarioDetalle() {
           </div>
         )}
 
-        {/* TADA (Caminantes/Rovers) */}
+        {/* TADA (Caminantes/Rovers) - solo lectura */}
         {(beneficiario.rama === 'Caminantes' || beneficiario.rama === 'Rovers') && (
           <div style={{ marginBottom: '12px' }}>
             <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>TADA</p>
@@ -2396,29 +2515,35 @@ export default function BeneficiarioDetalle() {
           </div>
         )}
 
-        {/* Observaciones - SOLO si hay datos */}
-        {beneficiario.observaciones && beneficiario.observaciones.trim() !== '' && (
-          <div style={{ marginBottom: '12px' }}>
-            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Observaciones</p>
-            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0', lineHeight: 1.5 }}>
-              {beneficiario.observaciones}
-            </p>
-          </div>
-        )}
-
-        {/* Botón Editar Info */}
-        {canEdit() && (
-          <button
-            onClick={openInfoEditModal}
-            style={{
-              backgroundColor: '#BF4E30', color: 'white', padding: '8px 16px',
-              borderRadius: '8px', border: 'none', cursor: 'pointer',
-              fontSize: '12px', fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase', letterSpacing: '0.5px',
-              width: '100%', marginTop: '8px'
-            }}
-          >✏️ Editar Información</button>
-        )}
+        {/* Observaciones */}
+        <div style={{ marginBottom: '0' }}>
+          <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Observaciones</p>
+          {editandoInfoInline ? (
+            <textarea
+              value={infoInlineForm.observaciones}
+              onChange={(e) => setInfoInlineForm({ ...infoInlineForm, observaciones: e.target.value })}
+              rows={3}
+              placeholder="Observaciones sobre el beneficiario..."
+              disabled={savingInfoInline}
+              style={{
+                width: '100%', marginTop: '6px', padding: '8px 10px', fontSize: '13px',
+                border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
+                resize: 'vertical', boxSizing: 'border-box'
+              }}
+            />
+          ) : (
+            beneficiario.observaciones && beneficiario.observaciones.trim() !== '' ? (
+              <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0', lineHeight: 1.5 }}>
+                {beneficiario.observaciones}
+              </p>
+            ) : (
+              <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoSecundario, margin: '4px 0 0 0', fontStyle: 'italic' }}>
+                Sin observaciones
+              </p>
+            )
+          )}
+        </div>
       </Seccion>
 
       {/* ============================================ */}
@@ -2429,7 +2554,7 @@ export default function BeneficiarioDetalle() {
         titulo="Pagos"
         color={COL.terracota}
         accion={
-          canEdit() && (
+          puedeEditarInformacion() && (
             <button
               onClick={handleAbrirFormPago}
               style={{
@@ -2445,7 +2570,6 @@ export default function BeneficiarioDetalle() {
           )
         }
       >
-        {/* Formulario nuevo pago */}
         {showPagoForm && (
           <div style={{
             backgroundColor: '#F3ECD8', borderRadius: '8px', padding: '14px',
@@ -2556,7 +2680,6 @@ export default function BeneficiarioDetalle() {
           </div>
         )}
 
-        {/* Lista de pagos */}
         {pagos.length > 0 ? (
           <>
             {pagosMostrar.map((pago) => (
@@ -2593,7 +2716,6 @@ export default function BeneficiarioDetalle() {
               </div>
             ))}
 
-            {/* Botón Ver todos / Ver menos - más visible */}
             {pagos.length > 3 && (
               <div style={{ textAlign: 'center', marginTop: '12px' }}>
                 <button
@@ -2629,7 +2751,7 @@ export default function BeneficiarioDetalle() {
       </Seccion>
 
       {/* ============================================ */}
-      {/* BLOQUE 3: LEGAJO (colapsable) */}
+      {/* BLOQUE 3: LEGAJO */}
       {/* ============================================ */}
       <div style={{
         backgroundColor: '#FFFFFF',
@@ -2684,7 +2806,7 @@ export default function BeneficiarioDetalle() {
       </div>
 
       {/* ============================================ */}
-      {/* BLOQUE 4: VIDA SCOUT (link) */}
+      {/* BLOQUE 4: VIDA SCOUT */}
       {/* ============================================ */}
       <div
         onClick={() => navigate(`/beneficiario/${id}/vida-scout`)}
@@ -2737,671 +2859,548 @@ export default function BeneficiarioDetalle() {
           →
         </span>
       </div>
+    </div>
 
-      {/* ============================================ */}
-      {/* MODALES */}
-      {/* ============================================ */}
+    {/* ============================================ */}
+    {/* MODALES (fuera del div con transform) */}
+    {/* ============================================ */}
 
-      {/* Modal subir foto */}
-      {showPhotoModal && (
+    {/* Modal subir foto */}
+    {showPhotoModal && (
+      <div
+        onClick={() => { if (!uploading) { setShowPhotoModal(false); setSelectedFile(null); setPreviewUrl(null); setMessage({ text: '', type: '' }) } }}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+          boxSizing: 'border-box'
+        }}
+      >
         <div
-          onClick={() => { if (!uploading) { setShowPhotoModal(false); setSelectedFile(null); setPreviewUrl(null); setMessage({ text: '', type: '' }) } }}
+          onClick={(e) => e.stopPropagation()}
           style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+            backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
+            maxWidth: '480px', width: '100%', border: '2px solid #D1C9B4',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)', boxSizing: 'border-box'
+          }}
+        >
+          <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
+            📷 Subir Foto
+          </h2>
+
+          {message.text && (
+            <div style={{
+              padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
+              fontSize: '14px', border: '1px solid', fontFamily: 'Oswald, sans-serif',
+              ...(message.type === 'error' ? { backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA' } :
+                { backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0' })
+            }}>{message.text}</div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <div style={{
+              width: '150px', height: '150px', borderRadius: '12px', overflow: 'hidden',
+              backgroundColor: '#F3ECD8', border: '2px solid #D1C9B4',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              {previewUrl ? (
+                <img src={previewUrl} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : beneficiario?.foto_url ? (
+                <img src={beneficiario.foto_url} alt="Foto actual" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{
+                  width: '100%', height: '100%', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', backgroundColor: '#24352A', color: 'white',
+                  fontFamily: 'Oswald, sans-serif', fontSize: '48px', fontWeight: '700'
+                }}>
+                  {`${beneficiario?.nombre?.charAt(0) || ''}${beneficiario?.apellido?.charAt(0) || ''}`.toUpperCase() || 'U'}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <label style={{
+            display: 'block', width: '100%', padding: '12px',
+            border: '2px dashed #D1C9B4', borderRadius: '8px', textAlign: 'center',
+            cursor: 'pointer', fontFamily: 'Oswald, sans-serif', color: '#7A7364',
+            fontSize: '14px', backgroundColor: '#FAF8F4', marginBottom: '16px'
+          }}>
+            {selectedFile ? selectedFile.name : '📁 Seleccionar imagen'}
+            <input type="file" accept="image/*" onChange={handleFileSelect} style={{ display: 'none' }} disabled={uploading} />
+          </label>
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => { if (!uploading) { setShowPhotoModal(false); setSelectedFile(null); setPreviewUrl(null); setMessage({ text: '', type: '' }) } }}
+              disabled={uploading}
+              style={{
+                backgroundColor: '#E8DEC4', color: '#24352A', padding: '8px 20px',
+                borderRadius: '6px', border: 'none', cursor: 'pointer',
+                fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                letterSpacing: '0.5px', opacity: uploading ? 0.5 : 1
+              }}
+            >Cancelar</button>
+            <button
+              onClick={handleUploadPhoto}
+              disabled={!selectedFile || uploading}
+              style={{
+                backgroundColor: '#24352A', color: 'white', padding: '8px 20px',
+                borderRadius: '6px', border: 'none', cursor: 'pointer',
+                fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                letterSpacing: '0.5px', opacity: (!selectedFile || uploading) ? 0.5 : 1
+              }}
+            >{uploading ? 'Subiendo...' : 'Subir Foto'}</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Modal editar beneficiario */}
+    {showEditModal && (
+      <div
+        onClick={() => { if (!editLoading) { setShowEditModal(false); setMessage({ text: '', type: '' }) } }}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+          boxSizing: 'border-box'
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
+            maxWidth: '560px', width: '100%', border: '2px solid #D1C9B4',
+            maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             boxSizing: 'border-box'
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
-              maxWidth: '480px', width: '100%', border: '2px solid #D1C9B4',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)', boxSizing: 'border-box'
-            }}
-          >
-            <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
-              📷 Subir Foto
-            </h2>
+          <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
+            ✏️ Editar Beneficiario
+          </h2>
 
-            {message.text && (
-              <div style={{
-                padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
-                fontSize: '14px', border: '1px solid', fontFamily: 'Oswald, sans-serif',
-                ...(message.type === 'error' ? { backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA' } :
-                  { backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0' })
-              }}>{message.text}</div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-              <div style={{
-                width: '150px', height: '150px', borderRadius: '12px', overflow: 'hidden',
-                backgroundColor: '#F3ECD8', border: '2px solid #D1C9B4',
-                display: 'flex', alignItems: 'center', justifyContent: 'center'
-              }}>
-                {previewUrl ? (
-                  <img src={previewUrl} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : beneficiario?.foto_url ? (
-                  <img src={beneficiario.foto_url} alt="Foto actual" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{
-                    width: '100%', height: '100%', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', backgroundColor: '#24352A', color: 'white',
-                    fontFamily: 'Oswald, sans-serif', fontSize: '48px', fontWeight: '700'
-                  }}>
-                    {`${beneficiario?.nombre?.charAt(0) || ''}${beneficiario?.apellido?.charAt(0) || ''}`.toUpperCase() || 'U'}
-                  </div>
-                )}
+          <form onSubmit={handleSaveEdit}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Nombre *</label>
+                <input
+                  type="text" value={editForm.nombre}
+                  onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  required disabled={editLoading}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Apellido *</label>
+                <input
+                  type="text" value={editForm.apellido}
+                  onChange={(e) => setEditForm({ ...editForm, apellido: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  required disabled={editLoading}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Rama *</label>
+                <select
+                  value={editForm.rama}
+                  onChange={(e) => setEditForm({ ...editForm, rama: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={editLoading}
+                >
+                  <option value="Manada">Manada</option>
+                  <option value="Unidad Scout">Unidad Scout</option>
+                  <option value="Caminantes">Caminantes</option>
+                  <option value="Rovers">Rovers</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Estado</label>
+                <select
+                  value={editForm.estado}
+                  onChange={(e) => setEditForm({ ...editForm, estado: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={editLoading}
+                >
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Ex miembro</option>
+                </select>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha de Nacimiento</label>
+                <input
+                  type="date" value={editForm.fecha_nacimiento}
+                  onChange={(e) => setEditForm({ ...editForm, fecha_nacimiento: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={editLoading}
+                />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox" checked={editForm.tiene_hermanos}
+                    onChange={(e) => setEditForm({ ...editForm, tiene_hermanos: e.target.checked })}
+                    disabled={editLoading}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
+                  />
+                  Tiene hermanos en el grupo
+                </label>
               </div>
             </div>
 
-            <label style={{
-              display: 'block', width: '100%', padding: '12px',
-              border: '2px dashed #D1C9B4', borderRadius: '8px', textAlign: 'center',
-              cursor: 'pointer', fontFamily: 'Oswald, sans-serif', color: '#7A7364',
-              fontSize: '14px', backgroundColor: '#FAF8F4', marginBottom: '16px'
-            }}>
-              {selectedFile ? selectedFile.name : '📁 Seleccionar imagen'}
-              <input type="file" accept="image/*" onChange={handleFileSelect} style={{ display: 'none' }} disabled={uploading} />
-            </label>
-
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => { if (!uploading) { setShowPhotoModal(false); setSelectedFile(null); setPreviewUrl(null); setMessage({ text: '', type: '' }) } }}
-                disabled={uploading}
+                type="button"
+                onClick={() => { if (!editLoading) { setShowEditModal(false); setMessage({ text: '', type: '' }) } }}
                 style={{
                   backgroundColor: '#E8DEC4', color: '#24352A', padding: '8px 20px',
                   borderRadius: '6px', border: 'none', cursor: 'pointer',
                   fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                  letterSpacing: '0.5px', opacity: uploading ? 0.5 : 1
+                  letterSpacing: '0.5px', opacity: editLoading ? 0.5 : 1
                 }}
+                disabled={editLoading}
               >Cancelar</button>
               <button
-                onClick={handleUploadPhoto}
-                disabled={!selectedFile || uploading}
+                type="submit" disabled={editLoading}
                 style={{
                   backgroundColor: '#24352A', color: 'white', padding: '8px 20px',
                   borderRadius: '6px', border: 'none', cursor: 'pointer',
                   fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                  letterSpacing: '0.5px', opacity: (!selectedFile || uploading) ? 0.5 : 1
+                  letterSpacing: '0.5px', opacity: editLoading ? 0.5 : 1
                 }}
-              >{uploading ? 'Subiendo...' : 'Subir Foto'}</button>
+              >{editLoading ? 'Guardando...' : 'Guardar cambios'}</button>
             </div>
-          </div>
+          </form>
         </div>
-      )}
+      </div>
+    )}
 
-      {/* Modal editar beneficiario */}
-      {showEditModal && (
+    {/* Modal historial */}
+    {showHistorialEditModal && (
+      <div
+        onClick={() => { if (!editHistorialLoading) { setShowHistorialEditModal(false); setMessage({ text: '', type: '' }) } }}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+          boxSizing: 'border-box'
+        }}
+      >
         <div
-          onClick={() => { if (!editLoading) { setShowEditModal(false); setMessage({ text: '', type: '' }) } }}
+          onClick={(e) => e.stopPropagation()}
           style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+            backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
+            maxWidth: '560px', width: '100%', border: '2px solid #D1C9B4',
+            maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             boxSizing: 'border-box'
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
-              maxWidth: '560px', width: '100%', border: '2px solid #D1C9B4',
-              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              boxSizing: 'border-box'
-            }}
-          >
-            <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
-              ✏️ Editar Beneficiario
-            </h2>
+          <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
+            ✏️ Editar Historial Scout
+          </h2>
 
-            <form onSubmit={handleSaveEdit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Nombre *</label>
-                  <input
-                    type="text" value={editForm.nombre}
-                    onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    required disabled={editLoading}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Apellido *</label>
-                  <input
-                    type="text" value={editForm.apellido}
-                    onChange={(e) => setEditForm({ ...editForm, apellido: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    required disabled={editLoading}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Rama *</label>
-                  <select
-                    value={editForm.rama}
-                    onChange={(e) => setEditForm({ ...editForm, rama: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editLoading}
-                  >
-                    <option value="Manada">Manada</option>
-                    <option value="Unidad Scout">Unidad Scout</option>
-                    <option value="Caminantes">Caminantes</option>
-                    <option value="Rovers">Rovers</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Estado</label>
-                  <select
-                    value={editForm.estado}
-                    onChange={(e) => setEditForm({ ...editForm, estado: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editLoading}
-                  >
-                    <option value="activo">Activo</option>
-                    <option value="inactivo">Ex miembro</option>
-                  </select>
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha de Nacimiento</label>
-                  <input
-                    type="date" value={editForm.fecha_nacimiento}
-                    onChange={(e) => setEditForm({ ...editForm, fecha_nacimiento: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editLoading}
-                  />
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox" checked={editForm.tiene_hermanos}
-                      onChange={(e) => setEditForm({ ...editForm, tiene_hermanos: e.target.checked })}
-                      disabled={editLoading}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
-                    />
-                    Tiene hermanos en el grupo
-                  </label>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '20px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={() => { if (!editLoading) { setShowEditModal(false); setMessage({ text: '', type: '' }) } }}
-                  style={{
-                    backgroundColor: '#E8DEC4', color: '#24352A', padding: '8px 20px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                    letterSpacing: '0.5px', opacity: editLoading ? 0.5 : 1
-                  }}
-                  disabled={editLoading}
-                >Cancelar</button>
-                <button
-                  type="submit" disabled={editLoading}
-                  style={{
-                    backgroundColor: '#24352A', color: 'white', padding: '8px 20px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                    letterSpacing: '0.5px', opacity: editLoading ? 0.5 : 1
-                  }}
-                >{editLoading ? 'Guardando...' : 'Guardar cambios'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal info */}
-      {showInfoEditModal && (
-        <div
-          onClick={() => { if (!editLoading) { setShowInfoEditModal(false); setMessage({ text: '', type: '' }) } }}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
-            boxSizing: 'border-box'
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
-              maxWidth: '560px', width: '100%', border: '2px solid #D1C9B4',
-              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              boxSizing: 'border-box'
-            }}
-          >
-            <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
-              ✏️ Editar Información
-            </h2>
-
-            <form onSubmit={handleSaveInfoEdit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox" checked={infoEditForm.tiene_uniforme}
-                      onChange={(e) => setInfoEditForm({ ...infoEditForm, tiene_uniforme: e.target.checked })}
-                      disabled={editLoading}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
-                    />
-                    Tiene uniforme
-                  </label>
-                </div>
-                {infoEditForm.tiene_uniforme && (
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha de entrega de uniforme</label>
-                    <input
-                      type="date" value={infoEditForm.fecha_entrega_uniforme}
-                      onChange={(e) => setInfoEditForm({ ...infoEditForm, fecha_entrega_uniforme: e.target.value })}
-                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                      disabled={editLoading}
-                    />
-                  </div>
-                )}
-
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox" checked={infoEditForm.tiene_promesa}
-                      onChange={(e) => setInfoEditForm({ ...infoEditForm, tiene_promesa: e.target.checked })}
-                      disabled={editLoading}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
-                    />
-                    Tiene Promesa
-                  </label>
-                </div>
-                {infoEditForm.tiene_promesa && (
-                  <>
-                    <div>
-                      <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha de Promesa</label>
-                      <input
-                        type="date" value={infoEditForm.fecha_promesa}
-                        onChange={(e) => setInfoEditForm({ ...infoEditForm, fecha_promesa: e.target.value })}
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                        disabled={editLoading}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Padrino/Madrina</label>
-                      <input
-                        type="text" value={infoEditForm.padrino}
-                        onChange={(e) => setInfoEditForm({ ...infoEditForm, padrino: e.target.value })}
-                        placeholder="Nombre del padrino/madrina"
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                        disabled={editLoading}
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Observaciones</label>
-                  <textarea
-                    value={infoEditForm.observaciones}
-                    onChange={(e) => setInfoEditForm({ ...infoEditForm, observaciones: e.target.value })}
-                    rows={3}
-                    placeholder="Observaciones sobre el beneficiario..."
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', resize: 'vertical', boxSizing: 'border-box' }}
-                    disabled={editLoading}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '20px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={() => { if (!editLoading) { setShowInfoEditModal(false); setMessage({ text: '', type: '' }) } }}
-                  style={{
-                    backgroundColor: '#E8DEC4', color: '#24352A', padding: '8px 20px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                    letterSpacing: '0.5px', opacity: editLoading ? 0.5 : 1
-                  }}
-                  disabled={editLoading}
-                >Cancelar</button>
-                <button
-                  type="submit" disabled={editLoading}
-                  style={{
-                    backgroundColor: '#24352A', color: 'white', padding: '8px 20px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                    letterSpacing: '0.5px', opacity: editLoading ? 0.5 : 1
-                  }}
-                >{editLoading ? 'Guardando...' : 'Guardar cambios'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal historial */}
-      {showHistorialEditModal && (
-        <div
-          onClick={() => { if (!editHistorialLoading) { setShowHistorialEditModal(false); setMessage({ text: '', type: '' }) } }}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
-            boxSizing: 'border-box'
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
-              maxWidth: '560px', width: '100%', border: '2px solid #D1C9B4',
-              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              boxSizing: 'border-box'
-            }}
-          >
-            <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
-              ✏️ Editar Historial Scout
-            </h2>
-
-            <form onSubmit={handleSaveHistorialEdit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso al Grupo</label>
-                  <input
-                    type="date" value={historialEditForm.fecha_ingreso_grupo}
-                    onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_grupo: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editHistorialLoading}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Entrega de Uniforme</label>
-                  <input
-                    type="date" value={historialEditForm.fecha_entrega_uniforme}
-                    onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_entrega_uniforme: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editHistorialLoading}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso a Manada</label>
-                  <input
-                    type="date" value={historialEditForm.fecha_ingreso_manada}
-                    onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_manada: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editHistorialLoading}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso a Unidad</label>
-                  <input
-                    type="date" value={historialEditForm.fecha_ingreso_unidad}
-                    onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_unidad: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editHistorialLoading}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso a Caminantes</label>
-                  <input
-                    type="date" value={historialEditForm.fecha_ingreso_caminantes}
-                    onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_caminantes: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editHistorialLoading}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso a Rovers</label>
-                  <input
-                    type="date" value={historialEditForm.fecha_ingreso_rovers}
-                    onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_rovers: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={editHistorialLoading}
-                  />
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox" checked={historialEditForm.tiene_promesa}
-                      onChange={(e) => setHistorialEditForm({ ...historialEditForm, tiene_promesa: e.target.checked })}
-                      disabled={editHistorialLoading}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
-                    />
-                    Tiene Promesa
-                  </label>
-                </div>
-                {historialEditForm.tiene_promesa && (
-                  <>
-                    <div>
-                      <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha de Promesa</label>
-                      <input
-                        type="date" value={historialEditForm.fecha_promesa}
-                        onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_promesa: e.target.value })}
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                        disabled={editHistorialLoading}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Padrino/Madrina</label>
-                      <input
-                        type="text" value={historialEditForm.padrino_promesa}
-                        onChange={(e) => setHistorialEditForm({ ...historialEditForm, padrino_promesa: e.target.value })}
-                        placeholder="Nombre del padrino/madrina"
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                        disabled={editHistorialLoading}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '20px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={() => { if (!editHistorialLoading) { setShowHistorialEditModal(false); setMessage({ text: '', type: '' }) } }}
-                  style={{
-                    backgroundColor: '#E8DEC4', color: '#24352A', padding: '8px 20px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                    letterSpacing: '0.5px', opacity: editHistorialLoading ? 0.5 : 1
-                  }}
+          <form onSubmit={handleSaveHistorialEdit}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso al Grupo</label>
+                <input
+                  type="date" value={historialEditForm.fecha_ingreso_grupo}
+                  onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_grupo: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                   disabled={editHistorialLoading}
-                >Cancelar</button>
-                <button
-                  type="submit" disabled={editHistorialLoading}
-                  style={{
-                    backgroundColor: '#24352A', color: 'white', padding: '8px 20px',
-                    borderRadius: '6px', border: 'none', cursor: 'pointer',
-                    fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                    letterSpacing: '0.5px', opacity: editHistorialLoading ? 0.5 : 1
-                  }}
-                >{editHistorialLoading ? 'Guardando...' : 'Guardar cambios'}</button>
+                />
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Entrega de Uniforme</label>
+                <input
+                  type="date" value={historialEditForm.fecha_entrega_uniforme}
+                  onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_entrega_uniforme: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={editHistorialLoading}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso a Manada</label>
+                <input
+                  type="date" value={historialEditForm.fecha_ingreso_manada}
+                  onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_manada: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={editHistorialLoading}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso a Unidad</label>
+                <input
+                  type="date" value={historialEditForm.fecha_ingreso_unidad}
+                  onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_unidad: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={editHistorialLoading}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso a Caminantes</label>
+                <input
+                  type="date" value={historialEditForm.fecha_ingreso_caminantes}
+                  onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_caminantes: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={editHistorialLoading}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Ingreso a Rovers</label>
+                <input
+                  type="date" value={historialEditForm.fecha_ingreso_rovers}
+                  onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_ingreso_rovers: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={editHistorialLoading}
+                />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox" checked={historialEditForm.tiene_promesa}
+                    onChange={(e) => setHistorialEditForm({ ...historialEditForm, tiene_promesa: e.target.checked })}
+                    disabled={editHistorialLoading}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
+                  />
+                  Tiene Promesa
+                </label>
+              </div>
+              {historialEditForm.tiene_promesa && (
+                <>
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha de Promesa</label>
+                    <input
+                      type="date" value={historialEditForm.fecha_promesa}
+                      onChange={(e) => setHistorialEditForm({ ...historialEditForm, fecha_promesa: e.target.value })}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                      disabled={editHistorialLoading}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Padrino/Madrina</label>
+                    <input
+                      type="text" value={historialEditForm.padrino_promesa}
+                      onChange={(e) => setHistorialEditForm({ ...historialEditForm, padrino_promesa: e.target.value })}
+                      placeholder="Nombre del padrino/madrina"
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                      disabled={editHistorialLoading}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
 
-      {/* Modal campamentos */}
-      {showCampamentoModal && (
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => { if (!editHistorialLoading) { setShowHistorialEditModal(false); setMessage({ text: '', type: '' }) } }}
+                style={{
+                  backgroundColor: '#E8DEC4', color: '#24352A', padding: '8px 20px',
+                  borderRadius: '6px', border: 'none', cursor: 'pointer',
+                  fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                  letterSpacing: '0.5px', opacity: editHistorialLoading ? 0.5 : 1
+                }}
+                disabled={editHistorialLoading}
+              >Cancelar</button>
+              <button
+                type="submit" disabled={editHistorialLoading}
+                style={{
+                  backgroundColor: '#24352A', color: 'white', padding: '8px 20px',
+                  borderRadius: '6px', border: 'none', cursor: 'pointer',
+                  fontSize: '14px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                  letterSpacing: '0.5px', opacity: editHistorialLoading ? 0.5 : 1
+                }}
+              >{editHistorialLoading ? 'Guardando...' : 'Guardar cambios'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+
+    {/* Modal campamentos */}
+    {showCampamentoModal && (
+      <div
+        onClick={() => { if (!saving) { setShowCampamentoModal(false); setMessage({ text: '', type: '' }) } }}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+          boxSizing: 'border-box'
+        }}
+      >
         <div
-          onClick={() => { if (!saving) { setShowCampamentoModal(false); setMessage({ text: '', type: '' }) } }}
+          onClick={(e) => e.stopPropagation()}
           style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px',
+            backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
+            maxWidth: '520px', width: '100%', border: '2px solid #D1C9B4',
+            maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             boxSizing: 'border-box'
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: 'white', borderRadius: '16px', padding: '24px 16px',
-              maxWidth: '520px', width: '100%', border: '2px solid #D1C9B4',
-              maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              boxSizing: 'border-box'
-            }}
-          >
-            <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
-              🏕️ Agregar Campamento
-            </h2>
+          <h2 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: '20px', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 20px 0' }}>
+            🏕️ Agregar Campamento
+          </h2>
 
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-              <button
-                onClick={() => setModalMode('agregar')}
-                style={{
-                  flex: 1, padding: '8px 16px',
-                  backgroundColor: modalMode === 'agregar' ? '#24352A' : '#F3ECD8',
-                  color: modalMode === 'agregar' ? 'white' : '#24352A',
-                  border: '2px solid #D1C9B4', borderRadius: '6px', cursor: 'pointer',
-                  fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                  fontSize: '12px', letterSpacing: '0.5px'
-                }}
-              >📋 Agregar existente</button>
-              <button
-                onClick={() => setModalMode('crear')}
-                style={{
-                  flex: 1, padding: '8px 16px',
-                  backgroundColor: modalMode === 'crear' ? '#24352A' : '#F3ECD8',
-                  color: modalMode === 'crear' ? 'white' : '#24352A',
-                  border: '2px solid #D1C9B4', borderRadius: '6px', cursor: 'pointer',
-                  fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-                  fontSize: '12px', letterSpacing: '0.5px'
-                }}
-              >✨ Crear nuevo</button>
-            </div>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <button
+              onClick={() => setModalMode('agregar')}
+              style={{
+                flex: 1, padding: '8px 16px',
+                backgroundColor: modalMode === 'agregar' ? '#24352A' : '#F3ECD8',
+                color: modalMode === 'agregar' ? 'white' : '#24352A',
+                border: '2px solid #D1C9B4', borderRadius: '6px', cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                fontSize: '12px', letterSpacing: '0.5px'
+              }}
+            >📋 Agregar existente</button>
+            <button
+              onClick={() => setModalMode('crear')}
+              style={{
+                flex: 1, padding: '8px 16px',
+                backgroundColor: modalMode === 'crear' ? '#24352A' : '#F3ECD8',
+                color: modalMode === 'crear' ? 'white' : '#24352A',
+                border: '2px solid #D1C9B4', borderRadius: '6px', cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                fontSize: '12px', letterSpacing: '0.5px'
+              }}
+            >✨ Crear nuevo</button>
+          </div>
 
-            {modalMode === 'agregar' && (
-              <div>
-                {campamentosDisponibles.length > 0 ? (
-                  <>
-                    <div style={{ marginBottom: '16px' }}>
-                      <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Seleccionar Campamento *</label>
-                      <select
-                        value={campamentoSeleccionado}
-                        onChange={(e) => setCampamentoSeleccionado(e.target.value)}
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                        disabled={saving}
-                      >
-                        <option value="">Seleccionar...</option>
-                        {campamentosDisponibles.map((c) => (
-                          <option key={c.id} value={c.id}>{c.nombre} - {formatFecha(c.fecha_inicio)}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '10px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        onClick={() => { setShowCampamentoModal(false); setMessage({ text: '', type: '' }) }}
-                        style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#E8DEC4', color: '#24352A', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1 }}
-                        disabled={saving}
-                      >Cancelar</button>
-                      <button
-                        onClick={handleAgregarCampamentoExistente}
-                        disabled={!campamentoSeleccionado || saving}
-                        style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#24352A', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: (!campamentoSeleccionado || saving) ? 0.5 : 1 }}
-                      >{saving ? 'Guardando...' : 'Agregar Campamento'}</button>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '24px 0', color: '#7A7364' }}>
-                    <p>No hay campamentos disponibles para agregar.</p>
-                    <p style={{ fontSize: '13px' }}>Hacé clic en "Crear nuevo" para crear uno.</p>
+          {modalMode === 'agregar' && (
+            <div>
+              {campamentosDisponibles.length > 0 ? (
+                <>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Seleccionar Campamento *</label>
+                    <select
+                      value={campamentoSeleccionado}
+                      onChange={(e) => setCampamentoSeleccionado(e.target.value)}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                      disabled={saving}
+                    >
+                      <option value="">Seleccionar...</option>
+                      {campamentosDisponibles.map((c) => (
+                        <option key={c.id} value={c.id}>{c.nombre} - {formatFecha(c.fecha_inicio)}</option>
+                      ))}
+                    </select>
                   </div>
-                )}
-              </div>
-            )}
 
-            {modalMode === 'crear' && (
-              <div>
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Nombre del Campamento *</label>
+                  <div style={{ display: 'flex', gap: '10px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => { setShowCampamentoModal(false); setMessage({ text: '', type: '' }) }}
+                      style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#E8DEC4', color: '#24352A', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1 }}
+                      disabled={saving}
+                    >Cancelar</button>
+                    <button
+                      onClick={handleAgregarCampamentoExistente}
+                      disabled={!campamentoSeleccionado || saving}
+                      style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#24352A', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: (!campamentoSeleccionado || saving) ? 0.5 : 1 }}
+                    >{saving ? 'Guardando...' : 'Agregar Campamento'}</button>
+                  </div>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '24px 0', color: '#7A7364' }}>
+                  <p>No hay campamentos disponibles para agregar.</p>
+                  <p style={{ fontSize: '13px' }}>Hacé clic en "Crear nuevo" para crear uno.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {modalMode === 'crear' && (
+            <div>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Nombre del Campamento *</label>
+                <input
+                  type="text" value={nuevoCampamentoNombre}
+                  onChange={(e) => setNuevoCampamentoNombre(e.target.value)}
+                  placeholder="Ej: Campamento de Verano 2026"
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                  disabled={saving} required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha Inicio</label>
                   <input
-                    type="text" value={nuevoCampamentoNombre}
-                    onChange={(e) => setNuevoCampamentoNombre(e.target.value)}
-                    placeholder="Ej: Campamento de Verano 2026"
+                    type="date" value={nuevoCampamentoFecha}
+                    onChange={(e) => setNuevoCampamentoFecha(e.target.value)}
                     style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                    disabled={saving} required
+                    disabled={saving}
                   />
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                  <div>
-                    <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha Inicio</label>
-                    <input
-                      type="date" value={nuevoCampamentoFecha}
-                      onChange={(e) => setNuevoCampamentoFecha(e.target.value)}
-                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                      disabled={saving}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Tipo</label>
-                    <select
-                      value={nuevoCampamentoTipo}
-                      onChange={(e) => {
-                        const value = e.target.value
-                        setNuevoCampamentoTipo(value)
-                        if (value !== 'De Rama') setNuevoCampamentoRama('')
-                        if (value !== 'Otro') setNuevoCampamentoOtro('')
-                      }}
-                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                      disabled={saving}
-                    >
-                      <option value="Anual">Anual</option>
-                      <option value="Corto">Corto</option>
-                      <option value="De Rama">De Rama</option>
-                      <option value="Otro">Otro</option>
-                    </select>
-                  </div>
-                </div>
-
-                {nuevoCampamentoTipo === 'De Rama' && (
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Rama *</label>
-                    <select
-                      value={nuevoCampamentoRama}
-                      onChange={(e) => setNuevoCampamentoRama(e.target.value)}
-                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                      disabled={saving}
-                    >
-                      <option value="">Seleccionar rama...</option>
-                      <option value="Manada">🐺 Manada</option>
-                      <option value="Unidad Scout">⚜️ Unidad Scout</option>
-                      <option value="Caminantes">🏔️ Caminantes</option>
-                      <option value="Rovers">🔥 Rovers</option>
-                    </select>
-                  </div>
-                )}
-
-                {nuevoCampamentoTipo === 'Otro' && (
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Especificar Tipo *</label>
-                    <input
-                      type="text" value={nuevoCampamentoOtro}
-                      onChange={(e) => setNuevoCampamentoOtro(e.target.value)}
-                      placeholder="Ej: Jornada, Peregrinación, etc."
-                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
-                      disabled={saving}
-                    />
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '10px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
-                  <button
-                    type="button"
-                    onClick={() => { setShowCampamentoModal(false); setMessage({ text: '', type: '' }) }}
-                    style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#E8DEC4', color: '#24352A', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1 }}
+                <div>
+                  <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Tipo</label>
+                  <select
+                    value={nuevoCampamentoTipo}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      setNuevoCampamentoTipo(value)
+                      if (value !== 'De Rama') setNuevoCampamentoRama('')
+                      if (value !== 'Otro') setNuevoCampamentoOtro('')
+                    }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
                     disabled={saving}
-                  >Cancelar</button>
-                  <button
-                    onClick={handleCrearYAgregarCampamento}
-                    disabled={!nuevoCampamentoNombre.trim() || saving}
-                    style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#24352A', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: (!nuevoCampamentoNombre.trim() || saving) ? 0.5 : 1 }}
-                  >{saving ? 'Guardando...' : 'Crear y Asignar'}</button>
+                  >
+                    <option value="Anual">Anual</option>
+                    <option value="Corto">Corto</option>
+                    <option value="De Rama">De Rama</option>
+                    <option value="Otro">Otro</option>
+                  </select>
                 </div>
               </div>
-            )}
-          </div>
+
+              {nuevoCampamentoTipo === 'De Rama' && (
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Rama *</label>
+                  <select
+                    value={nuevoCampamentoRama}
+                    onChange={(e) => setNuevoCampamentoRama(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                    disabled={saving}
+                  >
+                    <option value="">Seleccionar rama...</option>
+                    <option value="Manada">🐺 Manada</option>
+                    <option value="Unidad Scout">⚜️ Unidad Scout</option>
+                    <option value="Caminantes">🏔️ Caminantes</option>
+                    <option value="Rovers">🔥 Rovers</option>
+                  </select>
+                </div>
+              )}
+
+              {nuevoCampamentoTipo === 'Otro' && (
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Especificar Tipo *</label>
+                  <input
+                    type="text" value={nuevoCampamentoOtro}
+                    onChange={(e) => setNuevoCampamentoOtro(e.target.value)}
+                    placeholder="Ej: Jornada, Peregrinación, etc."
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }}
+                    disabled={saving}
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', borderTop: '2px solid #E8DEC4', paddingTop: '16px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowCampamentoModal(false); setMessage({ text: '', type: '' }) }}
+                  style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#E8DEC4', color: '#24352A', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: saving ? 0.5 : 1 }}
+                  disabled={saving}
+                >Cancelar</button>
+                <button
+                  onClick={handleCrearYAgregarCampamento}
+                  disabled={!nuevoCampamentoNombre.trim() || saving}
+                  style={{ padding: '8px 20px', fontSize: '14px', backgroundColor: '#24352A', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: (!nuevoCampamentoNombre.trim() || saving) ? 0.5 : 1 }}
+                >{saving ? 'Guardando...' : 'Crear y Asignar'}</button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    )}
+    </>
   )
 }
