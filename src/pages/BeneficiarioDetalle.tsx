@@ -658,7 +658,7 @@ export default function BeneficiarioDetalle() {
         supabase.from('progresion_unidad').select('*').eq('beneficiario_id', id).maybeSingle(),
         supabase.from('progresion_caminantes').select('*').eq('beneficiario_id', id).maybeSingle(),
         supabase.from('progresion_rovers').select('*').eq('beneficiario_id', id).maybeSingle(),
-        supabase.from('pagos').select('*').eq('beneficiario_id', id).order('fecha_pago', { ascending: false }).limit(10)
+        supabase.from('pagos').select('*').eq('beneficiario_id', id).order('fecha_pago', { ascending: false }).limit(30)
       ])
 
       if (beneficiarioRes.error) throw beneficiarioRes.error
@@ -668,7 +668,17 @@ export default function BeneficiarioDetalle() {
       setProgresionUnidad(unidadRes.data || null)
       setProgresionCaminantes(caminantesRes.data || null)
       setProgresionRovers(roversRes.data || null)
-      setPagos(pagosRes.data || [])
+      // ✅ Ordenar: fecha DESC → reciboNumero DESC
+const pagosOrdenados = (pagosRes.data || []).map((p: any) => ({
+  ...p,
+  reciboNumero: p.recibo ? parseInt(p.recibo.replace(/^[A-Z]-/, '')) : 0
+})).sort((a, b) => {
+  const fechaA = a.fecha_pago || ''
+  const fechaB = b.fecha_pago || ''
+  if (fechaA !== fechaB) return fechaB.localeCompare(fechaA)
+  return (b.reciboNumero || 0) - (a.reciboNumero || 0)
+})
+setPagos(pagosOrdenados)
     } catch (error) {
       console.error('Error:', error)
     } finally {
@@ -1791,12 +1801,22 @@ export default function BeneficiarioDetalle() {
       setShowPagoForm(false)
 
       const { data: pagosData } = await supabase
-        .from('pagos')
-        .select('*')
-        .eq('beneficiario_id', beneficiario.id)
-        .order('fecha_pago', { ascending: false })
-        .limit(10)
-      setPagos(pagosData || [])
+  .from('pagos')
+  .select('*')
+  .eq('beneficiario_id', beneficiario.id)
+  .order('fecha_pago', { ascending: false })
+  .limit(30)
+    // ✅ Ordenar: fecha DESC → reciboNumero DESC
+const pagosOrdenados = (pagosData || []).map((p: any) => ({
+  ...p,
+  reciboNumero: p.recibo ? parseInt(p.recibo.replace(/^[A-Z]-/, '')) : 0
+})).sort((a, b) => {
+  const fechaA = a.fecha_pago || ''
+  const fechaB = b.fecha_pago || ''
+  if (fechaA !== fechaB) return fechaB.localeCompare(fechaA)
+  return (b.reciboNumero || 0) - (a.reciboNumero || 0)
+})
+setPagos(pagosOrdenados)
     } catch (error: any) {
       console.error('Error:', error)
       setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
