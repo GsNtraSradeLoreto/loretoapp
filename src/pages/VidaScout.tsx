@@ -33,6 +33,7 @@ interface ProgresionManada {
   tiene_promesa_manada: boolean
   fecha_promesa_manada: string
   progresion_actual: string
+  oculto: boolean
 }
 
 interface ProgresionUnidad {
@@ -47,6 +48,7 @@ interface ProgresionUnidad {
   fecha_promesa_scout: string
   padrino_promesa_scout: string
   progresion_actual: string
+  oculto: boolean
 }
 
 interface ProgresionCaminantes {
@@ -64,6 +66,7 @@ interface ProgresionCaminantes {
   padrino_promesa_scout: string
   hizo_tada: boolean
   progresion_actual: string
+  oculto: boolean
 }
 
 interface ProgresionRovers {
@@ -80,6 +83,7 @@ interface ProgresionRovers {
   fecha_promesa_scout: string
   padrino_promesa_scout: string
   progresion_actual: string
+  oculto: boolean
 }
 
 interface Campamento {
@@ -131,6 +135,7 @@ const getRamaLabel = (rama: string) => {
   }
   return labels[rama] || rama
 }
+
 const formatTipoConDetalle = (tipo: string, detalle: string) => {
   const detalleLimpio = (detalle || '').trim()
   const esTodas = !detalleLimpio || detalleLimpio.toLowerCase() === 'todas'
@@ -140,6 +145,7 @@ const formatTipoConDetalle = (tipo: string, detalle: string) => {
   }
   return `${tipo} (${detalleLimpio})`
 }
+
 const getFotoUrl = (fotoUrl: string | null, nombre: string, apellido: string) => {
   if (fotoUrl) return fotoUrl
   const iniciales = `${nombre.charAt(0)}${apellido.charAt(0)}`.toUpperCase()
@@ -239,6 +245,80 @@ const Subtitulo = ({ texto }: { texto: string }) => (
   </div>
 )
 
+const BloqueOculto = ({
+  icono,
+  titulo,
+  color,
+  onReactivar,
+  saving
+}: {
+  icono: string
+  titulo: string
+  color: string
+  onReactivar: () => void
+  saving: boolean
+}) => (
+  <div style={{
+    backgroundColor: '#F3F4F6',
+    border: `2px dashed ${color}`,
+    borderRadius: '16px',
+    padding: '16px',
+    marginBottom: '16px',
+    fontFamily: 'Oswald, sans-serif',
+    opacity: 0.7
+  }}>
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '10px',
+      flexWrap: 'wrap'
+    }}>
+      <div style={{
+        fontSize: 'clamp(14px, 3.5vw, 17px)',
+        fontWeight: '700',
+        color: color,
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        <span>{icono}</span>
+        <span>{titulo}</span>
+        <span style={{
+          fontSize: '11px',
+          color: '#7A7364',
+          fontWeight: '500',
+          marginLeft: '6px'
+        }}>
+          (oculta)
+        </span>
+      </div>
+      <button
+        onClick={onReactivar}
+        disabled={saving}
+        style={{
+          padding: '6px 14px',
+          fontSize: '11px',
+          backgroundColor: '#5C7A5E',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          cursor: saving ? 'not-allowed' : 'pointer',
+          fontFamily: 'Oswald, sans-serif',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          fontWeight: 600,
+          opacity: saving ? 0.5 : 1
+        }}
+      >
+        👁️ Reactivar
+      </button>
+    </div>
+  </div>
+)
+
 export default function VidaScout() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -266,6 +346,9 @@ export default function VidaScout() {
   const [caminantesAbierto, setCaminantesAbierto] = useState(false)
   const [roversAbierto, setRoversAbierto] = useState(false)
   const [ingresoGrupoAbierto, setIngresoGrupoAbierto] = useState(false)
+
+  // ✅ NUEVO: mostrar ramas ocultas
+  const [mostrarOcultas, setMostrarOcultas] = useState(false)
 
   // UI: modales de edición por rama
   const [editandoManada, setEditandoManada] = useState(false)
@@ -367,7 +450,7 @@ export default function VidaScout() {
   }
 
   // ============================================
-  // CARGAR LISTA DE IDs (misma lógica que BeneficiarioDetalle)
+  // CARGAR LISTA DE IDs
   // ============================================
   useEffect(() => {
     cargarListaIds()
@@ -423,9 +506,9 @@ export default function VidaScout() {
     setEditandoCaminantes(false)
     setEditandoRovers(false)
     setEditandoIngresoGrupo(false)
+    setMostrarOcultas(false)
     setMessage({ text: '', type: '' })
 
-    // Si es jefe o ayudante, abrir su bloque por defecto
     if ((esJefe || esAyudante) && ramaAsignada) {
       if (ramaAsignada === 'Manada') setManadaAbierto(true)
       if (ramaAsignada === 'Unidad Scout') setUnidadAbierto(true)
@@ -518,7 +601,47 @@ export default function VidaScout() {
   }
 
   // ============================================
-  // ✅ NUEVO: GUARDAR INGRESO AL GRUPO
+  // ✅ OCULTAR / REACTIVAR RAMAS
+  // ============================================
+  const toggleOcultarRama = async (
+    tabla: 'progresion_manada' | 'progresion_unidad' | 'progresion_caminantes' | 'progresion_rovers',
+    idRama: string,
+    ocultar: boolean
+  ) => {
+    setSaving(true)
+    setMessage({ text: '', type: '' })
+
+    try {
+      const { error } = await supabase
+        .from(tabla)
+        .update({ oculto: ocultar })
+        .eq('id', idRama)
+
+      if (error) throw error
+
+      setMessage({
+        text: ocultar ? '✅ Etapa ocultada' : '✅ Etapa reactivada',
+        type: 'success'
+      })
+      await loadData()
+      setTimeout(() => setMessage({ text: '', type: '' }), 3000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hayOcultas = Boolean(
+    progresionManada?.oculto ||
+    progresionUnidad?.oculto ||
+    progresionCaminantes?.oculto ||
+    progresionRovers?.oculto
+  )
+
+  // ============================================
+  // GUARDAR INGRESO AL GRUPO
   // ============================================
   const abrirEditarIngresoGrupo = () => {
     setValorIngresoGrupo(beneficiario?.fecha_ingreso_grupo || '')
@@ -813,7 +936,7 @@ export default function VidaScout() {
   }
 
   // ============================================
-  // SWIPE (bloqueado si hay edición abierta)
+  // SWIPE
   // ============================================
   const handleSwipeLeft = () => {
     if (hayEdicionAbierta) return
@@ -987,7 +1110,7 @@ export default function VidaScout() {
   )
 
   // ============================================
-  // ✅ NUEVO: RENDER INGRESO AL GRUPO
+  // RENDER INGRESO AL GRUPO
   // ============================================
   const renderIngresoGrupo = () => {
     const abierto = ingresoGrupoAbierto || editandoIngresoGrupo
@@ -1120,24 +1243,58 @@ export default function VidaScout() {
         colapsable={!estaEditando}
         abierto={abierto}
         onToggle={() => !estaEditando && setManadaAbierto(!manadaAbierto)}
-        accion={editable && !estaEditando && abierto && (
-          <button
-            onClick={abrirEditarManada}
-            style={{
-              padding: '6px 14px',
-              fontSize: '11px',
-              backgroundColor: '#24352A',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontWeight: 600
-            }}
-          >✏️ Editar</button>
-        )}
+        accion={
+          !estaEditando && abierto && (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {esSuperAdmin && (
+                <button
+                  onClick={() => {
+                    if (confirm('¿Ocultar la etapa de Manada para este beneficiario?')) {
+                      toggleOcultarRama('progresion_manada', progresionManada.id, true)
+                    }
+                  }}
+                  disabled={saving}
+                  title="Ocultar etapa"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    padding: 0,
+                    backgroundColor: '#FEE2E2',
+                    color: '#BF4E30',
+                    border: '1.5px solid #FECACA',
+                    borderRadius: '6px',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '14px',
+                    opacity: saving ? 0.5 : 1
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+              {editable && (
+                <button
+                  onClick={abrirEditarManada}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: '11px',
+                    backgroundColor: '#24352A',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontFamily: 'Oswald, sans-serif',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontWeight: 600
+                  }}
+                >✏️ Editar</button>
+              )}
+            </div>
+          )
+        }
       >
         {estaEditando ? (
           <>
@@ -1214,24 +1371,58 @@ export default function VidaScout() {
         colapsable={!estaEditando}
         abierto={abierto}
         onToggle={() => !estaEditando && setUnidadAbierto(!unidadAbierto)}
-        accion={editable && !estaEditando && abierto && (
-          <button
-            onClick={abrirEditarUnidad}
-            style={{
-              padding: '6px 14px',
-              fontSize: '11px',
-              backgroundColor: '#24352A',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontWeight: 600
-            }}
-          >✏️ Editar</button>
-        )}
+        accion={
+          !estaEditando && abierto && (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {esSuperAdmin && (
+                <button
+                  onClick={() => {
+                    if (confirm('¿Ocultar la etapa de Unidad Scout para este beneficiario?')) {
+                      toggleOcultarRama('progresion_unidad', progresionUnidad.id, true)
+                    }
+                  }}
+                  disabled={saving}
+                  title="Ocultar etapa"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    padding: 0,
+                    backgroundColor: '#FEE2E2',
+                    color: '#BF4E30',
+                    border: '1.5px solid #FECACA',
+                    borderRadius: '6px',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '14px',
+                    opacity: saving ? 0.5 : 1
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+              {editable && (
+                <button
+                  onClick={abrirEditarUnidad}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: '11px',
+                    backgroundColor: '#24352A',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontFamily: 'Oswald, sans-serif',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontWeight: 600
+                  }}
+                >✏️ Editar</button>
+              )}
+            </div>
+          )
+        }
       >
         {estaEditando ? (
           <>
@@ -1308,24 +1499,58 @@ export default function VidaScout() {
         colapsable={!estaEditando}
         abierto={abierto}
         onToggle={() => !estaEditando && setCaminantesAbierto(!caminantesAbierto)}
-        accion={editable && !estaEditando && abierto && (
-          <button
-            onClick={abrirEditarCaminantes}
-            style={{
-              padding: '6px 14px',
-              fontSize: '11px',
-              backgroundColor: '#24352A',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontWeight: 600
-            }}
-          >✏️ Editar</button>
-        )}
+        accion={
+          !estaEditando && abierto && (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {esSuperAdmin && (
+                <button
+                  onClick={() => {
+                    if (confirm('¿Ocultar la etapa de Caminantes para este beneficiario?')) {
+                      toggleOcultarRama('progresion_caminantes', progresionCaminantes.id, true)
+                    }
+                  }}
+                  disabled={saving}
+                  title="Ocultar etapa"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    padding: 0,
+                    backgroundColor: '#FEE2E2',
+                    color: '#BF4E30',
+                    border: '1.5px solid #FECACA',
+                    borderRadius: '6px',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '14px',
+                    opacity: saving ? 0.5 : 1
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+              {editable && (
+                <button
+                  onClick={abrirEditarCaminantes}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: '11px',
+                    backgroundColor: '#24352A',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontFamily: 'Oswald, sans-serif',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontWeight: 600
+                  }}
+                >✏️ Editar</button>
+              )}
+            </div>
+          )
+        }
       >
         {estaEditando ? (
           <>
@@ -1448,24 +1673,58 @@ export default function VidaScout() {
         colapsable={!estaEditando}
         abierto={abierto}
         onToggle={() => !estaEditando && setRoversAbierto(!roversAbierto)}
-        accion={editable && !estaEditando && abierto && (
-          <button
-            onClick={abrirEditarRovers}
-            style={{
-              padding: '6px 14px',
-              fontSize: '11px',
-              backgroundColor: '#24352A',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontWeight: 600
-            }}
-          >✏️ Editar</button>
-        )}
+        accion={
+          !estaEditando && abierto && (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {esSuperAdmin && (
+                <button
+                  onClick={() => {
+                    if (confirm('¿Ocultar la etapa de Rovers para este beneficiario?')) {
+                      toggleOcultarRama('progresion_rovers', progresionRovers.id, true)
+                    }
+                  }}
+                  disabled={saving}
+                  title="Ocultar etapa"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    padding: 0,
+                    backgroundColor: '#FEE2E2',
+                    color: '#BF4E30',
+                    border: '1.5px solid #FECACA',
+                    borderRadius: '6px',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '14px',
+                    opacity: saving ? 0.5 : 1
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+              {editable && (
+                <button
+                  onClick={abrirEditarRovers}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: '11px',
+                    backgroundColor: '#24352A',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontFamily: 'Oswald, sans-serif',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontWeight: 600
+                  }}
+                >✏️ Editar</button>
+              )}
+            </div>
+          )
+        }
       >
         {estaEditando ? (
           <>
@@ -1793,9 +2052,7 @@ export default function VidaScout() {
         fontFamily: 'Oswald, sans-serif'
       }}
     >
-      {/* ============================================ */}
-      {/* BARRA DE NAVEGACIÓN (◀ ▶ y contador) */}
-      {/* ============================================ */}
+      {/* BARRA DE NAVEGACIÓN */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <button
           onClick={() => navigate(`/beneficiario/${id}`)}
@@ -1862,15 +2119,15 @@ export default function VidaScout() {
       )}
 
       {/* ENCABEZADO */}
-<div style={{
-  backgroundColor: COL.verdeScout,
-  borderRadius: '16px',
-  padding: '24px 16px',
-  textAlign: 'center',
-  marginBottom: '20px',
-  border: '2px solid #BF4E30',
-  boxShadow: '0 0 0 2px #111111'
-}}>
+      <div style={{
+        backgroundColor: COL.verdeScout,
+        borderRadius: '16px',
+        padding: '24px 16px',
+        textAlign: 'center',
+        marginBottom: '20px',
+        border: '2px solid #BF4E30',
+        boxShadow: '0 0 0 2px #111111'
+      }}>
         <div style={{
           fontSize: 'clamp(11px, 2.5vw, 13px)',
           color: COL.dorado,
@@ -1964,16 +2221,86 @@ export default function VidaScout() {
         </div>
       </div>
 
-      {/* ✅ NUEVO: Ingreso al Grupo (solo superadmin + jefatura) */}
+      {/* Ingreso al Grupo */}
       {puedeEditarIngresoGrupo && renderIngresoGrupo()}
 
-      {/* Progresiones */}
-      {progresionManada && puedeVerRama('Manada') && renderProgresionManada()}
-      {progresionUnidad && puedeVerRama('Unidad Scout') && renderProgresionUnidad()}
-      {progresionCaminantes && puedeVerRama('Caminantes') && renderProgresionCaminantes()}
-      {progresionRovers && puedeVerRama('Rovers') && renderProgresionRovers()}
+      {/* Progresiones visibles */}
+      {progresionManada && !progresionManada.oculto && puedeVerRama('Manada') && renderProgresionManada()}
+      {progresionUnidad && !progresionUnidad.oculto && puedeVerRama('Unidad Scout') && renderProgresionUnidad()}
+      {progresionCaminantes && !progresionCaminantes.oculto && puedeVerRama('Caminantes') && renderProgresionCaminantes()}
+      {progresionRovers && !progresionRovers.oculto && puedeVerRama('Rovers') && renderProgresionRovers()}
 
-      {/* Campamentos (colapsable) */}
+      {/* Botón "Ver etapas ocultas" (solo super admin) */}
+      {isSuperAdmin && hayOcultas && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          marginBottom: '16px'
+        }}>
+          <button
+            onClick={() => setMostrarOcultas(!mostrarOcultas)}
+            style={{
+              padding: '8px 16px',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              backgroundColor: '#F3ECD8',
+              color: '#24352A',
+              border: '2px solid #D1C9B4',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontFamily: 'Oswald, sans-serif',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontWeight: 600
+            }}
+          >
+            👁️ {mostrarOcultas ? 'Ocultar etapas' : `Ver etapas ocultas (${[progresionManada, progresionUnidad, progresionCaminantes, progresionRovers].filter(p => p?.oculto).length})`}
+          </button>
+        </div>
+      )}
+
+      {/* Render de ramas ocultas */}
+      {isSuperAdmin && mostrarOcultas && (
+        <>
+          {progresionManada?.oculto && puedeVerRama('Manada') && (
+            <BloqueOculto
+              icono="🐺"
+              titulo="Manada"
+              color={COL.verdeClaro}
+              onReactivar={() => toggleOcultarRama('progresion_manada', progresionManada.id, false)}
+              saving={saving}
+            />
+          )}
+          {progresionUnidad?.oculto && puedeVerRama('Unidad Scout') && (
+            <BloqueOculto
+              icono="⚜️"
+              titulo="Unidad Scout"
+              color={COL.dorado}
+              onReactivar={() => toggleOcultarRama('progresion_unidad', progresionUnidad.id, false)}
+              saving={saving}
+            />
+          )}
+          {progresionCaminantes?.oculto && puedeVerRama('Caminantes') && (
+            <BloqueOculto
+              icono="🏔️"
+              titulo="Caminantes"
+              color={COL.terracota}
+              onReactivar={() => toggleOcultarRama('progresion_caminantes', progresionCaminantes.id, false)}
+              saving={saving}
+            />
+          )}
+          {progresionRovers?.oculto && puedeVerRama('Rovers') && (
+            <BloqueOculto
+              icono="🔥"
+              titulo="Rovers"
+              color={COL.terracota}
+              onReactivar={() => toggleOcultarRama('progresion_rovers', progresionRovers.id, false)}
+              saving={saving}
+            />
+          )}
+        </>
+      )}
+
+      {/* Campamentos */}
       <Seccion
         icono="🏕️"
         titulo="Campamentos asistidos"
@@ -2022,16 +2349,16 @@ export default function VidaScout() {
                   {camp.fecha_fin && camp.fecha_fin !== camp.fecha_inicio && ` - ${formatFecha(camp.fecha_fin)}`}
                 </div>
                 {camp.tipo && (
-  <div style={{
-    fontSize: 'clamp(10px, 2vw, 12px)',
-    color: COL.terracota,
-    marginTop: '4px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px'
-  }}>
-    {formatTipoConDetalle(camp.tipo, camp.rama_principal)}
-  </div>
-)}
+                  <div style={{
+                    fontSize: 'clamp(10px, 2vw, 12px)',
+                    color: COL.terracota,
+                    marginTop: '4px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {formatTipoConDetalle(camp.tipo, camp.rama_principal)}
+                  </div>
+                )}
               </div>
             ))}
           </div>
