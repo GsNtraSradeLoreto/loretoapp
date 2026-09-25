@@ -279,6 +279,75 @@ const emojiValidacion = (val: ValidacionEtapa): string => {
   return '⬜'
 }
 
+// ✅ NUEVO: ¿El dirigente necesita validación del CG?
+const necesitaValidacion = (d: Dirigente): boolean => {
+  // 1) IM del esquema anterior → nunca
+  if (d.tiene_insignia_madera) return false
+
+  // 2) Roles sin rama → nunca
+  if (esRolSinRama(d.rol)) return false
+
+  // 3) Inactivos → tampoco
+  if (!d.activo) return false
+
+  // 4) Iterar por las 3 etapas
+  const etapas = ['basica', 'intermedia', 'avanzada'] as const
+
+  for (const etapa of etapas) {
+    const cursosEtapa = CURSOS.filter(c => c.etapa === etapa && c.obligatorio)
+
+    // ¿Está completa? Todos en "completado" (NO cuenta transporte_anterior)
+    const completa = cursosEtapa.every(c => {
+      const curso = d.cursos.find(x => x.curso_id === c.id)
+      return curso?.estado === 'completado'
+    })
+
+    if (!completa) continue
+
+    // ¿Está validada? Solo miramos validado_cg
+    const val = getValidacion(d, etapa)
+    if (!val.validado_cg.ok) {
+      return true // ← Esta etapa está completa pero sin validar
+    }
+  }
+
+  return false
+}
+
+// ✅ NUEVO: devuelve las etapas que necesitan validación (con label legible)
+const obtenerEtapasSinValidar = (d: Dirigente): string[] => {
+  // Mismas condiciones que necesitaValidacion
+  if (d.tiene_insignia_madera) return []
+  if (esRolSinRama(d.rol)) return []
+  if (!d.activo) return []
+
+  const etapas = ['basica', 'intermedia', 'avanzada'] as const
+  const etapasLabels: Record<string, string> = {
+    basica: 'Nivel 1',
+    intermedia: 'Nivel 2',
+    avanzada: 'Nivel 3',
+  }
+  const pendientes: string[] = []
+
+  for (const etapa of etapas) {
+    const cursosEtapa = CURSOS.filter(c => c.etapa === etapa && c.obligatorio)
+
+    const completa = cursosEtapa.every(c => {
+      const curso = d.cursos.find(x => x.curso_id === c.id)
+      return curso?.estado === 'completado'
+    })
+
+    if (!completa) continue
+
+    const val = getValidacion(d, etapa)
+    if (!val.validado_cg.ok) {
+      pendientes.push(etapasLabels[etapa])
+    }
+  }
+
+  return pendientes
+}
+
 // ============================================
 // COMPONENTE PRINCIPAL
 // ============================================
@@ -295,14 +364,14 @@ export default function Formacion() {
   const [mostrarInactivos, setMostrarInactivos] = useState(false)
   const [orden, setOrden] = useState<OrdenTipo>('apellido_asc')
 
+  // ✅ NUEVO: filtro especial de "solo pendientes de validación"
+  const [soloValidacionesPendientes, setSoloValidacionesPendientes] = useState(false)
+
   const [indiceDirigente, setIndiceDirigente] = useState<number>(-1)
   const [dragOffset, setDragOffset] = useState(0)
   const [hayEdicionAbierta, setHayEdicionAbierta] = useState(false)
 
-  // ✅ Nuevo: edición inline en la vista detalle
   const [editandoDirigenteInline, setEditandoDirigenteInline] = useState(false)
-
-  // ✅ Nuevo: crear dirigente inline (panel arriba de la lista)
   const [creandoDirigenteInline, setCreandoDirigenteInline] = useState(false)
 
   const puedeVer = isSuperAdmin || isJefatura
@@ -394,10 +463,18 @@ export default function Formacion() {
     await loadDirigentes()
   }
 
+  // ✅ NUEVO: contador global de pendientes
+  const cantidadPendientesValidacion = React.useMemo(() => {
+    return dirigentes.filter(d => necesitaValidacion(d)).length
+  }, [dirigentes])
+
   const dirigentesFiltrados = React.useMemo(() => {
     let lista = dirigentes.filter(d => {
       if (!mostrarInactivos && !d.activo) return false
       if (filtroRama !== 'Todas' && d.rama_asignada !== filtroRama) return false
+
+      // ✅ Filtro especial "solo pendientes de validación"
+      if (soloValidacionesPendientes && !necesitaValidacion(d)) return false
 
       if (filtroEstado !== 'Todos') {
         const estado = calcularEstadoGeneral(d.cursos)
@@ -449,7 +526,7 @@ export default function Formacion() {
     })
 
     return lista
-  }, [dirigentes, busqueda, filtroRama, filtroEstado, mostrarInactivos, orden])
+  }, [dirigentes, busqueda, filtroRama, filtroEstado, mostrarInactivos, orden, soloValidacionesPendientes])
 
   const irAlAnterior = () => {
     if (hayEdicionAbierta) return
@@ -518,7 +595,6 @@ export default function Formacion() {
     const total = dirigentesFiltrados.length
     const actual = indiceDirigente + 1
 
-    // ✅ MODO EDICIÓN INLINE: reemplaza el header por el form
     if (editandoDirigenteInline) {
       return (
         <div
@@ -528,7 +604,6 @@ export default function Formacion() {
             transition: dragOffset === 0 ? 'transform 0.3s ease-out' : 'none'
           }}
         >
-          {/* Navegación superior */}
           <div style={{
             display: 'flex', justifyContent: 'space-between',
             alignItems: 'center', marginBottom: '12px', gap: '8px'
@@ -579,7 +654,6 @@ export default function Formacion() {
           transition: dragOffset === 0 ? 'transform 0.3s ease-out' : 'none'
         }}
       >
-        {/* Navegación superior */}
         <div style={{
           display: 'flex', justifyContent: 'space-between',
           alignItems: 'center', marginBottom: '12px', gap: '8px'
@@ -643,7 +717,37 @@ export default function Formacion() {
           </div>
         </div>
 
-        {/* Encabezado */}
+        {/* ✅ ALERTA: validaciones pendientes de este dirigente */}
+        {(() => {
+          const etapasPendientes = obtenerEtapasSinValidar(dirigenteAbierto)
+          if (etapasPendientes.length === 0) return null
+
+          return (
+            <div style={{
+              backgroundColor: '#FEF3C7',
+              border: '2px solid #F5C842',
+              borderLeft: '6px solid #F5C842',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              fontFamily: 'Oswald, sans-serif'
+            }}>
+              <span style={{ fontSize: '22px', flexShrink: 0 }}>⚠️</span>
+              <span style={{
+                fontSize: 'clamp(12px, 2.5vw, 14px)',
+                color: '#7A5C00',
+                fontWeight: '600',
+                lineHeight: 1.3
+              }}>
+                Falta validar por el Consejo de Grupo: <strong>{etapasPendientes.join(', ')}</strong>
+              </span>
+            </div>
+          )
+        })()}
+        
         <div style={{
           backgroundColor: '#24352A', borderRadius: '16px',
           padding: '20px 16px', marginBottom: '16px',
@@ -775,7 +879,6 @@ export default function Formacion() {
           </button>
         </div>
 
-        {/* Alerta cambio de rama */}
         {cursosCambioRama.length > 0 && (
           <div style={{
             backgroundColor: '#FFF8E7', border: '2px solid #F5C842',
@@ -812,7 +915,6 @@ export default function Formacion() {
           </div>
         )}
 
-        {/* Etapas (cursos + validación integrada) */}
         {etapas.map(etapa => {
           const cursosDeEtapa = CURSOS.filter(c => c.etapa === etapa)
           const obligatoriosEtapa = cursosDeEtapa.filter(c => c.obligatorio)
@@ -965,7 +1067,60 @@ export default function Formacion() {
         </div>
       )}
 
-      {/* ✅ Panel inline para crear nuevo dirigente */}
+      {/* ✅ ALERTA DE VALIDACIONES PENDIENTES */}
+      {!soloValidacionesPendientes && cantidadPendientesValidacion > 0 && (
+        <div style={{
+          backgroundColor: '#FEF3C7',
+          border: '2px solid #F5C842',
+          borderLeft: '6px solid #F5C842',
+          borderRadius: '12px',
+          padding: '14px',
+          marginBottom: '16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            flex: 1,
+            minWidth: '200px'
+          }}>
+            <span style={{ fontSize: '22px', flexShrink: 0 }}>⚠️</span>
+            <span style={{
+              fontSize: 'clamp(12px, 2.5vw, 14px)',
+              color: '#7A5C00',
+              fontWeight: '600',
+              lineHeight: 1.3
+            }}>
+              Hay {cantidadPendientesValidacion} {cantidadPendientesValidacion === 1 ? 'validación' : 'validaciones'} sin tramitar por el Consejo de Grupo
+            </span>
+          </div>
+          <button
+            onClick={() => setSoloValidacionesPendientes(true)}
+            style={{
+              padding: '8px 16px',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              backgroundColor: '#F5C842',
+              color: '#7A5C00',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontFamily: 'Oswald, sans-serif',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontWeight: '700',
+              flexShrink: 0
+            }}
+          >
+            Ver pendientes →
+          </button>
+        </div>
+      )}
+
       {creandoDirigenteInline && (
         <div style={{
           backgroundColor: 'white', borderRadius: '16px',
@@ -1084,21 +1239,63 @@ export default function Formacion() {
           </select>
         </div>
 
-        <label style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          fontSize: 'clamp(11px, 2.5vw, 13px)',
-          color: '#7A7364', cursor: 'pointer',
-          textTransform: 'uppercase', letterSpacing: '0.5px'
-        }}>
-          <input
-            type="checkbox"
-            checked={mostrarInactivos}
-            onChange={(e) => setMostrarInactivos(e.target.checked)}
-            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-          />
-          Mostrar inactivos
-        </label>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            fontSize: 'clamp(11px, 2.5vw, 13px)',
+            color: '#7A7364', cursor: 'pointer',
+            textTransform: 'uppercase', letterSpacing: '0.5px'
+          }}>
+            <input
+              type="checkbox"
+              checked={mostrarInactivos}
+              onChange={(e) => setMostrarInactivos(e.target.checked)}
+              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+            />
+            Mostrar inactivos
+          </label>
+
+          {/* ✅ Botón para limpiar el filtro de validaciones pendientes */}
+          {soloValidacionesPendientes && (
+            <button
+              onClick={() => setSoloValidacionesPendientes(false)}
+              style={{
+                padding: '6px 12px',
+                fontSize: 'clamp(10px, 2vw, 12px)',
+                border: '2px solid #BF4E30',
+                borderRadius: '6px',
+                backgroundColor: '#BF4E30',
+                color: 'white',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: '600'
+              }}
+            >
+              ✕ Limpiar filtro
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Título del filtro activo */}
+      {soloValidacionesPendientes && (
+        <div style={{
+          padding: '8px 12px',
+          backgroundColor: '#FEF3C7',
+          borderRadius: '8px',
+          marginBottom: '12px',
+          fontSize: 'clamp(11px, 2.5vw, 13px)',
+          color: '#7A5C00',
+          fontFamily: 'Oswald, sans-serif',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          fontWeight: '600'
+        }}>
+          ⚠️ Mostrando solo dirigentes con validaciones pendientes ({dirigentesFiltrados.length})
+        </div>
+      )}
 
       {dirigentesFiltrados.map((d, idx) => {
         const estado = calcularEstadoGeneral(d.cursos)
@@ -1265,7 +1462,9 @@ export default function Formacion() {
         }}>
           {dirigentes.length === 0
             ? 'Todavía no hay dirigentes cargados. Empezá con el botón "+ Nuevo Dirigente".'
-            : 'No se encontraron dirigentes con esos filtros'}
+            : soloValidacionesPendientes
+              ? '¡Todo al día! No hay validaciones pendientes.'
+              : 'No se encontraron dirigentes con esos filtros'}
         </div>
       )}
     </div>
@@ -1273,7 +1472,7 @@ export default function Formacion() {
 }
 
 // ============================================
-// FORM DIRIGENTE INLINE (reemplaza al modal)
+// FORM DIRIGENTE INLINE
 // ============================================
 function FormDirigenteInline({
   dirigente,
