@@ -299,8 +299,11 @@ export default function Formacion() {
   const [dragOffset, setDragOffset] = useState(0)
   const [hayEdicionAbierta, setHayEdicionAbierta] = useState(false)
 
-  const [showNuevoDirigente, setShowNuevoDirigente] = useState(false)
-  const [editandoDirigente, setEditandoDirigente] = useState<Dirigente | null>(null)
+  // ✅ Nuevo: edición inline en la vista detalle
+  const [editandoDirigenteInline, setEditandoDirigenteInline] = useState(false)
+
+  // ✅ Nuevo: crear dirigente inline (panel arriba de la lista)
+  const [creandoDirigenteInline, setCreandoDirigenteInline] = useState(false)
 
   const puedeVer = isSuperAdmin || isJefatura
 
@@ -515,6 +518,59 @@ export default function Formacion() {
     const total = dirigentesFiltrados.length
     const actual = indiceDirigente + 1
 
+    // ✅ MODO EDICIÓN INLINE: reemplaza el header por el form
+    if (editandoDirigenteInline) {
+      return (
+        <div
+          style={{
+            fontFamily: 'Oswald, sans-serif',
+            transform: `translateX(${dragOffset}px)`,
+            transition: dragOffset === 0 ? 'transform 0.3s ease-out' : 'none'
+          }}
+        >
+          {/* Navegación superior */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            alignItems: 'center', marginBottom: '12px', gap: '8px'
+          }}>
+            <button
+              onClick={() => {
+                setEditandoDirigenteInline(false)
+                setHayEdicionAbierta(false)
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                background: 'none', border: 'none',
+                cursor: 'pointer', color: '#7A7364',
+                fontSize: 'clamp(11px, 2.5vw, 13px)',
+                fontFamily: 'Oswald, sans-serif',
+                textTransform: 'uppercase', letterSpacing: '0.5px',
+                padding: '6px 0', flexShrink: 0
+              }}
+            >
+              ← Cancelar edición
+            </button>
+          </div>
+
+          <FormDirigenteInline
+            dirigente={dirigenteAbierto}
+            profile={profile}
+            onCancel={() => {
+              setEditandoDirigenteInline(false)
+              setHayEdicionAbierta(false)
+            }}
+            onSave={async () => {
+              setEditandoDirigenteInline(false)
+              setHayEdicionAbierta(false)
+              await loadDirigentes()
+              setMessage({ text: '✅ Dirigente actualizado', type: 'success' })
+              setTimeout(() => setMessage({ text: '', type: '' }), 3000)
+            }}
+          />
+        </div>
+      )
+    }
+
     return (
       <div
         style={{
@@ -532,6 +588,7 @@ export default function Formacion() {
             onClick={() => {
               setIndiceDirigente(-1)
               setHayEdicionAbierta(false)
+              setEditandoDirigenteInline(false)
             }}
             style={{
               display: 'flex', alignItems: 'center', gap: '8px',
@@ -702,7 +759,7 @@ export default function Formacion() {
 
           <button
             onClick={() => {
-              setEditandoDirigente(dirigenteAbierto)
+              setEditandoDirigenteInline(true)
               setHayEdicionAbierta(true)
             }}
             style={{
@@ -778,7 +835,6 @@ export default function Formacion() {
                 marginBottom: '16px'
               }}
             >
-              {/* Encabezado de la etapa */}
               <div style={{
                 display: 'flex', justifyContent: 'space-between',
                 alignItems: 'center', gap: '10px',
@@ -802,7 +858,6 @@ export default function Formacion() {
                 )}
               </div>
 
-              {/* Cursos */}
               <div>
                 {cursosDeEtapa.map(cursoInfo => {
                   const formacion = dirigenteAbierto.cursos.find(x => x.curso_id === cursoInfo.id)
@@ -823,10 +878,8 @@ export default function Formacion() {
                 })}
               </div>
 
-              {/* Validación integrada (solo básica, intermedia, avanzada) */}
               {etapa !== 'religiosa' && (
                 <>
-                  {/* Separador punteado */}
                   <div style={{
                     marginTop: '16px',
                     marginBottom: '16px',
@@ -847,24 +900,6 @@ export default function Formacion() {
             </div>
           )
         })}
-
-        {/* Modal editar dirigente */}
-        {editandoDirigente && (
-          <ModalDirigente
-            dirigente={editandoDirigente}
-            onClose={() => {
-              setEditandoDirigente(null)
-              setHayEdicionAbierta(false)
-            }}
-            onSave={async () => {
-              setEditandoDirigente(null)
-              setHayEdicionAbierta(false)
-              await loadDirigentes()
-              setMessage({ text: '✅ Dirigente actualizado', type: 'success' })
-              setTimeout(() => setMessage({ text: '', type: '' }), 3000)
-            }}
-          />
-        )}
       </div>
     )
   }
@@ -898,8 +933,9 @@ export default function Formacion() {
 
         <button
           onClick={() => {
-            setShowNuevoDirigente(true)
+            setCreandoDirigenteInline(true)
             setHayEdicionAbierta(true)
+            setMessage({ text: '', type: '' })
           }}
           style={{
             backgroundColor: '#24352A', color: 'white',
@@ -926,6 +962,57 @@ export default function Formacion() {
           })
         }}>
           {message.text}
+        </div>
+      )}
+
+      {/* ✅ Panel inline para crear nuevo dirigente */}
+      {creandoDirigenteInline && (
+        <div style={{
+          backgroundColor: 'white', borderRadius: '16px',
+          padding: '16px', border: '2px solid #24352A',
+          marginBottom: '20px'
+        }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            alignItems: 'center', marginBottom: '14px',
+            borderBottom: '2px dashed #E8DEC4', paddingBottom: '10px'
+          }}>
+            <span style={{
+              fontSize: 'clamp(13px, 3vw, 15px)',
+              fontWeight: '700', color: '#24352A',
+              textTransform: 'uppercase', letterSpacing: '1px'
+            }}>
+              + Nuevo Dirigente
+            </span>
+            <button
+              onClick={() => {
+                setCreandoDirigenteInline(false)
+                setHayEdicionAbierta(false)
+              }}
+              style={{
+                background: 'none', border: 'none',
+                cursor: 'pointer', fontSize: '20px',
+                color: '#7A7364', padding: '2px 8px'
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <FormDirigenteInline
+            profile={profile}
+            onCancel={() => {
+              setCreandoDirigenteInline(false)
+              setHayEdicionAbierta(false)
+            }}
+            onSave={async () => {
+              setCreandoDirigenteInline(false)
+              setHayEdicionAbierta(false)
+              await loadDirigentes()
+              setMessage({ text: '✅ Dirigente agregado', type: 'success' })
+              setTimeout(() => setMessage({ text: '', type: '' }), 3000)
+            }}
+          />
         </div>
       )}
 
@@ -1138,7 +1225,11 @@ export default function Formacion() {
               justifyContent: 'flex-end'
             }}>
               <button
-                onClick={() => setEditandoDirigente(d)}
+                onClick={() => {
+                  setIndiceDirigente(idx)
+                  setEditandoDirigenteInline(true)
+                  setHayEdicionAbierta(true)
+                }}
                 style={{
                   padding: '4px 12px', fontSize: '11px',
                   backgroundColor: '#F3ECD8', color: '#24352A',
@@ -1177,45 +1268,374 @@ export default function Formacion() {
             : 'No se encontraron dirigentes con esos filtros'}
         </div>
       )}
-
-      {showNuevoDirigente && (
-        <ModalDirigente
-          onClose={() => {
-            setShowNuevoDirigente(false)
-            setHayEdicionAbierta(false)
-          }}
-          onSave={async () => {
-            setShowNuevoDirigente(false)
-            setHayEdicionAbierta(false)
-            await loadDirigentes()
-            setMessage({ text: '✅ Dirigente agregado', type: 'success' })
-            setTimeout(() => setMessage({ text: '', type: '' }), 3000)
-          }}
-        />
-      )}
-
-      {editandoDirigente && (
-        <ModalDirigente
-          dirigente={editandoDirigente}
-          onClose={() => {
-            setEditandoDirigente(null)
-            setHayEdicionAbierta(false)
-          }}
-          onSave={async () => {
-            setEditandoDirigente(null)
-            setHayEdicionAbierta(false)
-            await loadDirigentes()
-            setMessage({ text: '✅ Dirigente actualizado', type: 'success' })
-            setTimeout(() => setMessage({ text: '', type: '' }), 3000)
-          }}
-        />
-      )}
     </div>
   )
 }
 
 // ============================================
-// VALIDACIÓN DE ETAPA (integrada, sin recuadro propio)
+// FORM DIRIGENTE INLINE (reemplaza al modal)
+// ============================================
+function FormDirigenteInline({
+  dirigente,
+  onCancel,
+  onSave
+}: {
+  dirigente?: Dirigente
+  profile?: any
+  onCancel: () => void
+  onSave: () => void | Promise<void>
+}) {
+  const esEdicion = !!dirigente
+
+  const [nombre, setNombre] = useState(dirigente?.nombre || '')
+  const [apellido, setApellido] = useState(dirigente?.apellido || '')
+  const [email, setEmail] = useState(dirigente?.email || '')
+  const [rol, setRol] = useState(dirigente?.rol || '')
+  const [ramaAsignada, setRamaAsignada] = useState(dirigente?.rama_asignada || '')
+  const [tieneIM, setTieneIM] = useState(dirigente?.tiene_insignia_madera || false)
+  const [ramaIM, setRamaIM] = useState(dirigente?.rama_im || '')
+  const [imSistemaAnterior, setImSistemaAnterior] = useState(dirigente?.im_sistema_anterior || false)
+  const [tieneImgGestion, setTieneImgGestion] = useState(dirigente?.tiene_im_gestion || false)
+  const [activo, setActivo] = useState(dirigente?.activo !== false)
+
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const ramasIMArray = ramaIM
+    ? ramaIM.split(',').map(s => s.trim()).filter(Boolean)
+    : []
+
+  const toggleRamaIM = (rama: string) => {
+    const actuales = [...ramasIMArray]
+    const idx = actuales.indexOf(rama)
+    if (idx >= 0) actuales.splice(idx, 1)
+    else actuales.push(rama)
+    setRamaIM(actuales.join(', '))
+  }
+
+  const handleGuardar = async () => {
+    if (!nombre.trim() || !apellido.trim()) {
+      setError('Nombre y apellido son obligatorios')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+
+    try {
+      const payload: any = {
+        nombre: nombre.trim(),
+        apellido: apellido.trim(),
+        email: email.trim() || null,
+        rol: rol || null,
+        rama_asignada: ramaAsignada || null,
+        tiene_insignia_madera: tieneIM,
+        rama_im: tieneIM ? (ramaIM || null) : null,
+        im_sistema_anterior: tieneIM ? imSistemaAnterior : false,
+        tiene_im_gestion: tieneImgGestion,
+        activo,
+        actualizado_en: new Date().toISOString()
+      }
+
+      const estabaComoIMAnterior = esEdicion ? (dirigente?.im_sistema_anterior === true) : false
+      const ahoraEsIMAnterior = tieneIM && imSistemaAnterior
+      const debeAplicarLogica = ahoraEsIMAnterior && !estabaComoIMAnterior
+
+      if (esEdicion) {
+        if (debeAplicarLogica) {
+          const cursosCambioRama = calcularCursosCambioRama(
+            true, ramaIM || null, ramaAsignada || null, rol || null
+          )
+
+          const cursosBase = dirigente?.cursos || inicializarCursos()
+
+          const cursosFinales = cursosBase.map(c => {
+            const info = CURSOS.find(x => x.id === c.curso_id)
+            const esEtapaObligatoria = ['basica', 'intermedia', 'avanzada'].includes(info?.etapa || '')
+            const esCambioRama = cursosCambioRama.includes(c.curso_id)
+
+            if (c.estado === 'pendiente' && esEtapaObligatoria && !esCambioRama) {
+              return { ...c, estado: 'transporte_anterior' as const }
+            }
+            return c
+          })
+
+          payload.cursos = cursosFinales
+
+          const validacionesActuales = dirigente?.validaciones || {}
+          const validacionesNuevas: Validaciones = { ...validacionesActuales }
+          ;['basica', 'intermedia', 'avanzada'].forEach(etapa => {
+            const vActual = validacionesNuevas[etapa as keyof Validaciones]
+            if (!vActual || (!vActual.validado_cg.ok && !vActual.simbolo_entregado.ok)) {
+              validacionesNuevas[etapa as keyof Validaciones] = {
+                validado_cg: { ok: true, notas: 'Sistema anterior' },
+                simbolo_entregado: { ok: true, notas: 'Sistema anterior' }
+              }
+            }
+          })
+          payload.validaciones = validacionesNuevas
+        }
+
+        const { error: updateError } = await supabase
+          .from('formacion_dirigentes')
+          .update(payload)
+          .eq('id', dirigente!.id)
+        if (updateError) throw updateError
+      } else {
+        const cursosIniciales = inicializarCursos()
+        const validacionesIniciales: Validaciones = {}
+
+        if (ahoraEsIMAnterior) {
+          const cursosCambioRama = calcularCursosCambioRama(
+            true, ramaIM || null, ramaAsignada || null, rol || null
+          )
+
+          cursosIniciales.forEach(c => {
+            const info = CURSOS.find(x => x.id === c.curso_id)
+            const esEtapaObligatoria = ['basica', 'intermedia', 'avanzada'].includes(info?.etapa || '')
+            const esCambioRama = cursosCambioRama.includes(c.curso_id)
+
+            if (esEtapaObligatoria && !esCambioRama) {
+              c.estado = 'transporte_anterior'
+            }
+          })
+
+          ;['basica', 'intermedia', 'avanzada'].forEach(etapa => {
+            validacionesIniciales[etapa as keyof Validaciones] = {
+              validado_cg: { ok: true, notas: 'Sistema anterior' },
+              simbolo_entregado: { ok: true, notas: 'Sistema anterior' }
+            }
+          })
+        }
+
+        payload.cursos = cursosIniciales
+        payload.validaciones = validacionesIniciales
+
+        const { error: insertError } = await supabase
+          .from('formacion_dirigentes')
+          .insert(payload)
+        if (insertError) throw insertError
+      }
+
+      await onSave()
+    } catch (err: any) {
+      console.error('Error:', err)
+      setError(err.message || 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{
+      backgroundColor: 'white',
+      borderRadius: '16px',
+      padding: '16px',
+      border: '2px solid #24352A',
+      fontFamily: 'Oswald, sans-serif'
+    }}>
+      <h2 style={{
+        fontWeight: '700', fontSize: 'clamp(15px, 3.5vw, 18px)',
+        color: '#24352A', textTransform: 'uppercase',
+        letterSpacing: '1px', margin: '0 0 16px 0'
+      }}>
+        {esEdicion ? '✏️ Editar Dirigente' : '+ Nuevo Dirigente'}
+      </h2>
+
+      {error && (
+        <div style={{
+          padding: '10px 14px', borderRadius: '8px',
+          marginBottom: '16px', fontSize: '13px',
+          backgroundColor: '#FEE2E2', color: '#BF4E30',
+          border: '1px solid #FECACA'
+        }}>
+          ❌ {error}
+        </div>
+      )}
+
+      <div style={{ marginBottom: '14px' }}>
+        <label style={labelStyle}>Nombre *</label>
+        <input type="text" value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          style={inputStyle} disabled={saving} />
+      </div>
+
+      <div style={{ marginBottom: '14px' }}>
+        <label style={labelStyle}>Apellido *</label>
+        <input type="text" value={apellido}
+          onChange={(e) => setApellido(e.target.value)}
+          style={inputStyle} disabled={saving} />
+      </div>
+
+      <div style={{ marginBottom: '14px' }}>
+        <label style={labelStyle}>Email</label>
+        <input type="email" value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="opcional"
+          style={inputStyle} disabled={saving} />
+      </div>
+
+      <div style={{ marginBottom: '14px' }}>
+        <label style={labelStyle}>Rol</label>
+        <select value={rol}
+          onChange={(e) => setRol(e.target.value)}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+          disabled={saving}>
+          <option value="">Sin asignar</option>
+          {ROLES.map(r => (
+            <option key={r.value} value={r.value}>{r.label}</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ marginBottom: '14px' }}>
+        <label style={labelStyle}>Rama donde trabaja</label>
+        <select value={ramaAsignada}
+          onChange={(e) => setRamaAsignada(e.target.value)}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+          disabled={saving}>
+          <option value="">Sin asignar</option>
+          {RAMAS_ACTUALES.map(r => (
+            <option key={r.valor} value={r.valor}>{r.label}</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ marginBottom: '14px' }}>
+        <label style={{
+          ...labelStyle,
+          display: 'flex', alignItems: 'center', gap: '8px',
+          cursor: 'pointer', textTransform: 'none', fontSize: '13px'
+        }}>
+          <input type="checkbox" checked={tieneIM}
+            onChange={(e) => setTieneIM(e.target.checked)}
+            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
+            disabled={saving} />
+          <img src="/insignia-madera.png" alt="IM"
+            style={{ width: '22px', height: '22px', objectFit: 'contain', flexShrink: 0 }} />
+          Tiene Insignia de Madera (Programa de Jóvenes)
+        </label>
+      </div>
+
+      {tieneIM && (
+        <>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={labelStyle}>Rama(s) donde obtuvo la IM</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              {RAMAS_IM.map(opcion => {
+                const seleccionado = ramasIMArray.includes(opcion.valor)
+                return (
+                  <label key={opcion.valor} style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    padding: '8px 10px',
+                    border: `2px solid ${seleccionado ? '#24352A' : '#D1C9B4'}`,
+                    borderRadius: '6px',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    backgroundColor: seleccionado ? '#F0F7F0' : 'white',
+                    fontSize: '12px', fontFamily: 'Oswald, sans-serif',
+                    userSelect: 'none'
+                  }}>
+                    <input type="checkbox" checked={seleccionado}
+                      onChange={() => toggleRamaIM(opcion.valor)}
+                      disabled={saving}
+                      style={{ width: '16px', height: '16px', cursor: saving ? 'not-allowed' : 'pointer', accentColor: '#24352A' }} />
+                    {opcion.label}
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{
+              ...labelStyle,
+              display: 'flex', alignItems: 'center', gap: '8px',
+              cursor: 'pointer', textTransform: 'none', fontSize: '13px'
+            }}>
+              <input type="checkbox" checked={imSistemaAnterior}
+                onChange={(e) => setImSistemaAnterior(e.target.checked)}
+                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
+                disabled={saving} />
+              📜 IM del Sistema de Formación ANTERIOR (pre-2025)
+            </label>
+            <div style={{
+              fontSize: '10px', color: '#7A7364', marginTop: '4px',
+              marginLeft: '26px', lineHeight: 1.4
+            }}>
+              Al guardar, se van a marcar TODOS los cursos de las 3 etapas y las
+              validaciones como cumplidas, excepto los cursos que deba hacer por
+              cambio de rama.
+            </div>
+          </div>
+        </>
+      )}
+
+      <div style={{ marginBottom: '14px' }}>
+        <label style={{
+          ...labelStyle,
+          display: 'flex', alignItems: 'center', gap: '8px',
+          cursor: 'pointer', textTransform: 'none', fontSize: '13px'
+        }}>
+          <input type="checkbox" checked={tieneImgGestion}
+            onChange={(e) => setTieneImgGestion(e.target.checked)}
+            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
+            disabled={saving} />
+          📋 Tiene IM en Gestión Institucional
+        </label>
+      </div>
+
+      <div style={{ marginBottom: '14px' }}>
+        <label style={{
+          ...labelStyle,
+          display: 'flex', alignItems: 'center', gap: '8px',
+          cursor: 'pointer', textTransform: 'none', fontSize: '13px'
+        }}>
+          <input type="checkbox" checked={activo}
+            onChange={(e) => setActivo(e.target.checked)}
+            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
+            disabled={saving} />
+          Activo en el grupo
+        </label>
+      </div>
+
+      <div style={{
+        display: 'flex', gap: '8px',
+        marginTop: '16px', paddingTop: '16px',
+        borderTop: '2px solid #E8DEC4'
+      }}>
+        <button type="button" onClick={onCancel}
+          disabled={saving}
+          style={{
+            flex: 1, padding: '10px', fontSize: '13px',
+            backgroundColor: '#E8DEC4', color: '#24352A',
+            border: 'none', borderRadius: '8px',
+            cursor: saving ? 'not-allowed' : 'pointer',
+            fontFamily: 'Oswald, sans-serif',
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+            fontWeight: '600', opacity: saving ? 0.5 : 1
+          }}>
+          Cancelar
+        </button>
+        <button type="button" onClick={handleGuardar}
+          disabled={saving}
+          style={{
+            flex: 1, padding: '10px', fontSize: '13px',
+            backgroundColor: '#24352A', color: 'white',
+            border: 'none', borderRadius: '8px',
+            cursor: saving ? 'wait' : 'pointer',
+            fontFamily: 'Oswald, sans-serif',
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+            fontWeight: '600', opacity: saving ? 0.6 : 1
+          }}>
+          {saving ? 'Guardando...' : '💾 Guardar'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ============================================
+// VALIDACIÓN DE ETAPA
 // ============================================
 function ValidacionEtapaItem({
   etapa,
@@ -1353,9 +1773,6 @@ function ValidacionEtapaItem({
     : etapa === 'avanzada' ? 'Nivel 3'
     : etapa
 
-  // ============================================
-  // MODO EDICIÓN (sin recuadro propio)
-  // ============================================
   if (editando) {
     return (
       <div>
@@ -1379,7 +1796,6 @@ function ValidacionEtapaItem({
           </div>
         )}
 
-        {/* Validación del CG */}
         <div style={{
           backgroundColor: '#FFFEF8',
           border: '2px solid #D1C9B4',
@@ -1494,7 +1910,6 @@ function ValidacionEtapaItem({
           )}
         </div>
 
-        {/* Entrega del símbolo */}
         <div style={{
           backgroundColor: '#FFFEF8',
           border: '2px solid #D1C9B4',
@@ -1585,9 +2000,6 @@ function ValidacionEtapaItem({
     )
   }
 
-  // ============================================
-  // MODO VISUALIZACIÓN (sin recuadro propio)
-  // ============================================
   const completa = validadoOk && simboloOk
 
   return (
@@ -1619,7 +2031,6 @@ function ValidacionEtapaItem({
         </button>
       </div>
 
-      {/* Check 1: Validación CG */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: '10px',
         padding: '8px 10px',
@@ -1668,7 +2079,6 @@ function ValidacionEtapaItem({
         </div>
       </div>
 
-      {/* Check 2: Símbolo entregado */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: '10px',
         padding: '8px 10px',
@@ -2201,380 +2611,6 @@ function CursoItem({
       >
         ✏️
       </button>
-    </div>
-  )
-}
-
-// ============================================
-// MODAL DIRIGENTE
-// ============================================
-function ModalDirigente({
-  dirigente,
-  onClose,
-  onSave
-}: {
-  dirigente?: Dirigente
-  onClose: () => void
-  onSave: () => void | Promise<void>
-}) {
-  const esEdicion = !!dirigente
-
-  const [nombre, setNombre] = useState(dirigente?.nombre || '')
-  const [apellido, setApellido] = useState(dirigente?.apellido || '')
-  const [email, setEmail] = useState(dirigente?.email || '')
-  const [rol, setRol] = useState(dirigente?.rol || '')
-  const [ramaAsignada, setRamaAsignada] = useState(dirigente?.rama_asignada || '')
-  const [tieneIM, setTieneIM] = useState(dirigente?.tiene_insignia_madera || false)
-  const [ramaIM, setRamaIM] = useState(dirigente?.rama_im || '')
-  const [imSistemaAnterior, setImSistemaAnterior] = useState(dirigente?.im_sistema_anterior || false)
-  const [tieneImgGestion, setTieneImgGestion] = useState(dirigente?.tiene_im_gestion || false)
-  const [activo, setActivo] = useState(dirigente?.activo !== false)
-
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const ramasIMArray = ramaIM
-    ? ramaIM.split(',').map(s => s.trim()).filter(Boolean)
-    : []
-
-  const toggleRamaIM = (rama: string) => {
-    const actuales = [...ramasIMArray]
-    const idx = actuales.indexOf(rama)
-    if (idx >= 0) actuales.splice(idx, 1)
-    else actuales.push(rama)
-    setRamaIM(actuales.join(', '))
-  }
-
-  const handleGuardar = async () => {
-    if (!nombre.trim() || !apellido.trim()) {
-      setError('Nombre y apellido son obligatorios')
-      return
-    }
-
-    setSaving(true)
-    setError('')
-
-    try {
-      const payload: any = {
-        nombre: nombre.trim(),
-        apellido: apellido.trim(),
-        email: email.trim() || null,
-        rol: rol || null,
-        rama_asignada: ramaAsignada || null,
-        tiene_insignia_madera: tieneIM,
-        rama_im: tieneIM ? (ramaIM || null) : null,
-        im_sistema_anterior: tieneIM ? imSistemaAnterior : false,
-        tiene_im_gestion: tieneImgGestion,
-        activo,
-        actualizado_en: new Date().toISOString()
-      }
-
-      const estabaComoIMAnterior = esEdicion ? (dirigente?.im_sistema_anterior === true) : false
-      const ahoraEsIMAnterior = tieneIM && imSistemaAnterior
-      const debeAplicarLogica = ahoraEsIMAnterior && !estabaComoIMAnterior
-
-      if (esEdicion) {
-        if (debeAplicarLogica) {
-          const cursosCambioRama = calcularCursosCambioRama(
-            true, ramaIM || null, ramaAsignada || null, rol || null
-          )
-
-          const cursosBase = dirigente?.cursos || inicializarCursos()
-
-          const cursosFinales = cursosBase.map(c => {
-            const info = CURSOS.find(x => x.id === c.curso_id)
-            const esEtapaObligatoria = ['basica', 'intermedia', 'avanzada'].includes(info?.etapa || '')
-            const esCambioRama = cursosCambioRama.includes(c.curso_id)
-
-            if (c.estado === 'pendiente' && esEtapaObligatoria && !esCambioRama) {
-              return { ...c, estado: 'transporte_anterior' as const }
-            }
-            return c
-          })
-
-          payload.cursos = cursosFinales
-
-          const validacionesActuales = dirigente?.validaciones || {}
-          const validacionesNuevas: Validaciones = { ...validacionesActuales }
-          ;['basica', 'intermedia', 'avanzada'].forEach(etapa => {
-            const vActual = validacionesNuevas[etapa as keyof Validaciones]
-            if (!vActual || (!vActual.validado_cg.ok && !vActual.simbolo_entregado.ok)) {
-              validacionesNuevas[etapa as keyof Validaciones] = {
-                validado_cg: { ok: true, notas: 'Sistema anterior' },
-                simbolo_entregado: { ok: true, notas: 'Sistema anterior' }
-              }
-            }
-          })
-          payload.validaciones = validacionesNuevas
-        }
-
-        const { error: updateError } = await supabase
-          .from('formacion_dirigentes')
-          .update(payload)
-          .eq('id', dirigente!.id)
-        if (updateError) throw updateError
-      } else {
-        const cursosIniciales = inicializarCursos()
-        const validacionesIniciales: Validaciones = {}
-
-        if (ahoraEsIMAnterior) {
-          const cursosCambioRama = calcularCursosCambioRama(
-            true, ramaIM || null, ramaAsignada || null, rol || null
-          )
-
-          cursosIniciales.forEach(c => {
-            const info = CURSOS.find(x => x.id === c.curso_id)
-            const esEtapaObligatoria = ['basica', 'intermedia', 'avanzada'].includes(info?.etapa || '')
-            const esCambioRama = cursosCambioRama.includes(c.curso_id)
-
-            if (esEtapaObligatoria && !esCambioRama) {
-              c.estado = 'transporte_anterior'
-            }
-          })
-
-          ;['basica', 'intermedia', 'avanzada'].forEach(etapa => {
-            validacionesIniciales[etapa as keyof Validaciones] = {
-              validado_cg: { ok: true, notas: 'Sistema anterior' },
-              simbolo_entregado: { ok: true, notas: 'Sistema anterior' }
-            }
-          })
-        }
-
-        payload.cursos = cursosIniciales
-        payload.validaciones = validacionesIniciales
-
-        const { error: insertError } = await supabase
-          .from('formacion_dirigentes')
-          .insert(payload)
-        if (insertError) throw insertError
-      }
-
-      await onSave()
-    } catch (err: any) {
-      console.error('Error:', err)
-      setError(err.message || 'Error al guardar')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div
-      onClick={() => !saving && onClose()}
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 1000, padding: '16px', boxSizing: 'border-box'
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          backgroundColor: 'white', borderRadius: '16px',
-          padding: '24px 16px', maxWidth: '520px', width: '100%',
-          border: '2px solid #D1C9B4', maxHeight: '90vh',
-          overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-          boxSizing: 'border-box', fontFamily: 'Oswald, sans-serif'
-        }}
-      >
-        <h2 style={{
-          fontWeight: '700', fontSize: 'clamp(15px, 3.5vw, 18px)',
-          color: '#24352A', textTransform: 'uppercase',
-          letterSpacing: '1px', margin: '0 0 16px 0'
-        }}>
-          {esEdicion ? '✏️ Editar Dirigente' : '+ Nuevo Dirigente'}
-        </h2>
-
-        {error && (
-          <div style={{
-            padding: '10px 14px', borderRadius: '8px',
-            marginBottom: '16px', fontSize: '13px',
-            backgroundColor: '#FEE2E2', color: '#BF4E30',
-            border: '1px solid #FECACA'
-          }}>
-            ❌ {error}
-          </div>
-        )}
-
-        <div style={{ marginBottom: '14px' }}>
-          <label style={labelStyle}>Nombre *</label>
-          <input type="text" value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            style={inputStyle} disabled={saving} />
-        </div>
-
-        <div style={{ marginBottom: '14px' }}>
-          <label style={labelStyle}>Apellido *</label>
-          <input type="text" value={apellido}
-            onChange={(e) => setApellido(e.target.value)}
-            style={inputStyle} disabled={saving} />
-        </div>
-
-        <div style={{ marginBottom: '14px' }}>
-          <label style={labelStyle}>Email</label>
-          <input type="email" value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="opcional"
-            style={inputStyle} disabled={saving} />
-        </div>
-
-        <div style={{ marginBottom: '14px' }}>
-          <label style={labelStyle}>Rol</label>
-          <select value={rol}
-            onChange={(e) => setRol(e.target.value)}
-            style={{ ...inputStyle, cursor: 'pointer' }}
-            disabled={saving}>
-            <option value="">Sin asignar</option>
-            {ROLES.map(r => (
-              <option key={r.value} value={r.value}>{r.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ marginBottom: '14px' }}>
-          <label style={labelStyle}>Rama donde trabaja</label>
-          <select value={ramaAsignada}
-            onChange={(e) => setRamaAsignada(e.target.value)}
-            style={{ ...inputStyle, cursor: 'pointer' }}
-            disabled={saving}>
-            <option value="">Sin asignar</option>
-            {RAMAS_ACTUALES.map(r => (
-              <option key={r.valor} value={r.valor}>{r.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{
-            ...labelStyle,
-            display: 'flex', alignItems: 'center', gap: '8px',
-            cursor: 'pointer', textTransform: 'none', fontSize: '13px'
-          }}>
-            <input type="checkbox" checked={tieneIM}
-              onChange={(e) => setTieneIM(e.target.checked)}
-              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
-              disabled={saving} />
-            <img src="/insignia-madera.png" alt="IM"
-              style={{ width: '22px', height: '22px', objectFit: 'contain', flexShrink: 0 }} />
-            Tiene Insignia de Madera (Programa de Jóvenes)
-          </label>
-        </div>
-
-        {tieneIM && (
-          <>
-            <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>Rama(s) donde obtuvo la IM</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                {RAMAS_IM.map(opcion => {
-                  const seleccionado = ramasIMArray.includes(opcion.valor)
-                  return (
-                    <label key={opcion.valor} style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '8px 10px',
-                      border: `2px solid ${seleccionado ? '#24352A' : '#D1C9B4'}`,
-                      borderRadius: '6px',
-                      cursor: saving ? 'not-allowed' : 'pointer',
-                      backgroundColor: seleccionado ? '#F0F7F0' : 'white',
-                      fontSize: '12px', fontFamily: 'Oswald, sans-serif',
-                      userSelect: 'none'
-                    }}>
-                      <input type="checkbox" checked={seleccionado}
-                        onChange={() => toggleRamaIM(opcion.valor)}
-                        disabled={saving}
-                        style={{ width: '16px', height: '16px', cursor: saving ? 'not-allowed' : 'pointer', accentColor: '#24352A' }} />
-                      {opcion.label}
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{
-                ...labelStyle,
-                display: 'flex', alignItems: 'center', gap: '8px',
-                cursor: 'pointer', textTransform: 'none', fontSize: '13px'
-              }}>
-                <input type="checkbox" checked={imSistemaAnterior}
-                  onChange={(e) => setImSistemaAnterior(e.target.checked)}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
-                  disabled={saving} />
-                📜 IM del Sistema de Formación ANTERIOR (pre-2025)
-              </label>
-              <div style={{
-                fontSize: '10px', color: '#7A7364', marginTop: '4px',
-                marginLeft: '26px', lineHeight: 1.4
-              }}>
-                Al guardar, se van a marcar TODOS los cursos de las 3 etapas y las
-                validaciones como cumplidas, excepto los cursos que deba hacer por
-                cambio de rama.
-              </div>
-            </div>
-          </>
-        )}
-
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{
-            ...labelStyle,
-            display: 'flex', alignItems: 'center', gap: '8px',
-            cursor: 'pointer', textTransform: 'none', fontSize: '13px'
-          }}>
-            <input type="checkbox" checked={tieneImgGestion}
-              onChange={(e) => setTieneImgGestion(e.target.checked)}
-              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
-              disabled={saving} />
-            📋 Tiene IM en Gestión Institucional
-          </label>
-        </div>
-
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{
-            ...labelStyle,
-            display: 'flex', alignItems: 'center', gap: '8px',
-            cursor: 'pointer', textTransform: 'none', fontSize: '13px'
-          }}>
-            <input type="checkbox" checked={activo}
-              onChange={(e) => setActivo(e.target.checked)}
-              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#24352A' }}
-              disabled={saving} />
-            Activo en el grupo
-          </label>
-        </div>
-
-        <div style={{
-          display: 'flex', gap: '8px',
-          marginTop: '16px', paddingTop: '16px',
-          borderTop: '2px solid #E8DEC4'
-        }}>
-          <button type="button" onClick={onClose}
-            disabled={saving}
-            style={{
-              flex: 1, padding: '10px', fontSize: '13px',
-              backgroundColor: '#E8DEC4', color: '#24352A',
-              border: 'none', borderRadius: '8px',
-              cursor: saving ? 'not-allowed' : 'pointer',
-              fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase', letterSpacing: '0.5px',
-              fontWeight: '600', opacity: saving ? 0.5 : 1
-            }}>
-            Cancelar
-          </button>
-          <button type="button" onClick={handleGuardar}
-            disabled={saving}
-            style={{
-              flex: 1, padding: '10px', fontSize: '13px',
-              backgroundColor: '#24352A', color: 'white',
-              border: 'none', borderRadius: '8px',
-              cursor: saving ? 'wait' : 'pointer',
-              fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase', letterSpacing: '0.5px',
-              fontWeight: '600', opacity: saving ? 0.6 : 1
-            }}>
-            {saving ? 'Guardando...' : '💾 Guardar'}
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
