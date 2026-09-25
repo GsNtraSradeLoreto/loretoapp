@@ -385,6 +385,27 @@ export default function Layout({ children }: LayoutProps) {
                       Campamentos
                     </Link>
 
+                                        <Link
+                      to="/permisos"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '8px 16px',
+                        color: '#24352A',
+                        textDecoration: 'none',
+                        fontSize: '14px',
+                        fontFamily: 'Oswald, sans-serif',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      onClick={() => setShowMenu(false)}
+                    >
+                      <span style={{ marginRight: '8px' }}>📋</span>
+                      Permisos
+                    </Link>
+
                     <Link
                       to="/planillas"
                       style={{
