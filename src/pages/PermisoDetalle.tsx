@@ -62,7 +62,7 @@ interface Participante {
     apellido: string
     rama: string
     tiene_hermanos: boolean
-  } | null
+  }[] | null
 }
 
 interface Transporte {
@@ -1004,7 +1004,7 @@ export default function PermisoDetalle() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {beneficiarios.map((p) => {
-                const b = p.beneficiarios
+  const b = p.beneficiarios?.[0] || null
                 const nombre = b
                   ? formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
                   : '(beneficiario eliminado)'
