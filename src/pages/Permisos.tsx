@@ -68,6 +68,7 @@ export default function Permisos() {
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState({ text: '', type: '' })
   const [filtroEstado, setFiltroEstado] = useState<EstadoFiltro>('todos')
+  const [eliminando, setEliminando] = useState<string | null>(null)
 
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
@@ -77,6 +78,7 @@ export default function Permisos() {
   // ✅ Permisos de visibilidad
   const verTodos = isSuperAdmin || isJefatura || isAdministrador
   const puedeCrear = esJefe  // Solo jefes de rama pueden crear
+  const puedeEliminar = isSuperAdmin || isJefatura  // Solo superadmin y jefatura
 
   useEffect(() => {
     loadPermisos()
@@ -105,6 +107,67 @@ export default function Permisos() {
       setMessage({ text: '❌ Error al cargar los permisos', type: 'error' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ============================================
+  // ELIMINAR PERMISO (solo superadmin y jefatura)
+  // ============================================
+  const handleEliminar = async (e: React.MouseEvent, permiso: Permiso) => {
+    e.stopPropagation() // Evita que se abra el detalle al hacer click
+
+    const confirmado = window.confirm(
+      `⚠️ ¿Eliminar este permiso?\n\n` +
+      `Esta acción NO se puede deshacer.\n` +
+      `Se borrarán también todos los participantes, transportes y archivos asociados.\n\n` +
+      `¿Confirmás?`
+    )
+
+    if (!confirmado) return
+
+    setEliminando(permiso.id)
+    setMessage({ text: '', type: '' })
+
+    try {
+      // 1) Borrar archivos del Storage (si hay)
+      const { data: archivos } = await supabase
+        .from('permisos_archivos')
+        .select('storage_path')
+        .eq('permiso_id', permiso.id)
+
+      if (archivos && archivos.length > 0) {
+        const paths = archivos
+          .map(a => a.storage_path)
+          .filter((p): p is string => !!p)
+
+        if (paths.length > 0) {
+          const { error: storageError } = await supabase.storage
+            .from('permisos-programas')
+            .remove(paths)
+
+          // Si falla, logueamos pero seguimos con el borrado del permiso
+          if (storageError) {
+            console.warn('⚠️ No se pudieron borrar algunos archivos del Storage:', storageError)
+          }
+        }
+      }
+
+      // 2) Borrar el permiso (cascade limpia participantes, transportes, archivos)
+      const { error: deleteError } = await supabase
+        .from('permisos_salida')
+        .delete()
+        .eq('id', permiso.id)
+
+      if (deleteError) throw deleteError
+
+      // 3) Actualizar la lista local
+      setPermisos(permisos.filter(p => p.id !== permiso.id))
+      setMessage({ text: '✅ Permiso eliminado', type: 'success' })
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error al eliminar: ${error.message}`, type: 'error' })
+    } finally {
+      setEliminando(null)
     }
   }
 
@@ -316,15 +379,63 @@ export default function Permisos() {
                 📍 {ubicacion}
               </div>
 
-              {/* Creador */}
+              {/* Creador + botón eliminar */}
               <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '8px',
                 fontSize: 'clamp(10px, 2vw, 12px)',
                 color: '#A89E86',
                 marginTop: '8px',
                 paddingTop: '8px',
                 borderTop: '1px dashed #E8DEC4'
               }}>
-                👤 {permiso.creado_por_nombre || permiso.email_jefe}
+                <span style={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  👤 {permiso.creado_por_nombre || permiso.email_jefe}
+                </span>
+
+                {puedeEliminar && (
+                  <button
+                    onClick={(e) => handleEliminar(e, permiso)}
+                    disabled={eliminando === permiso.id}
+                    title="Eliminar permiso"
+                    style={{
+                      background: 'none',
+                      border: '1.5px solid #FECACA',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      cursor: eliminando === permiso.id ? 'wait' : 'pointer',
+                      color: '#BF4E30',
+                      fontSize: '13px',
+                      fontFamily: 'Oswald, sans-serif',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      opacity: eliminando === permiso.id ? 0.5 : 1,
+                      flexShrink: 0,
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (eliminando !== permiso.id) {
+                        e.currentTarget.style.backgroundColor = '#FEE2E2'
+                        e.currentTarget.style.borderColor = '#BF4E30'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent'
+                      e.currentTarget.style.borderColor = '#FECACA'
+                    }}
+                  >
+                    {eliminando === permiso.id ? '⏳' : '🗑️'}
+                  </button>
+                )}
               </div>
             </div>
           )
