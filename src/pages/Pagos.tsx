@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
@@ -36,6 +36,9 @@ const ORDEN_RAMAS: Record<string, number> = {
 
 const PAGE_SIZE = 20
 
+// 🆕 Etiquetas rápidas para observaciones
+const ETIQUETAS_OBSERVACIONES = ['Rendido Ok', 'Falta Recibito', 'No rendido']
+
 export default function Pagos() {
   const {
     profile,
@@ -59,6 +62,10 @@ export default function Pagos() {
 
   // ✅ ID del pago expandido (ver detalle)
   const [pagoExpandido, setPagoExpandido] = useState<string | null>(null)
+
+  // 🆕 ID del pago ACTIVO (navegable con flechas)
+  const [pagoActivo, setPagoActivo] = useState<string | null>(null)
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // ✅ ID del pago en modo EDICIÓN INLINE
   const [editandoEnCard, setEditandoEnCard] = useState<string | null>(null)
@@ -134,6 +141,36 @@ export default function Pagos() {
     setPagoExpandido(prev => prev === pagoId ? null : pagoId)
   }
 
+  // 🆕 Agregar etiqueta a observaciones
+const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
+    const pago = pagos.find(p => p.id === pagoId)
+    if (!pago) return
+
+    const actual = pago.observaciones || ''
+    // Si ya tiene exactamente esa etiqueta, no hacer nada
+    if (actual === etiqueta) return
+
+    // ✅ REEMPLAZA el contenido con la etiqueta
+    const nuevo = etiqueta
+
+    setPagos(prev => prev.map(p =>
+      p.id === pagoId ? { ...p, observaciones: nuevo } : p
+    ))
+
+    supabase
+      .from('pagos')
+      .update({ observaciones: nuevo })
+      .eq('id', pagoId)
+      .then(({ error }) => {
+        if (error) {
+          console.error('Error al guardar etiqueta:', error)
+          setPagos(prev => prev.map(p =>
+            p.id === pagoId ? { ...p, observaciones: actual } : p
+          ))
+        }
+      })
+  }  
+
   useEffect(() => {
     loadBeneficiarios()
   }, [])
@@ -144,6 +181,9 @@ export default function Pagos() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterRama, filterBeneficiario])
+
+  // 🆕 NAVEGACIÓN CON FLECHAS (todos los usuarios, salvo cuando escriben)
+  // (el useEffect va más abajo, después de pagosOrdenados)
 
   const loadBeneficiarios = async () => {
     try {
@@ -259,8 +299,7 @@ export default function Pagos() {
       setCargandoMas(false)
     }
   }
-
-  const cargarMas = () => {
+    const cargarMas = () => {
     cargarPagos(false)
   }
 
@@ -486,7 +525,7 @@ export default function Pagos() {
       observaciones: pago.observaciones || ''
     })
     setEditandoEnCard(pago.id)
-    setPagoExpandido(null) // cerramos el panel de detalle si estaba abierto
+    setPagoExpandido(null)
     setEditMessage({ text: '', type: '' })
   }
 
@@ -710,6 +749,75 @@ export default function Pagos() {
     return reciboB - reciboA
   })
 
+  // 🆕 NAVEGACIÓN CON FLECHAS (todos los usuarios, salvo cuando escriben)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
+      if (editandoEnCard || editandoInline) return
+      if (pagosOrdenados.length === 0) return
+
+      const indiceActual = pagoActivo
+        ? pagosOrdenados.findIndex(p => p.id === pagoActivo)
+        : -1
+
+      // Flechas ↑ o → → pago ANTERIOR
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+        e.preventDefault()
+        const nuevoIndice = indiceActual <= 0 ? 0 : indiceActual - 1
+        const nuevoPagoId = pagosOrdenados[nuevoIndice].id
+        setPagoActivo(nuevoPagoId)
+        setPagoExpandido(nuevoPagoId)
+      }
+
+      // Flechas ↓ o ← → pago SIGUIENTE
+      if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+        e.preventDefault()
+        const nuevoIndice = indiceActual === -1
+          ? 0
+          : indiceActual >= pagosOrdenados.length - 1
+            ? pagosOrdenados.length - 1
+            : indiceActual + 1
+        const nuevoPagoId = pagosOrdenados[nuevoIndice].id
+        setPagoActivo(nuevoPagoId)
+        setPagoExpandido(nuevoPagoId)
+      }
+
+      // Enter → abrir/cerrar el pago activo
+      if (e.key === 'Enter' && pagoActivo) {
+        e.preventDefault()
+        setPagoExpandido(prev => prev === pagoActivo ? null : pagoActivo)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagosOrdenados, pagoActivo, editandoEnCard, editandoInline])
+
+  // 🆕 Scroll automático a la card activa
+  useEffect(() => {
+    if (!pagoActivo) return
+
+    setTimeout(() => {
+      const el = cardRefs.current[pagoActivo]
+      if (el) {
+        el.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        })
+      }
+    }, 80)
+  }, [pagoActivo])
+
   const getRamasMostrar = () => {
     if (verTodas) {
       return ['Todas', 'Manada', 'Unidad Scout', 'Caminantes', 'Rovers']
@@ -749,8 +857,7 @@ export default function Pagos() {
       </div>
     )
   }
-
-  return (
+    return (
     <div>
       {/* Header */}
       <div style={{ marginBottom: '16px' }}>
@@ -1214,11 +1321,20 @@ export default function Pagos() {
           const estaEditandoInline = editandoInline === pago.id
           const estaExpandido = pagoExpandido === pago.id
           const estaEditando = editandoEnCard === pago.id
+          const estaActivo = pagoActivo === pago.id
 
-          return (
-            <div key={pago.id}>
+return (
+            <div
+              key={pago.id}
+              ref={(el) => { cardRefs.current[pago.id] = el }}
+              style={{
+                transition: 'all 0.2s',
+                transform: estaActivo ? 'scale(1.02)' : 'scale(1)',
+                transformOrigin: 'center top'
+              }}
+            >
               {/* ============================================ */}
-              {/* MODO EDICIÓN INLINE (reemplaza el contenido de la card) */}
+              {/* MODO EDICIÓN INLINE */}
               {/* ============================================ */}
               {estaEditando ? (
                 <div style={{
@@ -1527,17 +1643,20 @@ export default function Pagos() {
                   {/* CARD NORMAL (colapsada o expandida) */}
                   {/* ============================================ */}
                   <div
-                    onClick={() => toggleExpandir(pago.id)}
+                    onClick={() => {
+                      setPagoActivo(pago.id)
+                      toggleExpandir(pago.id)
+                    }}
                     style={{
                       backgroundColor: 'white',
                       borderRadius: estaExpandido ? '12px 12px 0 0' : '12px',
-                      padding: '10px 12px',
+                      padding: estaActivo ? '14px 16px' : '10px 12px',
                       borderTop: '2px solid #24352A',
-borderLeft: '2px solid #24352A',
-borderRight: '2px solid #24352A',
-borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
+                      borderLeft: estaActivo ? '5px solid #C48A2A' : '2px solid #24352A',
+                      borderRight: '2px solid #24352A',
+                      borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
                       cursor: 'pointer',
-                      transition: 'border-color 0.2s',
+                      transition: 'all 0.2s',
                       fontFamily: 'Oswald, sans-serif'
                     }}
                   >
@@ -1621,7 +1740,6 @@ borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
                       alignItems: 'center',
                       gap: '6px'
                     }}>
-                      {/* Observaciones (editable inline) */}
                       <div
                         onClick={(e) => {
                           if (puedeEditarInline() && !estaEditandoInline) {
@@ -1684,7 +1802,6 @@ borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
                         )}
                       </div>
 
-                      {/* Iconos editar/eliminar */}
                       {canEdit(pago) && (
                         <button
                           onClick={(e) => {
@@ -1749,12 +1866,13 @@ borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
                     <div style={{
                       backgroundColor: '#F9F6EE',
                       borderRadius: '0 0 12px 12px',
-                      border: '2px solid #24352A',
                       borderTop: 'none',
+                      borderRight: '2px solid #24352A',
+                      borderBottom: '2px solid #24352A',
+                      borderLeft: estaActivo ? '5px solid #C48A2A' : '2px solid #24352A',
                       padding: '12px',
                       fontFamily: 'Oswald, sans-serif'
                     }}>
-                      {/* Header panel */}
                       <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -1792,7 +1910,6 @@ borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
                         </button>
                       </div>
 
-                      {/* Grid datos */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <div>
                           <p style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Rama</p>
@@ -1807,6 +1924,66 @@ borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
                           </p>
                         </div>
                       </div>
+
+                      {/* 🆕 Chips de observaciones (solo superadmin y tesorero) */}
+                      {(isSuperAdmin || isTesorero) && (
+                        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '2px dashed #E8DEC4' }}>
+                          <p style={{
+                            fontSize: '9px',
+                            color: '#7A7364',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            margin: '0 0 6px 0',
+                            fontWeight: '600'
+                          }}>
+                            Etiquetas rápidas
+                          </p>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            {ETIQUETAS_OBSERVACIONES.map((etq) => {
+                              const yaEsta = (pago.observaciones || '').includes(etq)
+                              return (
+                                <button
+                                  key={etq}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (!yaEsta) agregarEtiqueta(pago.id, etq)
+                                  }}
+                                  disabled={yaEsta}
+                                  style={{
+                                    padding: '4px 10px',
+                                    fontSize: 'clamp(9px, 2vw, 11px)',
+                                    fontFamily: 'Oswald, sans-serif',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.3px',
+                                    fontWeight: '600',
+                                    backgroundColor: yaEsta ? '#D1FAE5' : '#F3ECD8',
+                                    color: yaEsta ? '#5C7A5E' : '#24352A',
+                                    border: `1.5px solid ${yaEsta ? '#A7F3D0' : '#D1C9B4'}`,
+                                    borderRadius: '14px',
+                                    cursor: yaEsta ? 'not-allowed' : 'pointer',
+                                    opacity: yaEsta ? 0.7 : 1,
+                                    transition: 'all 0.15s'
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!yaEsta) {
+                                      e.currentTarget.style.backgroundColor = '#24352A'
+                                      e.currentTarget.style.color = 'white'
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!yaEsta) {
+                                      e.currentTarget.style.backgroundColor = '#F3ECD8'
+                                      e.currentTarget.style.color = '#24352A'
+                                    }
+                                  }}
+                                >
+                                  {yaEsta ? '✓ ' : '+ '}{etq}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
