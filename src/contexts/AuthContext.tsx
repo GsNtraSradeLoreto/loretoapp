@@ -109,6 +109,17 @@ email: email || '',
 }
 
       setProfile(data)
+
+      // ✅ Actualizar último acceso (sin bloquear si falla)
+      supabase
+        .from('usuarios')
+        .update({ ultimo_acceso: new Date().toISOString() })
+        .eq('id', userId)
+        .then(({ error }) => {
+          if (error) {
+            console.warn('⚠️ No se pudo actualizar ultimo_acceso:', error)
+          }
+        })
     } catch (error) {
       console.error('Error al cargar perfil:', error)
     }

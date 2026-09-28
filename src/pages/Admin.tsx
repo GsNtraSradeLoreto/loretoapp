@@ -10,9 +10,26 @@ interface Usuario {
   rol: string
   rama_asignada: string | null
   activo: boolean
+  ultimo_acceso: string | null
   creado_en: string
 }
-
+const formatUltimoAcceso = (fecha: string | null) => {
+  if (!fecha) return 'Nunca'
+  // Si el string no tiene zona horaria, asumimos que es UTC
+  const fechaUTC = fecha.includes('Z') || fecha.includes('+') 
+    ? fecha 
+    : fecha + 'Z'
+  const d = new Date(fechaUTC)
+  if (isNaN(d.getTime())) return 'Nunca'
+  return d.toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Argentina/Buenos_Aires'
+  })
+}
 export default function Admin() {
   const { isSuperAdmin } = useAuth()
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
@@ -503,6 +520,22 @@ export default function Admin() {
                       color: usuario.activo ? '#5C7A5E' : '#BF4E30'
                     }}>
                       {usuario.activo ? '● Activo' : '● Inactivo'}
+                    </span>
+
+                    {/* 🆕 Chip de último acceso (solo visible para superadmin, o sea esta página) */}
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '2px 10px',
+                      borderRadius: '12px',
+                      fontSize: 'clamp(10px, 2vw, 11px)',
+                      fontWeight: '500',
+                      fontFamily: 'Oswald, sans-serif',
+                      letterSpacing: '0.5px',
+                      backgroundColor: '#F3ECD8',
+                      color: '#7A7364',
+                      border: '1px solid #D1C9B4'
+                    }}>
+                      🕒 {formatUltimoAcceso(usuario.ultimo_acceso)}
                     </span>
                   </div>
                 )}
