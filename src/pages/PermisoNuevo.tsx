@@ -162,7 +162,6 @@ export default function PermisoNuevo() {
   const [zonaScouts, setZonaScouts] = useState('')
 
   const [beneficiariosSeleccionados, setBeneficiariosSeleccionados] = useState<Set<string>>(new Set())
-  const [filtroRamaParticipantes, setFiltroRamaParticipantes] = useState<string>('Todas')
   const [adultos, setAdultos] = useState<Adulto[]>([])
   const [nuevoAdulto, setNuevoAdulto] = useState('')
 
@@ -197,6 +196,8 @@ export default function PermisoNuevo() {
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, tiene_hermanos')
         .eq('estado', 'activo')
+        .order('apellido', { ascending: true })
+        .order('nombre', { ascending: true })
 
       if (ramaAsignada) {
         queryBenef = queryBenef.eq('rama', ramaAsignada)
@@ -603,10 +604,7 @@ export default function PermisoNuevo() {
     }
   }
 
-  const beneficiariosFiltrados = beneficiarios.filter(b => {
-    if (filtroRamaParticipantes !== 'Todas' && b.rama !== filtroRamaParticipantes) return false
-    return true
-  })
+  const beneficiariosFiltrados = beneficiarios
 
   if (loading) {
     return (
@@ -924,24 +922,10 @@ export default function PermisoNuevo() {
 
           {/* Beneficiarios */}
           <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ marginBottom: '10px' }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>
                 Beneficiarios ({beneficiariosSeleccionados.size} seleccionados)
               </label>
-
-              {beneficiarios.length > 0 && (
-                <select
-                  value={filtroRamaParticipantes}
-                  onChange={(e) => setFiltroRamaParticipantes(e.target.value)}
-                  style={{ padding: '4px 10px', fontSize: '11px', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', cursor: 'pointer' }}
-                >
-                  <option value="Todas">Todas las ramas</option>
-                  <option value="Manada">🐺 Manada</option>
-                  <option value="Unidad Scout">⚜️ Unidad Scout</option>
-                  <option value="Caminantes">🏔️ Caminantes</option>
-                  <option value="Rovers">🔥 Rovers</option>
-                </select>
-              )}
             </div>
 
             {beneficiarios.length === 0 ? (
@@ -950,7 +934,7 @@ export default function PermisoNuevo() {
               </div>
             ) : (
               <div style={{ maxHeight: '300px', overflowY: 'auto', border: '2px solid #E8DEC4', borderRadius: '8px', padding: '4px', backgroundColor: 'white' }}>
-                {beneficiariosFiltrados.map((b) => {
+                {beneficiarios.map((b) => {
                   const seleccionado = beneficiariosSeleccionados.has(b.id)
                   const nombreCompleto = formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
 
