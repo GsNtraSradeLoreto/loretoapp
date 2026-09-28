@@ -70,6 +70,10 @@ export default function Permisos() {
   const [filtroEstado, setFiltroEstado] = useState<EstadoFiltro>('todos')
   const [eliminando, setEliminando] = useState<string | null>(null)
 
+  // ✅ Notificaciones de permisos
+  const [notifSinRevisar, setNotifSinRevisar] = useState(0)
+  const [cartelCerrado, setCartelCerrado] = useState(false)
+
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
   const esAyudante = rolData.tipo === 'ayudante'
@@ -82,9 +86,13 @@ export default function Permisos() {
 
   useEffect(() => {
     loadPermisos()
+    loadNotificaciones()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // ============================================
+  // CARGAR PERMISOS
+  // ============================================
   const loadPermisos = async () => {
     try {
       setLoading(true)
@@ -93,8 +101,11 @@ export default function Permisos() {
         .select('id, creado_por, creado_por_nombre, email_jefe, emails_ayudantes, fecha_salida, fecha_llegada, provincia, ciudad, direccion, pueblo_cercano, jefe_campo, estado, creado_en')
         .order('creado_en', { ascending: false })
 
-      // ✅ Si NO ve todos, solo sus propios permisos
-      if (!verTodos && profile?.id) {
+      // ✅ Si NO ve todos (jefe o ayudante), filtrar por rama
+      if (!verTodos && ramaAsignada) {
+        query = query.eq('rama', ramaAsignada)
+      } else if (!verTodos && !ramaAsignada && profile?.id) {
+        // Si no tiene rama asignada, al menos que vea los que él creó
         query = query.eq('creado_por', profile.id)
       }
 
@@ -107,6 +118,60 @@ export default function Permisos() {
       setMessage({ text: '❌ Error al cargar los permisos', type: 'error' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ============================================
+  // CARGAR NOTIFICACIONES
+  // ============================================
+  const loadNotificaciones = async () => {
+    try {
+      const rolData = getRolData()
+      const rama = rolData.rama
+      if (!rama) return
+
+      const { count, error } = await supabase
+        .from('permisos_notificaciones')
+        .select('id', { count: 'exact', head: true })
+        .eq('rama', rama)
+        .eq('visto', false)
+
+      if (!error && typeof count === 'number') {
+        setNotifSinRevisar(count)
+      }
+    } catch (error) {
+      console.error('Error al cargar notificaciones:', error)
+    }
+  }
+
+  // ============================================
+  // CERRAR CARTEL DE NOTIFICACIONES
+  // ============================================
+  const handleCerrarCartel = async () => {
+    try {
+      const rolData = getRolData()
+      const rama = rolData.rama
+      if (!rama) return
+
+      // Ocultamos el cartel + ponemos el contador en 0
+      setCartelCerrado(true)
+      setNotifSinRevisar(0)
+
+      // Marcamos como vistas todas las notificaciones de la rama
+      const { error } = await supabase
+        .from('permisos_notificaciones')
+        .update({ visto: true })
+        .eq('rama', rama)
+        .eq('visto', false)
+
+      if (error) {
+        console.error('Error al marcar como vistas:', error)
+      } else {
+        // ✅ Avisar a Layout y BottomNav que recarguen el contador
+        window.dispatchEvent(new CustomEvent('notif-permisos-cambiaron'))
+      }
+    } catch (error) {
+      console.error('Error al cerrar cartel:', error)
     }
   }
 
@@ -242,6 +307,55 @@ export default function Permisos() {
           })
         }}>
           {message.text}
+        </div>
+      )}
+
+      {/* CARTEL DE NOTIFICACIONES SIN REVISAR */}
+      {!cartelCerrado && notifSinRevisar > 0 && (
+        <div style={{
+          backgroundColor: '#FEF3C7',
+          border: '2px solid #F5C842',
+          borderLeft: '6px solid #C48A2A',
+          borderRadius: '12px',
+          padding: '14px 16px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          fontFamily: 'Oswald, sans-serif'
+        }}>
+          <span style={{ fontSize: '22px' }}>🔔</span>
+          <div style={{ flex: 1 }}>
+            <div style={{
+              fontSize: '13px',
+              fontWeight: '700',
+              color: '#7A5C00',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              marginBottom: '4px'
+            }}>
+              Cambios de estado sin revisar
+            </div>
+            <div style={{ fontSize: '12px', color: '#7A5C00' }}>
+              Tenés {notifSinRevisar} {notifSinRevisar === 1 ? 'permiso' : 'permisos'} de tu rama con cambios de estado nuevos.
+            </div>
+          </div>
+          <button
+            onClick={handleCerrarCartel}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#7A5C00',
+              fontSize: '20px',
+              padding: '4px 8px',
+              fontFamily: 'Oswald, sans-serif',
+              lineHeight: 1
+            }}
+            title="Marcar como revisadas"
+          >
+            ✕
+          </button>
         </div>
       )}
 

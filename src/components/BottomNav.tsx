@@ -5,16 +5,19 @@ import { supabase } from '../lib/supabase'
 
 export default function BottomNav() {
   const location = useLocation()
-  const { isSuperAdmin, isJefatura, isAdministrador } = useAuth()
+  const { isSuperAdmin, isJefatura, isAdministrador, getRolData } = useAuth()
+  const rolData = getRolData()
+  const ramaUsuario = rolData.rama
 
   const [novedades, setNovedades] = React.useState(0)
+  const [notifPermisos, setNotifPermisos] = React.useState(0)
+  const [permisosPendientes, setPermisosPendientes] = React.useState(0)
 
   const isActive = (path: string) => location.pathname === path
 
-  // ✅ Solo SUPER_ADMIN y Jefatura ven la pestaña de Campamentos y Auditoría
   const puedeVerCampamentos = isSuperAdmin || isJefatura
 
-  // Cargar novedades (solo si tiene permiso)
+  // ✅ Cargar novedades de auditoría
   React.useEffect(() => {
     if (!isSuperAdmin && !isJefatura) return
 
@@ -27,9 +30,52 @@ export default function BottomNav() {
       })
   }, [isSuperAdmin, isJefatura, location.pathname])
 
+  // ✅ Notificaciones de permisos de mi rama
+  const cargarNotifPermisos = React.useCallback(() => {
+    if (!ramaUsuario) return
+
+    supabase
+      .from('permisos_notificaciones')
+      .select('id', { count: 'exact', head: true })
+      .eq('rama', ramaUsuario)
+      .eq('visto', false)
+      .then(({ count, error }) => {
+        if (!error && typeof count === 'number') {
+          setNotifPermisos(count)
+        }
+      })
+  }, [ramaUsuario])
+
+  React.useEffect(() => {
+    cargarNotifPermisos()
+  }, [cargarNotifPermisos, location.pathname])
+
+  // ✅ Escuchar evento de "notificaciones cambiaron"
+  React.useEffect(() => {
+    const handler = () => cargarNotifPermisos()
+    window.addEventListener('notif-permisos-cambiaron', handler)
+    return () => window.removeEventListener('notif-permisos-cambiaron', handler)
+  }, [cargarNotifPermisos])
+
+  // ✅ Permisos pendientes (jefatura/superadmin)
+  React.useEffect(() => {
+    if (!isSuperAdmin && !isJefatura) return
+
+    supabase
+      .from('permisos_salida')
+      .select('id', { count: 'exact', head: true })
+      .in('estado', ['pendiente', 'con_devoluciones'])
+      .then(({ count, error }) => {
+        if (!error && typeof count === 'number') {
+          setPermisosPendientes(count)
+        }
+      })
+  }, [isSuperAdmin, isJefatura, location.pathname])
+
   const navItems = [
     { id: 'beneficiarios', label: 'Beneficiarios', icon: '👥', path: '/dashboard' },
     { id: 'pagos', label: 'Pagos', icon: '💰', path: '/pagos' },
+    { id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' },
   ]
 
   if (puedeVerCampamentos) {
@@ -137,6 +183,56 @@ export default function BottomNav() {
                   zIndex: 2
                 }}>
                   {novedades > 99 ? '99+' : novedades}
+                </span>
+              )}
+
+              {item.id === 'permisos' && ramaUsuario && notifPermisos > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-3px',
+                  right: '-6px',
+                  minWidth: '16px',
+                  height: '16px',
+                  padding: '0 4px',
+                  backgroundColor: '#C48A2A',
+                  color: 'white',
+                  borderRadius: '8px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  fontFamily: 'Oswald, sans-serif',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  lineHeight: 1,
+                  boxShadow: '0 0 0 2px #24352A',
+                  zIndex: 2
+                }}>
+                  {notifPermisos > 99 ? '99+' : notifPermisos}
+                </span>
+              )}
+
+              {item.id === 'permisos' && (isSuperAdmin || isJefatura) && permisosPendientes > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-3px',
+                  right: '-6px',
+                  minWidth: '16px',
+                  height: '16px',
+                  padding: '0 4px',
+                  backgroundColor: '#B71C1C',
+                  color: 'white',
+                  borderRadius: '8px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  fontFamily: 'Oswald, sans-serif',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  lineHeight: 1,
+                  boxShadow: '0 0 0 2px #24352A',
+                  zIndex: 2
+                }}>
+                  {permisosPendientes > 99 ? '99+' : permisosPendientes}
                 </span>
               )}
             </div>

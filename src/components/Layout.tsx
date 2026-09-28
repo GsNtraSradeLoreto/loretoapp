@@ -1,4 +1,4 @@
-import React, { ReactNode, useRef, useEffect } from 'react'
+import React, { ReactNode, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import BottomNav from './BottomNav'
@@ -10,24 +10,30 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const { profile, signOut, isSuperAdmin, isJefatura, isAdministrador } = useAuth()
+  const { profile, signOut, isSuperAdmin, isJefatura, isAdministrador, getRolData } = useAuth()
+  const rolData = getRolData()
+  const ramaUsuario = rolData.rama
+
   const navigate = useNavigate()
   const [esCelular, setEsCelular] = React.useState(window.innerWidth < 640)
+
   React.useEffect(() => {
     const handleResize = () => setEsCelular(window.innerWidth < 640)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
   const location = useLocation()
   const [showMenu, setShowMenu] = React.useState(false)
   const [refrescando, setRefrescando] = React.useState(false)
   const [novedades, setNovedades] = React.useState(0)
+  const [notifPermisos, setNotifPermisos] = React.useState(0)
+  const [permisosPendientes, setPermisosPendientes] = React.useState(0)
   const [dragOffset, setDragOffset] = React.useState(0)
 
-  // ✅ Ref para detectar clicks afuera del menú de perfil
   const menuPerfilRef = useRef<HTMLDivElement>(null)
 
-  // ✅ Cerrar menú de perfil al tocar afuera
+  // ✅ Cerrar menú al tocar afuera
   useEffect(() => {
     if (!showMenu) return
 
@@ -58,7 +64,9 @@ export default function Layout({ children }: LayoutProps) {
     }, 400)
   }
 
-  // Cargar cantidad de novedades (solo Jefatura/Super Admin)
+  // ============================================
+  // CONTADOR DE NOVEDADES DE AUDITORÍA
+  // ============================================
   React.useEffect(() => {
     if (!isSuperAdmin && !isJefatura) return
 
@@ -72,7 +80,53 @@ export default function Layout({ children }: LayoutProps) {
   }, [isSuperAdmin, isJefatura])
 
   // ============================================
-  // NAVEGACIÓN POR SWIPE (solo en páginas principales)
+  // CONTADOR DE NOTIFICACIONES DE PERMISOS
+  // ============================================
+  const cargarNotifPermisos = useCallback(() => {
+    if (!ramaUsuario) return
+
+    supabase
+      .from('permisos_notificaciones')
+      .select('id', { count: 'exact', head: true })
+      .eq('rama', ramaUsuario)
+      .eq('visto', false)
+      .then(({ count, error }) => {
+        if (!error && typeof count === 'number') {
+          setNotifPermisos(count)
+        }
+      })
+  }, [ramaUsuario])
+
+  React.useEffect(() => {
+    cargarNotifPermisos()
+  }, [cargarNotifPermisos])
+
+  // ✅ Escuchar evento de "notificaciones cambiaron"
+  React.useEffect(() => {
+    const handler = () => cargarNotifPermisos()
+    window.addEventListener('notif-permisos-cambiaron', handler)
+    return () => window.removeEventListener('notif-permisos-cambiaron', handler)
+  }, [cargarNotifPermisos])
+
+  // ============================================
+  // CONTADOR DE PERMISOS PENDIENTES (jefatura/superadmin)
+  // ============================================
+  React.useEffect(() => {
+    if (!isSuperAdmin && !isJefatura) return
+
+    supabase
+      .from('permisos_salida')
+      .select('id', { count: 'exact', head: true })
+      .in('estado', ['pendiente', 'con_devoluciones'])
+      .then(({ count, error }) => {
+        if (!error && typeof count === 'number') {
+          setPermisosPendientes(count)
+        }
+      })
+  }, [isSuperAdmin, isJefatura])
+
+  // ============================================
+  // NAVEGACIÓN POR SWIPE
   // ============================================
   const rutasNav = [
     { path: '/dashboard' },
@@ -83,8 +137,6 @@ export default function Layout({ children }: LayoutProps) {
 
   const indiceActual = rutasNav.findIndex(r => r.path === location.pathname)
   const estoyEnRutaPrincipal = indiceActual !== -1
-
-  // Solo permitir swipe si estoy en una de las rutas principales
   const swipeHabilitado = estoyEnRutaPrincipal
 
   const handleSwipeLeft = () => {
@@ -259,7 +311,6 @@ export default function Layout({ children }: LayoutProps) {
                 </svg>
               </button>
 
-              {/* ✅ Contenedor del menú de perfil con ref para detectar clicks afuera */}
               <div ref={menuPerfilRef} style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowMenu(!showMenu)}
@@ -385,7 +436,7 @@ export default function Layout({ children }: LayoutProps) {
                       Campamentos
                     </Link>
 
-                                        <Link
+                    <Link
                       to="/permisos"
                       style={{
                         display: 'flex',
@@ -404,6 +455,46 @@ export default function Layout({ children }: LayoutProps) {
                     >
                       <span style={{ marginRight: '8px' }}>📋</span>
                       Permisos
+                      {(isSuperAdmin || isJefatura) && permisosPendientes > 0 && (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          minWidth: '20px',
+                          height: '20px',
+                          padding: '0 6px',
+                          backgroundColor: '#B71C1C',
+                          color: 'white',
+                          borderRadius: '10px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          fontFamily: 'Oswald, sans-serif',
+                          marginLeft: '8px',
+                          lineHeight: 1
+                        }}>
+                          {permisosPendientes > 99 ? '99+' : permisosPendientes}
+                        </span>
+                      )}
+                      {ramaUsuario && notifPermisos > 0 && (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          minWidth: '20px',
+                          height: '20px',
+                          padding: '0 6px',
+                          backgroundColor: '#C48A2A',
+                          color: 'white',
+                          borderRadius: '10px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          fontFamily: 'Oswald, sans-serif',
+                          marginLeft: '8px',
+                          lineHeight: 1
+                        }}>
+                          {notifPermisos > 99 ? '99+' : notifPermisos}
+                        </span>
+                      )}
                     </Link>
 
                     <Link

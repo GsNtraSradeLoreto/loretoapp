@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
+import { enviarEmail, formatFechaCorta } from '../lib/enviarEmail'
+import { crearNotificacion } from '../lib/notificaciones'
 
 // ============================================
 // INTERFACES
@@ -11,6 +13,7 @@ interface Permiso {
   id: string
   creado_por: string | null
   creado_por_nombre: string | null
+  rama: string | null
   email_jefe: string
   emails_ayudantes: string[] | null
   fecha_salida: string | null
@@ -93,58 +96,16 @@ interface Archivo {
 // CONFIG DE ESTADOS
 // ============================================
 const ESTADOS_CONFIG: Record<string, { label: string; color: string; bg: string; borde: string; emoji: string }> = {
-  pendiente: {
-    label: 'Pendiente',
-    emoji: '🟡',
-    color: '#7A5C00',
-    bg: '#FEF3C7',
-    borde: '#F5C842'
-  },
-  con_devoluciones: {
-    label: 'Con devoluciones',
-    emoji: '🟠',
-    color: '#9A3412',
-    bg: '#FFEDD5',
-    borde: '#FB923C'
-  },
-  aprobado: {
-    label: 'Aprobado',
-    emoji: '🟢',
-    color: '#166534',
-    bg: '#D1FAE5',
-    borde: '#86EFAC'
-  },
-  cargado: {
-    label: 'Cargado en SAAC',
-    emoji: '⚫',
-    color: '#374151',
-    bg: '#E5E7EB',
-    borde: '#9CA3AF'
-  }
+  pendiente: { label: 'Pendiente', emoji: '🟡', color: '#7A5C00', bg: '#FEF3C7', borde: '#F5C842' },
+  con_devoluciones: { label: 'Con devoluciones', emoji: '🟠', color: '#9A3412', bg: '#FFEDD5', borde: '#FB923C' },
+  aprobado: { label: 'Aprobado', emoji: '🟢', color: '#166534', bg: '#D1FAE5', borde: '#86EFAC' },
+  cargado: { label: 'Cargado en SAAC', emoji: '⚫', color: '#374151', bg: '#E5E7EB', borde: '#9CA3AF' }
 }
 
 const TIPO_ARCHIVO_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string; borde: string }> = {
-  original: {
-    label: 'Original',
-    emoji: '⚪',
-    color: '#374151',
-    bg: '#F3F4F6',
-    borde: '#9CA3AF'
-  },
-  devolucion: {
-    label: 'Devolución',
-    emoji: '🟠',
-    color: '#9A3412',
-    bg: '#FFEDD5',
-    borde: '#FB923C'
-  },
-  corregido: {
-    label: 'Corregido',
-    emoji: '🟢',
-    color: '#166534',
-    bg: '#D1FAE5',
-    borde: '#86EFAC'
-  }
+  original: { label: 'Original', emoji: '⚪', color: '#374151', bg: '#F3F4F6', borde: '#9CA3AF' },
+  devolucion: { label: 'Devolución', emoji: '🟠', color: '#9A3412', bg: '#FFEDD5', borde: '#FB923C' },
+  corregido: { label: 'Corregido', emoji: '🟢', color: '#166534', bg: '#D1FAE5', borde: '#86EFAC' }
 }
 
 // ============================================
@@ -175,7 +136,6 @@ export default function PermisoDetalle() {
   const navigate = useNavigate()
   const { profile, isSuperAdmin, isJefatura, isAdministrador } = useAuth()
 
-  // ===== Estados =====
   const [permiso, setPermiso] = useState<Permiso | null>(null)
   const [participantes, setParticipantes] = useState<Participante[]>([])
   const [transportes, setTransportes] = useState<Transporte[]>([])
@@ -184,16 +144,12 @@ export default function PermisoDetalle() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState({ text: '', type: '' })
 
-  // ===== Secciones inline expandibles =====
-  // 'ninguna' | 'devolucion' | 'aprobar' | 'comentario'
   const [seccionActiva, setSeccionActiva] = useState<'ninguna' | 'devolucion'>('ninguna')
 
-  // ===== Form devolución =====
   const [archivoDevolucion, setArchivoDevolucion] = useState<File | null>(null)
   const [comentarioGeneral, setComentarioGeneral] = useState('')
   const [comentarioArchivo, setComentarioArchivo] = useState('')
 
-  // ===== Permisos =====
   const esCreador = permiso?.creado_por === profile?.id
   const puedeRevisar = isSuperAdmin || isJefatura || isAdministrador
   const puedeEditar =
@@ -212,15 +168,11 @@ export default function PermisoDetalle() {
     try {
       setLoading(true)
 
-      // Cargamos los 4 en paralelo
       const [permisoRes, participantesRes, transportesRes, archivosRes] = await Promise.all([
         supabase.from('permisos_salida').select('*').eq('id', id).single(),
         supabase
           .from('permisos_participantes')
-          .select(`
-            id, tipo, nombre_libre, beneficiario_id,
-            beneficiarios (nombre, apellido, rama, tiene_hermanos)
-          `)
+          .select('id, tipo, nombre_libre, beneficiario_id')
           .eq('permiso_id', id),
         supabase.from('permisos_transportes').select('*').eq('permiso_id', id),
         supabase
@@ -235,8 +187,39 @@ export default function PermisoDetalle() {
       if (transportesRes.error) throw transportesRes.error
       if (archivosRes.error) throw archivosRes.error
 
+      // Query separada para traer los beneficiarios
+      const participantesData = participantesRes.data || []
+      const idsBeneficiarios = participantesData
+        .map(p => p.beneficiario_id)
+        .filter((id): id is string => !!id)
+
+      let beneficiariosMap: Record<string, any> = {}
+
+      if (idsBeneficiarios.length > 0) {
+        const { data: beneficiariosData, error: benefError } = await supabase
+          .from('beneficiarios')
+          .select('id, nombre, apellido, rama, tiene_hermanos')
+          .in('id', idsBeneficiarios)
+
+        if (benefError) {
+          console.error('⚠️ Error al traer beneficiarios:', benefError)
+        } else {
+          beneficiariosMap = (beneficiariosData || []).reduce((acc, b) => {
+            acc[b.id] = b
+            return acc
+          }, {} as Record<string, any>)
+        }
+      }
+
+      const participantesConBenef = participantesData.map(p => ({
+        ...p,
+        beneficiarios: p.beneficiario_id && beneficiariosMap[p.beneficiario_id]
+          ? [beneficiariosMap[p.beneficiario_id]]
+          : null
+      }))
+
       setPermiso(permisoRes.data)
-      setParticipantes(participantesRes.data || [])
+      setParticipantes(participantesConBenef)
       setTransportes(transportesRes.data || [])
       setArchivos(archivosRes.data || [])
       setComentarioGeneral(permisoRes.data.comentario_jefatura || '')
@@ -277,7 +260,6 @@ export default function PermisoDetalle() {
       const fileName = `devolucion-${Date.now()}.${ext}`
       const filePath = `${permiso.id}/${fileName}`
 
-      // 1) Subir archivo
       const { error: uploadError } = await supabase.storage
         .from('permisos-programas')
         .upload(filePath, archivoDevolucion, { cacheControl: '3600', upsert: true })
@@ -288,7 +270,6 @@ export default function PermisoDetalle() {
         .from('permisos-programas')
         .getPublicUrl(filePath)
 
-      // 2) Insertar en permisos_archivos
       const nombreCompleto = profile ? `${profile.nombre} ${profile.apellido || ''}`.trim() : null
 
       const { error: archivoError } = await supabase
@@ -305,7 +286,6 @@ export default function PermisoDetalle() {
 
       if (archivoError) throw archivoError
 
-      // 3) Actualizar permisos_salida: estado + comentario general + revisado
       const { error: updateError } = await supabase
         .from('permisos_salida')
         .update({
@@ -321,7 +301,37 @@ export default function PermisoDetalle() {
 
       if (updateError) throw updateError
 
-      // 4) Recargar
+      // Enviar mail
+      try {
+        const destinatarios = [
+          permiso.email_jefe,
+          ...(permiso.emails_ayudantes || [])
+        ].filter((e): e is string => !!e)
+
+        if (destinatarios.length > 0) {
+          await enviarEmail({
+            tipo: 'devolucion',
+            destinatarios,
+            datos: {
+              permiso_id: permiso.id,
+              jefatura_nombre: nombreCompleto || 'Jefatura',
+              comentario: comentarioGeneral || undefined
+            }
+          })
+        }
+      } catch (mailError) {
+        console.error('⚠️ Error al enviar mail de devolución:', mailError)
+      }
+
+      // Crear notificación
+      await crearNotificacion({
+        permiso_id: permiso.id,
+        rama: permiso.rama,
+        estado_anterior: 'pendiente',
+        estado_nuevo: 'con_devoluciones',
+        creado_por_nombre: nombreCompleto
+      })
+
       setMessage({ text: '✅ Devolución enviada', type: 'success' })
       setSeccionActiva('ninguna')
       setArchivoDevolucion(null)
@@ -357,6 +367,14 @@ export default function PermisoDetalle() {
 
       if (error) throw error
 
+      await crearNotificacion({
+        permiso_id: permiso.id,
+        rama: permiso.rama,
+        estado_anterior: permiso.estado,
+        estado_nuevo: 'aprobado',
+        creado_por_nombre: nombreCompleto
+      })
+
       setMessage({ text: '✅ Permiso aprobado', type: 'success' })
       await loadPermiso()
     } catch (error: any) {
@@ -384,6 +402,35 @@ export default function PermisoDetalle() {
         .eq('id', permiso.id)
 
       if (error) throw error
+
+      // Enviar mail
+      try {
+        const destinatarios = [
+          permiso.email_jefe,
+          ...(permiso.emails_ayudantes || [])
+        ].filter((e): e is string => !!e)
+
+        if (destinatarios.length > 0) {
+          await enviarEmail({
+            tipo: 'cargado',
+            destinatarios,
+            datos: {
+              permiso_id: permiso.id,
+              fecha_salida: formatFechaCorta(permiso.fecha_salida)
+            }
+          })
+        }
+      } catch (mailError) {
+        console.error('⚠️ Error al enviar mail de cargado:', mailError)
+      }
+
+      await crearNotificacion({
+        permiso_id: permiso.id,
+        rama: permiso.rama,
+        estado_anterior: 'aprobado',
+        estado_nuevo: 'cargado',
+        creado_por_nombre: profile ? `${profile.nombre} ${profile.apellido || ''}`.trim() : null
+      })
 
       setMessage({ text: '✅ Marcado como cargado', type: 'success' })
       await loadPermiso()
@@ -419,7 +466,8 @@ export default function PermisoDetalle() {
       setSaving(false)
     }
   }
-    // ============================================
+
+  // ============================================
   // LOADING / ERROR
   // ============================================
   if (loading) {
@@ -443,7 +491,6 @@ export default function PermisoDetalle() {
   const config = ESTADOS_CONFIG[permiso.estado] || ESTADOS_CONFIG.pendiente
   const ubicacion = [permiso.ciudad, permiso.provincia].filter(Boolean).join(', ') || '-'
 
-  // Separo participantes por tipo
   const beneficiarios = participantes.filter(p => p.tipo === 'beneficiario')
   const adultos = participantes.filter(p => p.tipo === 'adulto')
 
@@ -452,7 +499,6 @@ export default function PermisoDetalle() {
   // ============================================
   return (
     <div style={{ fontFamily: 'Oswald, sans-serif' }}>
-      {/* Header con botón volver */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: '12px',
         marginBottom: '16px', flexWrap: 'wrap'
@@ -472,7 +518,6 @@ export default function PermisoDetalle() {
         </button>
       </div>
 
-      {/* Título + Estado */}
       <div style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'flex-start', gap: '12px', marginBottom: '16px',
@@ -484,7 +529,7 @@ export default function PermisoDetalle() {
             color: '#24352A', textTransform: 'uppercase',
             letterSpacing: '1px', margin: 0, fontWeight: '700'
           }}>
-            📋 Permiso de Salida
+            📋 PERMISO DE SALIDA/CAMPAMENTO
           </h1>
           <p style={{
             fontSize: 'clamp(11px, 2.5vw, 13px)',
@@ -509,7 +554,6 @@ export default function PermisoDetalle() {
         </span>
       </div>
 
-      {/* Mensaje */}
       {message.text && (
         <div style={{
           padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
@@ -526,9 +570,6 @@ export default function PermisoDetalle() {
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* COMENTARIO DE JEFATURA (si hay) */}
-      {/* ============================================ */}
       {permiso.comentario_jefatura && (
         <div style={{
           backgroundColor: '#FFEDD5',
@@ -569,9 +610,7 @@ export default function PermisoDetalle() {
         </div>
       )}
 
-      {/* ============================================ */}
       {/* PANEL DE ACCIONES (STICKY) */}
-      {/* ============================================ */}
       <div style={{
         position: 'sticky',
         top: '76px',
@@ -586,17 +625,7 @@ export default function PermisoDetalle() {
         flexWrap: 'wrap',
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
       }}>
-        {/* Jefe puede editar si está pendiente o con devoluciones */}
-        {puedeEditar && esCreador && (
-          <button
-            onClick={() => navigate(`/permisos/${permiso.id}/editar`)}
-            style={botonAccionStyle('#5C7A5E')}
-          >
-            ✏️ Editar
-          </button>
-        )}
 
-        {/* Jefatura: dar devolución si está pendiente */}
         {puedeRevisar && permiso.estado === 'pendiente' && (
           <button
             onClick={() => setSeccionActiva(seccionActiva === 'devolucion' ? 'ninguna' : 'devolucion')}
@@ -607,7 +636,6 @@ export default function PermisoDetalle() {
           </button>
         )}
 
-        {/* Jefatura: aprobar si está pendiente o con devoluciones */}
         {puedeRevisar && (permiso.estado === 'pendiente' || permiso.estado === 'con_devoluciones') && (
           <button
             onClick={handleAprobar}
@@ -618,7 +646,6 @@ export default function PermisoDetalle() {
           </button>
         )}
 
-        {/* Jefatura: marcar como cargado si está aprobado */}
         {puedeRevisar && permiso.estado === 'aprobado' && (
           <button
             onClick={handleMarcarCargado}
@@ -629,7 +656,6 @@ export default function PermisoDetalle() {
           </button>
         )}
 
-        {/* Jefatura: reabrir si no está pendiente */}
         {puedeRevisar && permiso.estado !== 'pendiente' && (
           <button
             onClick={handleReabrir}
@@ -640,7 +666,6 @@ export default function PermisoDetalle() {
           </button>
         )}
 
-        {/* Sin acciones disponibles */}
         {!puedeEditar && !puedeRevisar && (
           <div style={{
             fontSize: '12px',
@@ -653,9 +678,7 @@ export default function PermisoDetalle() {
         )}
       </div>
 
-      {/* ============================================ */}
       {/* SECCIÓN INLINE: DAR DEVOLUCIÓN */}
-      {/* ============================================ */}
       {seccionActiva === 'devolucion' && puedeRevisar && (
         <div style={{
           backgroundColor: '#FFFBF5',
@@ -677,7 +700,6 @@ export default function PermisoDetalle() {
             📝 Dar devolución
           </div>
 
-          {/* Subir archivo */}
           <div style={{ marginBottom: '14px' }}>
             <label style={labelStyle}>Word de devolución *</label>
             <label style={{
@@ -725,7 +747,6 @@ export default function PermisoDetalle() {
             )}
           </div>
 
-          {/* Comentario general */}
           <div style={{ marginBottom: '14px' }}>
             <label style={labelStyle}>Comentario general (se muestra arriba del permiso)</label>
             <textarea
@@ -737,7 +758,6 @@ export default function PermisoDetalle() {
             />
           </div>
 
-          {/* Comentario del archivo */}
           <div style={{ marginBottom: '14px' }}>
             <label style={labelStyle}>Comentario del archivo (opcional)</label>
             <input
@@ -749,7 +769,6 @@ export default function PermisoDetalle() {
             />
           </div>
 
-          {/* Botones */}
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
               type="button"
@@ -803,369 +822,7 @@ export default function PermisoDetalle() {
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* SECCIÓN 1: HORARIOS */}
-      {/* ============================================ */}
-      <div style={seccionStyle}>
-        <div style={seccionHeaderStyle}>📅 Horarios</div>
-        <div style={gridStyle}>
-          <div>
-            <div style={labelStyle}>Salida</div>
-            <div style={valorStyle}>{formatFechaHora(permiso.fecha_salida)}</div>
-          </div>
-          <div>
-            <div style={labelStyle}>Llegada</div>
-            <div style={valorStyle}>{formatFechaHora(permiso.fecha_llegada)}</div>
-          </div>
-        </div>
-        {permiso.es_en_sede && (
-          <div style={{
-            marginTop: '12px',
-            padding: '8px 12px',
-            backgroundColor: '#F0F7F0',
-            border: '1px solid #B8D4B8',
-            borderRadius: '6px',
-            fontSize: '12px',
-            color: '#5C7A5E',
-            textAlign: 'center',
-            fontWeight: '600',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px'
-          }}>
-            🏠 El campamento/salida es en la sede del grupo
-          </div>
-        )}
-      </div>
-
-      {/* ============================================ */}
-      {/* SECCIÓN 2: UBICACIÓN */}
-      {/* ============================================ */}
-      <div style={seccionStyle}>
-        <div style={seccionHeaderStyle}>📍 Ubicación</div>
-        <div style={gridStyle}>
-          <div>
-            <div style={labelStyle}>Provincia</div>
-            <div style={valorStyle}>{permiso.provincia || '-'}</div>
-          </div>
-          <div>
-            <div style={labelStyle}>Ciudad</div>
-            <div style={valorStyle}>{permiso.ciudad || '-'}</div>
-          </div>
-          <div>
-            <div style={labelStyle}>Dirección</div>
-            <div style={valorStyle}>{permiso.direccion || '-'}</div>
-          </div>
-          <div>
-            <div style={labelStyle}>Pueblo cercano</div>
-            <div style={valorStyle}>{permiso.pueblo_cercano || '-'}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================ */}
-      {/* SECCIÓN 3: PROPIETARIO */}
-      {/* ============================================ */}
-      <div style={seccionStyle}>
-        <div style={seccionHeaderStyle}>👤 Datos del Propietario</div>
-        <div style={gridStyle}>
-          <div>
-            <div style={labelStyle}>Nombre y apellido</div>
-            <div style={valorStyle}>{permiso.propietario_nombre || '-'}</div>
-          </div>
-          <div>
-            <div style={labelStyle}>Teléfono</div>
-            <div style={valorStyle}>{permiso.propietario_telefono || '-'}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================ */}
-      {/* SECCIÓN 4: EMERGENCIAS */}
-      {/* ============================================ */}
-      <div style={seccionStyle}>
-        <div style={seccionHeaderStyle}>🚨 Emergencias</div>
-
-        <div style={{ marginBottom: '14px' }}>
-          <div style={{
-            fontSize: '11px', color: '#7A7364',
-            marginBottom: '8px',
-            textTransform: 'uppercase', letterSpacing: '0.5px',
-            fontWeight: '600'
-          }}>
-            Unidad Sanitaria
-          </div>
-          <div style={gridStyle}>
-            <div>
-              <div style={labelStyle}>Nombre</div>
-              <div style={valorStyle}>{permiso.unidad_sanitaria_nombre || '-'}</div>
-            </div>
-            <div>
-              <div style={labelStyle}>Teléfono</div>
-              <div style={valorStyle}>{permiso.unidad_sanitaria_telefono || '-'}</div>
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <div style={labelStyle}>Dirección</div>
-              <div style={valorStyle}>{permiso.unidad_sanitaria_direccion || '-'}</div>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div style={{
-            fontSize: '11px', color: '#7A7364',
-            marginBottom: '8px',
-            textTransform: 'uppercase', letterSpacing: '0.5px',
-            fontWeight: '600'
-          }}>
-            Destacamento Policial
-          </div>
-          <div style={gridStyle}>
-            <div>
-              <div style={labelStyle}>Nombre</div>
-              <div style={valorStyle}>{permiso.destacamento_nombre || '-'}</div>
-            </div>
-            <div>
-              <div style={labelStyle}>Teléfono</div>
-              <div style={valorStyle}>{permiso.destacamento_telefono || '-'}</div>
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <div style={labelStyle}>Dirección</div>
-              <div style={valorStyle}>{permiso.destacamento_direccion || '-'}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================ */}
-      {/* SECCIÓN 5: CONTACTOS */}
-      {/* ============================================ */}
-      <div style={seccionStyle}>
-        <div style={seccionHeaderStyle}>📞 Contactos</div>
-        <div style={gridStyle}>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div style={labelStyle}>Medio de comunicación</div>
-            <div style={valorStyle}>{permiso.medio_comunicacion || '-'}</div>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div style={labelStyle}>Jefe de Campo</div>
-            <div style={valorStyle}>{permiso.jefe_campo || '-'}</div>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div style={labelStyle}>Zona Scouts</div>
-            <div style={valorStyle}>{permiso.zona_scouts || '-'}</div>
-          </div>
-          {permiso.otros_detalles && (
-            <div style={{ gridColumn: '1 / -1' }}>
-              <div style={labelStyle}>Otros detalles</div>
-              <div style={{ ...valorStyle, whiteSpace: 'pre-wrap' }}>{permiso.otros_detalles}</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ============================================ */}
-      {/* SECCIÓN 6: EMAILS DEL JEFE */}
-      {/* ============================================ */}
-      <div style={seccionStyle}>
-        <div style={seccionHeaderStyle}>📧 Emails de Contacto</div>
-        <div style={{ marginBottom: '12px' }}>
-          <div style={labelStyle}>Jefe de rama</div>
-          <div style={valorStyle}>{permiso.email_jefe || '-'}</div>
-        </div>
-        {permiso.emails_ayudantes && permiso.emails_ayudantes.length > 0 && (
-          <div>
-            <div style={labelStyle}>Ayudantes</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {permiso.emails_ayudantes.map((email) => (
-                <div key={email} style={valorStyle}>📧 {email}</div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ============================================ */}
-      {/* SECCIÓN 7: PARTICIPANTES */}
-      {/* ============================================ */}
-      <div style={seccionStyle}>
-        <div style={seccionHeaderStyle}>
-          👥 Participantes ({beneficiarios.length + adultos.length})
-        </div>
-
-        {beneficiarios.length > 0 && (
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{
-              fontSize: '11px', color: '#7A7364',
-              marginBottom: '8px',
-              textTransform: 'uppercase', letterSpacing: '0.5px',
-              fontWeight: '600'
-            }}>
-              Beneficiarios ({beneficiarios.length})
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {beneficiarios.map((p) => {
-  const b = p.beneficiarios?.[0] || null
-                const nombre = b
-                  ? formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
-                  : '(beneficiario eliminado)'
-                return (
-                  <div key={p.id} style={{
-                    padding: '8px 12px',
-                    backgroundColor: '#FAF8F4',
-                    border: '1px solid #E8DEC4',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    color: '#24352A',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: '8px',
-                    flexWrap: 'wrap'
-                  }}>
-                    <span>👤 {nombre}</span>
-                    {b?.rama && (
-                      <span style={{
-                        fontSize: '10px',
-                        color: '#7A7364',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}>
-                        {b.rama}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {adultos.length > 0 && (
-          <div>
-            <div style={{
-              fontSize: '11px', color: '#7A7364',
-              marginBottom: '8px',
-              textTransform: 'uppercase', letterSpacing: '0.5px',
-              fontWeight: '600'
-            }}>
-              Adultos ({adultos.length})
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {adultos.map((p) => (
-                <div key={p.id} style={{
-                  padding: '8px 12px',
-                  backgroundColor: '#FAF8F4',
-                  border: '1px solid #E8DEC4',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  color: '#24352A'
-                }}>
-                  🧑 {p.nombre_libre || '-'}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {beneficiarios.length === 0 && adultos.length === 0 && (
-          <div style={{
-            padding: '16px',
-            textAlign: 'center',
-            color: '#7A7364',
-            fontSize: '12px',
-            fontStyle: 'italic'
-          }}>
-            No hay participantes cargados
-          </div>
-        )}
-      </div>
-
-      {/* ============================================ */}
-      {/* SECCIÓN 8: TRANSPORTES */}
-      {/* ============================================ */}
-      <div style={seccionStyle}>
-        <div style={seccionHeaderStyle}>🚗 Transportes ({transportes.length})</div>
-
-        {transportes.length === 0 ? (
-          <div style={{
-            padding: '16px',
-            textAlign: 'center',
-            color: '#7A7364',
-            fontSize: '12px',
-            fontStyle: 'italic'
-          }}>
-            No hay transportes cargados
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {transportes.map((t) => (
-              <div key={t.id} style={{
-                backgroundColor: '#FAF8F4',
-                border: '2px solid #D1C9B4',
-                borderRadius: '10px',
-                padding: '12px'
-              }}>
-                <div style={{
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  color: '#24352A',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  marginBottom: '10px',
-                  paddingBottom: '8px',
-                  borderBottom: '1px dashed #D1C9B4'
-                }}>
-                  {t.tipo === 'publico' ? '🚌 Transporte contratado' : '🚗 Vehículo propio'}
-                </div>
-
-                {t.tipo === 'publico' ? (
-                  <div style={gridStyle}>
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <div style={labelStyle}>Razón Social</div>
-                      <div style={valorStyle}>{t.razon_social || '-'}</div>
-                    </div>
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <div style={labelStyle}>Dirección</div>
-                      <div style={valorStyle}>{t.direccion || '-'}</div>
-                    </div>
-                    <div>
-                      <div style={labelStyle}>Teléfono</div>
-                      <div style={valorStyle}>{t.telefono || '-'}</div>
-                    </div>
-                    <div>
-                      <div style={labelStyle}>N° Habilitación</div>
-                      <div style={valorStyle}>{t.nro_habilitacion || '-'}</div>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={gridStyle}>
-                    <div>
-                      <div style={labelStyle}>Tipo</div>
-                      <div style={valorStyle}>{t.vehiculo_tipo || '-'}</div>
-                    </div>
-                    <div>
-                      <div style={labelStyle}>Marca</div>
-                      <div style={valorStyle}>{t.vehiculo_marca || '-'}</div>
-                    </div>
-                    <div>
-                      <div style={labelStyle}>Modelo</div>
-                      <div style={valorStyle}>{t.vehiculo_modelo || '-'}</div>
-                    </div>
-                    <div>
-                      <div style={labelStyle}>Patente</div>
-                      <div style={valorStyle}>{t.vehiculo_patente || '-'}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ============================================ */}
-      {/* SECCIÓN 9: HISTORIAL DE ARCHIVOS */}
-      {/* ============================================ */}
+      {/* SECCIÓN 0: HISTORIAL DE ARCHIVOS */}
       <div style={seccionStyle}>
         <div style={seccionHeaderStyle}>📎 Historial de Archivos ({archivos.length})</div>
 
@@ -1275,7 +932,350 @@ export default function PermisoDetalle() {
         )}
       </div>
 
-      {/* Espacio final */}
+      {/* SECCIÓN 1: HORARIOS */}
+      <div style={seccionStyle}>
+        <div style={seccionHeaderStyle}>📅 Horarios</div>
+        <div style={gridStyle}>
+          <div>
+            <div style={labelStyle}>Salida</div>
+            <div style={valorStyle}>{formatFechaHora(permiso.fecha_salida)}</div>
+          </div>
+          <div>
+            <div style={labelStyle}>Llegada</div>
+            <div style={valorStyle}>{formatFechaHora(permiso.fecha_llegada)}</div>
+          </div>
+        </div>
+        {permiso.es_en_sede && (
+          <div style={{
+            marginTop: '12px',
+            padding: '8px 12px',
+            backgroundColor: '#F0F7F0',
+            border: '1px solid #B8D4B8',
+            borderRadius: '6px',
+            fontSize: '12px',
+            color: '#5C7A5E',
+            textAlign: 'center',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            🏠 El campamento/salida es en la sede del grupo
+          </div>
+        )}
+      </div>
+
+      {/* SECCIÓN 2: UBICACIÓN */}
+      <div style={seccionStyle}>
+        <div style={seccionHeaderStyle}>📍 Ubicación</div>
+        <div style={gridStyle}>
+          <div>
+            <div style={labelStyle}>Provincia</div>
+            <div style={valorStyle}>{permiso.provincia || '-'}</div>
+          </div>
+          <div>
+            <div style={labelStyle}>Ciudad</div>
+            <div style={valorStyle}>{permiso.ciudad || '-'}</div>
+          </div>
+          <div>
+            <div style={labelStyle}>Dirección</div>
+            <div style={valorStyle}>{permiso.direccion || '-'}</div>
+          </div>
+          <div>
+            <div style={labelStyle}>Pueblo cercano</div>
+            <div style={valorStyle}>{permiso.pueblo_cercano || '-'}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECCIÓN 3: PROPIETARIO */}
+      <div style={seccionStyle}>
+        <div style={seccionHeaderStyle}>👤 Datos del Propietario</div>
+        <div style={gridStyle}>
+          <div>
+            <div style={labelStyle}>Nombre y apellido</div>
+            <div style={valorStyle}>{permiso.propietario_nombre || '-'}</div>
+          </div>
+          <div>
+            <div style={labelStyle}>Teléfono</div>
+            <div style={valorStyle}>{permiso.propietario_telefono || '-'}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECCIÓN 4: EMERGENCIAS */}
+      <div style={seccionStyle}>
+        <div style={seccionHeaderStyle}>🚨 Emergencias</div>
+
+        <div style={{ marginBottom: '14px' }}>
+          <div style={{
+            fontSize: '11px', color: '#7A7364',
+            marginBottom: '8px',
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+            fontWeight: '600'
+          }}>
+            Unidad Sanitaria
+          </div>
+          <div style={gridStyle}>
+            <div>
+              <div style={labelStyle}>Nombre</div>
+              <div style={valorStyle}>{permiso.unidad_sanitaria_nombre || '-'}</div>
+            </div>
+            <div>
+              <div style={labelStyle}>Teléfono</div>
+              <div style={valorStyle}>{permiso.unidad_sanitaria_telefono || '-'}</div>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div style={labelStyle}>Dirección</div>
+              <div style={valorStyle}>{permiso.unidad_sanitaria_direccion || '-'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div style={{
+            fontSize: '11px', color: '#7A7364',
+            marginBottom: '8px',
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+            fontWeight: '600'
+          }}>
+            Destacamento Policial
+          </div>
+          <div style={gridStyle}>
+            <div>
+              <div style={labelStyle}>Nombre</div>
+              <div style={valorStyle}>{permiso.destacamento_nombre || '-'}</div>
+            </div>
+            <div>
+              <div style={labelStyle}>Teléfono</div>
+              <div style={valorStyle}>{permiso.destacamento_telefono || '-'}</div>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div style={labelStyle}>Dirección</div>
+              <div style={valorStyle}>{permiso.destacamento_direccion || '-'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECCIÓN 5: CONTACTOS */}
+      <div style={seccionStyle}>
+        <div style={seccionHeaderStyle}>📞 Contactos</div>
+        <div style={gridStyle}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={labelStyle}>Medio de comunicación</div>
+            <div style={valorStyle}>{permiso.medio_comunicacion || '-'}</div>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={labelStyle}>Jefe de Campo</div>
+            <div style={valorStyle}>{permiso.jefe_campo || '-'}</div>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={labelStyle}>Zona Scouts</div>
+            <div style={valorStyle}>{permiso.zona_scouts || '-'}</div>
+          </div>
+          {permiso.otros_detalles && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div style={labelStyle}>Otros detalles</div>
+              <div style={{ ...valorStyle, whiteSpace: 'pre-wrap' }}>{permiso.otros_detalles}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* SECCIÓN 6: EMAILS DEL JEFE */}
+      <div style={seccionStyle}>
+        <div style={seccionHeaderStyle}>📧 Emails de Contacto</div>
+        <div style={{ marginBottom: '12px' }}>
+          <div style={labelStyle}>Jefe de rama</div>
+          <div style={valorStyle}>{permiso.email_jefe || '-'}</div>
+        </div>
+        {permiso.emails_ayudantes && permiso.emails_ayudantes.length > 0 && (
+          <div>
+            <div style={labelStyle}>Ayudantes</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {permiso.emails_ayudantes.map((email) => (
+                <div key={email} style={valorStyle}>📧 {email}</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* SECCIÓN 7: PARTICIPANTES */}
+      <div style={seccionStyle}>
+        <div style={seccionHeaderStyle}>
+          👥 Participantes ({beneficiarios.length + adultos.length})
+        </div>
+
+        {beneficiarios.length > 0 && (
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{
+              fontSize: '11px', color: '#7A7364',
+              marginBottom: '8px',
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+              fontWeight: '600'
+            }}>
+              Beneficiarios ({beneficiarios.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {beneficiarios.map((p) => {
+                const b = p.beneficiarios?.[0] || null
+                const nombre = b
+                  ? formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
+                  : '(beneficiario eliminado)'
+                return (
+                  <div key={p.id} style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#FAF8F4',
+                    border: '1px solid #E8DEC4',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    color: '#24352A',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '8px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <span>👤 {nombre}</span>
+                    {b?.rama && (
+                      <span style={{
+                        fontSize: '10px',
+                        color: '#7A7364',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                      }}>
+                        {b.rama}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {adultos.length > 0 && (
+          <div>
+            <div style={{
+              fontSize: '11px', color: '#7A7364',
+              marginBottom: '8px',
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+              fontWeight: '600'
+            }}>
+              Adultos ({adultos.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {adultos.map((p) => (
+                <div key={p.id} style={{
+                  padding: '8px 12px',
+                  backgroundColor: '#FAF8F4',
+                  border: '1px solid #E8DEC4',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  color: '#24352A'
+                }}>
+                  👤 {p.nombre_libre || '-'}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {beneficiarios.length === 0 && adultos.length === 0 && (
+          <div style={{
+            padding: '16px',
+            textAlign: 'center',
+            color: '#7A7364',
+            fontSize: '12px',
+            fontStyle: 'italic'
+          }}>
+            No hay participantes cargados
+          </div>
+        )}
+      </div>
+
+      {/* SECCIÓN 8: TRANSPORTES */}
+      <div style={seccionStyle}>
+        <div style={seccionHeaderStyle}>🚗 Transportes ({transportes.length})</div>
+
+        {transportes.length === 0 ? (
+          <div style={{
+            padding: '16px',
+            textAlign: 'center',
+            color: '#7A7364',
+            fontSize: '12px',
+            fontStyle: 'italic'
+          }}>
+            No hay transportes cargados
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {transportes.map((t) => (
+              <div key={t.id} style={{
+                backgroundColor: '#FAF8F4',
+                border: '2px solid #D1C9B4',
+                borderRadius: '10px',
+                padding: '12px'
+              }}>
+                <div style={{
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  color: '#24352A',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '10px',
+                  paddingBottom: '8px',
+                  borderBottom: '1px dashed #D1C9B4'
+                }}>
+                  {t.tipo === 'publico' ? '🚌 Transporte contratado' : '🚗 Vehículo propio'}
+                </div>
+
+                {t.tipo === 'publico' ? (
+                  <div style={gridStyle}>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <div style={labelStyle}>Razón Social</div>
+                      <div style={valorStyle}>{t.razon_social || '-'}</div>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <div style={labelStyle}>Dirección</div>
+                      <div style={valorStyle}>{t.direccion || '-'}</div>
+                    </div>
+                    <div>
+                      <div style={labelStyle}>Teléfono</div>
+                      <div style={valorStyle}>{t.telefono || '-'}</div>
+                    </div>
+                    <div>
+                      <div style={labelStyle}>N° Habilitación</div>
+                      <div style={valorStyle}>{t.nro_habilitacion || '-'}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={gridStyle}>
+                    <div>
+                      <div style={labelStyle}>Tipo</div>
+                      <div style={valorStyle}>{t.vehiculo_tipo || '-'}</div>
+                    </div>
+                    <div>
+                      <div style={labelStyle}>Marca</div>
+                      <div style={valorStyle}>{t.vehiculo_marca || '-'}</div>
+                    </div>
+                    <div>
+                      <div style={labelStyle}>Modelo</div>
+                      <div style={valorStyle}>{t.vehiculo_modelo || '-'}</div>
+                    </div>
+                    <div>
+                      <div style={labelStyle}>Patente</div>
+                      <div style={valorStyle}>{t.vehiculo_patente || '-'}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div style={{ height: '40px' }} />
     </div>
   )
@@ -1336,7 +1336,6 @@ const inputStyle: React.CSSProperties = {
   backgroundColor: 'white'
 }
 
-// Helper para botones de acción
 function botonAccionStyle(color: string): React.CSSProperties {
   return {
     padding: '8px 14px',
