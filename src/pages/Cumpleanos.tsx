@@ -539,7 +539,7 @@ function CardCumple({ persona, destacado = false, compacto = false }: { persona:
             {colorRama.emoji} {persona.rama}
           </span>
           <span>🎂 {formatearCumple(persona.proximoCumple)}</span>
-          <span>👤 {persona.edadQueCumple} años</span>
+          <span>👤 Cumple {persona.edadQueCumple} años</span>
         </div>
       </div>
 
