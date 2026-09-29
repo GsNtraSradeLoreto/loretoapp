@@ -218,8 +218,37 @@ export default function PermisoDetalle() {
           : null
       }))
 
+      // ✅ Ordenar: beneficiarios primero (por apellido), después adultos (por nombre)
+      const participantesOrdenados = [...participantesConBenef].sort((a, b) => {
+        // Beneficiarios primero, adultos después
+        if (a.tipo !== b.tipo) {
+          if (a.tipo === 'beneficiario') return -1
+          if (b.tipo === 'beneficiario') return 1
+        }
+
+        // Dentro de beneficiarios: ordenar por apellido → nombre
+        if (a.tipo === 'beneficiario') {
+          const bA = a.beneficiarios?.[0]
+          const bB = b.beneficiarios?.[0]
+          if (bA && bB) {
+            const cmpApellido = bA.apellido.localeCompare(bB.apellido, 'es', { sensitivity: 'base' })
+            if (cmpApellido !== 0) return cmpApellido
+            return bA.nombre.localeCompare(bB.nombre, 'es', { sensitivity: 'base' })
+          }
+        }
+
+        // Dentro de adultos: ordenar por nombre libre
+        if (a.tipo === 'adulto') {
+          const nombreA = a.nombre_libre || ''
+          const nombreB = b.nombre_libre || ''
+          return nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' })
+        }
+
+        return 0
+      })
+
       setPermiso(permisoRes.data)
-      setParticipantes(participantesConBenef)
+      setParticipantes(participantesOrdenados)
       setTransportes(transportesRes.data || [])
       setArchivos(archivosRes.data || [])
       setComentarioGeneral(permisoRes.data.comentario_jefatura || '')
