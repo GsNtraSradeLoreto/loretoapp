@@ -9,6 +9,7 @@ interface Profile {
   rol: string
   rama_asignada: string | null
   activo: boolean
+  fecha_nacimiento: string | null
 }
 
 interface AuthContextType {
@@ -17,6 +18,7 @@ interface AuthContextType {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  actualizarFechaNacimiento: (fecha: string) => Promise<void>
   // Roles base
   isSuperAdmin: boolean
   isJefatura: boolean
@@ -139,6 +141,20 @@ email: email || '',
     setProfile(null)
   }
 
+    const actualizarFechaNacimiento = async (fecha: string) => {
+    if (!profile?.id) throw new Error('No hay usuario logueado')
+
+    const { error } = await supabase
+      .from('usuarios')
+      .update({ fecha_nacimiento: fecha })
+      .eq('id', profile.id)
+
+    if (error) throw error
+
+    // Actualizar el perfil local
+    setProfile({ ...profile, fecha_nacimiento: fecha })
+  }
+
   // =============================================
   // PERMISOS POR ROL
   // =============================================
@@ -232,6 +248,7 @@ email: email || '',
       loading,
       signIn,
       signOut,
+      actualizarFechaNacimiento,
       isSuperAdmin,
       isJefatura,
       isTesorero,

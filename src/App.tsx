@@ -16,6 +16,7 @@ const Auditoria = lazy(() => import('./pages/Auditoria'))
 const VidaScout = lazy(() => import('./pages/VidaScout'))
 const Formacion = lazy(() => import('./pages/Formacion'))
 const Permisos = lazy(() => import('./pages/Permisos'))
+const Cumpleanos = lazy(() => import('./pages/Cumpleanos'))
 const PermisoNuevo = lazy(() => import('./pages/PermisoNuevo'))
 const PermisoDetalle = lazy(() => import('./pages/PermisoDetalle'))
 
@@ -133,10 +134,10 @@ function AppRoutes() {
             </Layout>
           </PrivateRoute>
         } />
-                <Route path="/permisos" element={
+                <Route path="/cumpleanos" element={
           <PrivateRoute>
             <Layout>
-              <Permisos />
+              <Cumpleanos />
             </Layout>
           </PrivateRoute>
         } />
