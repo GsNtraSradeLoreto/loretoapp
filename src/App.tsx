@@ -134,10 +134,17 @@ function AppRoutes() {
             </Layout>
           </PrivateRoute>
         } />
-                <Route path="/cumpleanos" element={
+        <Route path="/cumpleanos" element={
           <PrivateRoute>
             <Layout>
               <Cumpleanos />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/permisos" element={
+          <PrivateRoute>
+            <Layout>
+              <Permisos />
             </Layout>
           </PrivateRoute>
         } />
