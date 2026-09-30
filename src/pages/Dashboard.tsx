@@ -55,8 +55,9 @@ export default function Dashboard() {
 
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
+  const esSubJefe = rolData.tipo === 'subjefe'
   const esAyudante = rolData.tipo === 'ayudante'
-  const esDirigente = esJefe || esAyudante
+  const esDirigente = esJefe || esSubJefe || esAyudante
   const ramaAsignada = rolData.rama
 
   const verTodas = isSuperAdmin || isJefatura || isAdministrador || isTesorero

@@ -20,6 +20,7 @@ interface Beneficiario {
   fecha_entrega_uniforme: string
   tiene_hermanos: boolean
   observaciones: string
+  hizo_tada: boolean
   foto_url: string | null
 }
 
@@ -498,7 +499,8 @@ export default function BeneficiarioDetalle() {
     tiene_promesa: false,
     fecha_promesa: '',
     padrino: '',
-    observaciones: ''
+    observaciones: '',
+    hizo_tada: false
   })
   const [savingInfoInline, setSavingInfoInline] = useState(false)
   const [messageInfoInline, setMessageInfoInline] = useState({ text: '', type: '' })
@@ -554,6 +556,8 @@ export default function BeneficiarioDetalle() {
 
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
+  const esSubJefe = rolData.tipo === 'subjefe'
+  const esAyudante = rolData.tipo === 'ayudante'
   const ramaAsignada = rolData.rama
   const esSuperAdmin = isSuperAdmin
   const esJefatura = isJefatura
@@ -571,6 +575,7 @@ export default function BeneficiarioDetalle() {
     if (!beneficiario) return false
     if (isSuperAdmin || isJefatura) return true
     if (esJefe && ramaAsignada === beneficiario.rama) return true
+    if (esSubJefe && ramaAsignada === beneficiario.rama) return true
     return false
   }
 
@@ -627,7 +632,7 @@ export default function BeneficiarioDetalle() {
         query = query.eq('estado', 'activo')
       }
 
-      if ((esJefe || rolData.tipo === 'ayudante') && ramaAsignada) {
+      if ((esJefe || esSubJefe || esAyudante) && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
       }
 
@@ -853,6 +858,7 @@ setPagos(pagosOrdenados)
       if (!beneficiario) return false
       if (esSuperAdmin || esJefatura) return true
       if (esJefe && ramaAsignada === beneficiario.rama) return true
+      if (esSubJefe && ramaAsignada === beneficiario.rama) return true
       return false
     }
 
@@ -1938,7 +1944,8 @@ setPagos(pagosOrdenados)
       tiene_promesa: tienePromesa,
       fecha_promesa: fechaPromesa,
       padrino: padrino,
-      observaciones: beneficiario.observaciones || ''
+      observaciones: beneficiario.observaciones || '',
+      hizo_tada: beneficiario.hizo_tada || false
     })
     setEditandoInfoInline(true)
     setMessageInfoInline({ text: '', type: '' })
@@ -1960,7 +1967,8 @@ setPagos(pagosOrdenados)
         .update({
           tiene_uniforme: infoInlineForm.tiene_uniforme,
           fecha_entrega_uniforme: infoInlineForm.fecha_entrega_uniforme || null,
-          observaciones: infoInlineForm.observaciones.trim() || null
+          observaciones: infoInlineForm.observaciones.trim() || null,
+          hizo_tada: infoInlineForm.hizo_tada
         })
         .eq('id', beneficiario.id)
 
@@ -2523,15 +2531,30 @@ setPagos(pagosOrdenados)
           </div>
         )}
 
-        {/* TADA (Caminantes/Rovers) - solo lectura */}
+        {/* TADA (Caminantes/Rovers) - editable desde acá */}
         {(beneficiario.rama === 'Caminantes' || beneficiario.rama === 'Rovers') && (
           <div style={{ marginBottom: '12px' }}>
-            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>TADA</p>
-            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
-              {beneficiario.rama === 'Caminantes'
-                ? (progresionCaminantes?.hizo_tada ? '✅ Realizado' : '❌ No realizado')
-                : (progresionRovers?.nombre_totem ? '✅ Realizado' : '❌ No realizado')}
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
+              TADA (Taller para Adquisición de Derechos Asociativos)
             </p>
+            {editandoInfoInline ? (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '6px' }}>
+                <input
+                  type="checkbox"
+                  checked={infoInlineForm.hizo_tada}
+                  onChange={(e) => setInfoInlineForm({ ...infoInlineForm, hizo_tada: e.target.checked })}
+                  disabled={savingInfoInline}
+                  style={{ width: '18px', height: '18px', accentColor: COL.verdeScout }}
+                />
+                <span style={{ fontSize: '14px', fontFamily: 'Oswald, sans-serif', color: COL.textoPrincipal }}>
+                  Realizó el TADA
+                </span>
+              </label>
+            ) : (
+              <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0' }}>
+                {beneficiario.hizo_tada ? '✅ Realizado' : '❌ No realizado'}
+              </p>
+            )}
           </div>
         )}
 

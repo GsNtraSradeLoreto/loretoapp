@@ -25,7 +25,10 @@ interface AuthContextType {
   isTesorero: boolean
   isAdministrador: boolean
   // Roles de rama
-  getRolData: () => { tipo: 'jefe' | 'ayudante' | 'viewer' | 'admin', rama: string | null }
+  getRolData: () => { tipo: 'jefe' | 'subjefe' | 'ayudante' | 'viewer' | 'admin', rama: string | null }
+  esJefe: boolean
+  esSubJefe: boolean
+  esAyudante: boolean
   // Permisos generales
   canViewAll: boolean
   canEditAll: boolean
@@ -169,14 +172,15 @@ email: email || '',
 
   // Roles de rama
   const esJefe = rol === 'JefeManada' || rol === 'JefeUnidad' || rol === 'JefeCaminantes' || rol === 'JefeRovers'
+  const esSubJefe = rol === 'SubJefeManada' || rol === 'SubJefeUnidad' || rol === 'SubJefeCaminantes' || rol === 'SubJefeRovers'
   const esAyudante = rol === 'AyudanteManada' || rol === 'AyudanteUnidad' || rol === 'AyudanteCaminantes' || rol === 'AyudanteRovers'
 
   // Obtener la rama del rol
   const getRamaFromRol = (rol: string): string | null => {
-    if (rol === 'JefeManada' || rol === 'AyudanteManada') return 'Manada'
-    if (rol === 'JefeUnidad' || rol === 'AyudanteUnidad') return 'Unidad Scout'
-    if (rol === 'JefeCaminantes' || rol === 'AyudanteCaminantes') return 'Caminantes'
-    if (rol === 'JefeRovers' || rol === 'AyudanteRovers') return 'Rovers'
+    if (rol === 'JefeManada' || rol === 'SubJefeManada' || rol === 'AyudanteManada') return 'Manada'
+    if (rol === 'JefeUnidad' || rol === 'SubJefeUnidad' || rol === 'AyudanteUnidad') return 'Unidad Scout'
+    if (rol === 'JefeCaminantes' || rol === 'SubJefeCaminantes' || rol === 'AyudanteCaminantes') return 'Caminantes'
+    if (rol === 'JefeRovers' || rol === 'SubJefeRovers' || rol === 'AyudanteRovers') return 'Rovers'
     return null
   }
 
@@ -188,6 +192,7 @@ email: email || '',
       return { tipo: 'admin' as const, rama: null }
     }
     if (esJefe) return { tipo: 'jefe' as const, rama: ramaAsignada }
+    if (esSubJefe) return { tipo: 'subjefe' as const, rama: ramaAsignada }
     if (esAyudante) return { tipo: 'ayudante' as const, rama: ramaAsignada }
     return { tipo: 'viewer' as const, rama: null }
   }
@@ -200,6 +205,7 @@ email: email || '',
   const canViewRama = (rama: string): boolean => {
     if (canViewAll) return true
     if (esJefe && ramaAsignada === rama) return true
+    if (esSubJefe && ramaAsignada === rama) return true
     if (esAyudante && ramaAsignada === rama) return true
     return false
   }
@@ -254,6 +260,9 @@ email: email || '',
       isTesorero,
       isAdministrador,
       getRolData,
+      esJefe,
+      esSubJefe,
+      esAyudante,
       canViewAll,
       canViewRama,
       canEditAll,

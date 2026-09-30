@@ -64,7 +64,6 @@ interface ProgresionCaminantes {
   tiene_promesa_scout: boolean
   fecha_promesa_scout: string
   padrino_promesa_scout: string
-  hizo_tada: boolean
   progresion_actual: string
   oculto: boolean
 }
@@ -400,7 +399,6 @@ export default function VidaScout() {
     tiene_promesa_scout: false,
     fecha_promesa_scout: '',
     padrino_promesa_scout: '',
-    hizo_tada: false,
     progresion_actual: ''
   })
 
@@ -420,6 +418,7 @@ export default function VidaScout() {
 
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
+  const esSubJefe = rolData.tipo === 'subjefe'
   const esAyudante = rolData.tipo === 'ayudante'
   const ramaAsignada = rolData.rama
   const esSuperAdmin = isSuperAdmin
@@ -438,6 +437,7 @@ export default function VidaScout() {
   const puedeVerRama = (rama: string): boolean => {
     if (esSuperAdmin || esJefatura) return true
     if (esJefe && ramaAsignada === rama) return true
+    if (esSubJefe && ramaAsignada === rama) return true
     if (esAyudante && ramaAsignada === rama) return true
     return false
   }
@@ -446,6 +446,7 @@ export default function VidaScout() {
   const puedeEditarRama = (rama: string): boolean => {
     if (esSuperAdmin || esJefatura) return true
     if (esJefe && ramaAsignada === rama) return true
+    if (esSubJefe && ramaAsignada === rama) return true
     return false
   }
 
@@ -467,7 +468,7 @@ export default function VidaScout() {
         query = query.eq('estado', 'activo')
       }
 
-      if ((esJefe || esAyudante) && ramaAsignada) {
+      if ((esJefe || esSubJefe || esAyudante) && ramaAsignada) {
         query = query.eq('rama', ramaAsignada)
       }
 
@@ -509,13 +510,13 @@ export default function VidaScout() {
     setMostrarOcultas(false)
     setMessage({ text: '', type: '' })
 
-    if ((esJefe || esAyudante) && ramaAsignada) {
+    if ((esJefe || esSubJefe || esAyudante) && ramaAsignada) {
       if (ramaAsignada === 'Manada') setManadaAbierto(true)
       if (ramaAsignada === 'Unidad Scout') setUnidadAbierto(true)
       if (ramaAsignada === 'Caminantes') setCaminantesAbierto(true)
       if (ramaAsignada === 'Rovers') setRoversAbierto(true)
     }
-  }, [id, esJefe, esAyudante, ramaAsignada])
+  }, [id, esJefe, esSubJefe, esAyudante, ramaAsignada])
 
   const loadData = async () => {
     try {
@@ -778,7 +779,6 @@ export default function VidaScout() {
           tiene_promesa_scout: formCaminantes.tiene_promesa_scout,
           fecha_promesa_scout: formCaminantes.fecha_promesa_scout || null,
           padrino_promesa_scout: formCaminantes.padrino_promesa_scout || null,
-          hizo_tada: formCaminantes.hizo_tada,
           progresion_actual: formCaminantes.progresion_actual || null
         })
         .eq('id', progresionCaminantes.id)
@@ -890,7 +890,6 @@ export default function VidaScout() {
       tiene_promesa_scout: progresionCaminantes.tiene_promesa_scout || false,
       fecha_promesa_scout: progresionCaminantes.fecha_promesa_scout || '',
       padrino_promesa_scout: progresionCaminantes.padrino_promesa_scout || '',
-      hizo_tada: progresionCaminantes.hizo_tada || false,
       progresion_actual: progresionCaminantes.progresion_actual || ''
     })
     setEditandoCaminantes(true)
@@ -1590,18 +1589,12 @@ export default function VidaScout() {
                 options={['', ...ELEMENTOS_CAMINANTES]}
                 onChange={v => setFormCaminantes({ ...formCaminantes, elemento4: v })} />
 
-              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: COL.textoPrincipal }}>
                   <input type="checkbox" checked={formCaminantes.tiene_promesa_scout}
                     onChange={e => setFormCaminantes({ ...formCaminantes, tiene_promesa_scout: e.target.checked })}
                     style={{ width: '18px', height: '18px', accentColor: COL.verdeScout }} />
                   Tiene Promesa Scout
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: COL.textoPrincipal }}>
-                  <input type="checkbox" checked={formCaminantes.hizo_tada}
-                    onChange={e => setFormCaminantes({ ...formCaminantes, hizo_tada: e.target.checked })}
-                    style={{ width: '18px', height: '18px', accentColor: COL.verdeScout }} />
-                  Realizó el TADA
                 </label>
               </div>
 
@@ -1639,20 +1632,6 @@ export default function VidaScout() {
             {renderHito('Etapa 3', progresionCaminantes.fecha_etapa3, elementos[2])}
             {renderHito('Etapa 4', progresionCaminantes.fecha_etapa4, elementos[3])}
 
-            {progresionCaminantes.hizo_tada && (
-              <div style={{
-                marginTop: '12px',
-                padding: '10px 12px',
-                backgroundColor: '#FFF8E7',
-                border: '2px solid #F5C842',
-                borderRadius: '10px',
-                fontFamily: 'Oswald, sans-serif',
-                fontSize: 'clamp(12px, 3vw, 14px)',
-                color: COL.textoPrincipal
-              }}>
-                ✅ Realizó el TADA
-              </div>
-            )}
           </>
         )}
       </Seccion>

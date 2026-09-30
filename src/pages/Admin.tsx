@@ -13,6 +13,17 @@ interface Usuario {
   ultimo_acceso: string | null
   creado_en: string
 }
+
+// 🆕 Devuelve la rama que corresponde a un rol (o null si no es rol de rama)
+const getRamaDesdeRol = (rol: string): string | null => {
+  if (rol === 'JefeManada' || rol === 'SubJefeManada' || rol === 'AyudanteManada') return 'Manada'
+  if (rol === 'JefeUnidad' || rol === 'SubJefeUnidad' || rol === 'AyudanteUnidad') return 'Unidad Scout'
+  if (rol === 'JefeCaminantes' || rol === 'SubJefeCaminantes' || rol === 'AyudanteCaminantes') return 'Caminantes'
+  if (rol === 'JefeRovers' || rol === 'SubJefeRovers' || rol === 'AyudanteRovers') return 'Rovers'
+  return null
+}
+
+
 const formatUltimoAcceso = (fecha: string | null) => {
   if (!fecha) return 'Nunca'
   // Si el string no tiene zona horaria, asumimos que es UTC
@@ -62,9 +73,14 @@ export default function Admin() {
 
   const handleRolChange = async (userId: string, newRol: string) => {
     try {
+      const nuevaRama = getRamaDesdeRol(newRol)
+
       const { error } = await supabase
         .from('usuarios')
-        .update({ rol: newRol })
+        .update({
+          rol: newRol,
+          rama_asignada: nuevaRama
+        })
         .eq('id', userId)
 
       if (error) throw error
@@ -124,6 +140,10 @@ export default function Admin() {
       'JefeUnidad': 'verde',
       'JefeCaminantes': 'celeste',
       'JefeRovers': 'rojo',
+      'SubJefeManada': 'amarillo',
+      'SubJefeUnidad': 'verde',
+      'SubJefeCaminantes': 'celeste',
+      'SubJefeRovers': 'rojo',
       'AyudanteManada': 'amarillo',
       'AyudanteUnidad': 'verde',
       'AyudanteCaminantes': 'celeste',
@@ -145,6 +165,10 @@ export default function Admin() {
       'JefeUnidad': '⚜️ Jefe de Unidad',
       'JefeCaminantes': '🏔️ Jefe de Caminantes',
       'JefeRovers': '🔥 Jefe de Rovers',
+      'SubJefeManada': '🐺 Sub-Jefe de Manada',
+      'SubJefeUnidad': '⚜️ Sub-Jefe de Unidad',
+      'SubJefeCaminantes': '🏔️ Sub-Jefe de Caminantes',
+      'SubJefeRovers': '🔥 Sub-Jefe de Rovers',
       'AyudanteManada': '🐺 Ayudante de Manada',
       'AyudanteUnidad': '⚜️ Ayudante de Unidad',
       'AyudanteCaminantes': '🏔️ Ayudante de Caminantes',
@@ -163,6 +187,10 @@ export default function Admin() {
     { value: 'JefeUnidad', label: '⚜️ Jefe de Unidad' },
     { value: 'JefeCaminantes', label: '🏔️ Jefe de Caminantes' },
     { value: 'JefeRovers', label: '🔥 Jefe de Rovers' },
+    { value: 'SubJefeManada', label: '🐺 Sub-Jefe de Manada' },
+    { value: 'SubJefeUnidad', label: '⚜️ Sub-Jefe de Unidad' },
+    { value: 'SubJefeCaminantes', label: '🏔️ Sub-Jefe de Caminantes' },
+    { value: 'SubJefeRovers', label: '🔥 Sub-Jefe de Rovers' },
     { value: 'AyudanteManada', label: '🐺 Ayudante de Manada' },
     { value: 'AyudanteUnidad', label: '⚜️ Ayudante de Unidad' },
     { value: 'AyudanteCaminantes', label: '🏔️ Ayudante de Caminantes' },
@@ -283,7 +311,7 @@ export default function Admin() {
         </div>
         <div style={{ backgroundColor: 'white', borderRadius: '8px', padding: '6px 8px', border: '2px solid #D1C9B4', textAlign: 'center' }}>
           <p style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: 'clamp(14px, 3vw, 20px)', color: '#24352A', margin: 0 }}>
-            {usuarios.filter(u => u.rol.startsWith('Ayudante')).length}
+            {usuarios.filter(u => u.rol.startsWith('Ayudante') || u.rol.startsWith('SubJefe')).length}
           </p>
           <p style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '500', fontSize: 'clamp(8px, 1.5vw, 9px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '2px 0 0 0' }}>
             Ayudantes

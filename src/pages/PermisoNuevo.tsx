@@ -218,17 +218,17 @@ export default function PermisoNuevo() {
 
       const todos = usuariosData || []
 
-      // Ayudantes: solo de la misma rama que el jefe
-      const rolesRama: Record<string, string> = {
-        'Manada': 'AyudanteManada',
-        'Unidad Scout': 'AyudanteUnidad',
-        'Caminantes': 'AyudanteCaminantes',
-        'Rovers': 'AyudanteRovers'
+      // Ayudantes + SubJefes de la misma rama que el jefe
+      const rolesRama: Record<string, string[]> = {
+        'Manada': ['AyudanteManada', 'SubJefeManada'],
+        'Unidad Scout': ['AyudanteUnidad', 'SubJefeUnidad'],
+        'Caminantes': ['AyudanteCaminantes', 'SubJefeCaminantes'],
+        'Rovers': ['AyudanteRovers', 'SubJefeRovers']
       }
 
-      const rolAyudanteDeMiRama = ramaAsignada ? rolesRama[ramaAsignada] : null
-      const ayudantesFiltrados = rolAyudanteDeMiRama
-        ? todos.filter(u => u.rol === rolAyudanteDeMiRama)
+      const rolesDeMiRama = ramaAsignada ? rolesRama[ramaAsignada] : null
+      const ayudantesFiltrados = rolesDeMiRama
+        ? todos.filter(u => rolesDeMiRama.includes(u.rol))
         : []
 
       setAyudantesDisponibles(ayudantesFiltrados)
