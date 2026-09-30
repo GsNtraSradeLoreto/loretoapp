@@ -91,6 +91,13 @@ interface Archivo {
   comentario: string | null
   creado_en: string
 }
+// ============================================
+// DESTINATARIOS FIJOS (siempre reciben copia)
+// ============================================
+const EMAILS_COPIA_FIJA = [
+  'grupo117@scouts.org.ar',
+  'facundofruman@gmail.com'
+]
 
 // ============================================
 // CONFIG DE ESTADOS
@@ -263,14 +270,57 @@ export default function PermisoDetalle() {
   // ============================================
   // HANDLERS
   // ============================================
-  const handleDescargarArchivo = (archivo: Archivo) => {
-    if (archivo.storage_path) {
+  const handleDescargarArchivo = async (archivo: Archivo) => {
+    // Si es un link externo, abrirlo directo (no se puede forzar el nombre)
+    if (!archivo.storage_path && archivo.link_externo) {
+      window.open(archivo.link_externo, '_blank')
+      return
+    }
+
+    if (!archivo.storage_path) return
+
+    try {
+      // 1) Obtener la URL pública del archivo en el bucket
+      const { data } = supabase.storage
+        .from('permisos-programas')
+        .getPublicUrl(archivo.storage_path)
+
+      const url = data.publicUrl
+
+      // 2) Descargar como blob (para poder forzar el nombre)
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('No se pudo descargar el archivo')
+
+      const blob = await response.blob()
+
+      // 3) Armar el nombre final: preferimos el original
+      const nombreOriginal = archivo.nombre_archivo || 'archivo'
+      const extStorage = archivo.storage_path.split('.').pop() || ''
+      const tieneExtension = /\.[a-z0-9]+$/i.test(nombreOriginal)
+      const nombreFinal = tieneExtension
+        ? nombreOriginal
+        : extStorage
+          ? `${nombreOriginal}.${extStorage}`
+          : nombreOriginal
+
+      // 4) Crear un link invisible y simular click
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = nombreFinal
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+
+      // 5) Limpiar el blob URL
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    } catch (error: any) {
+      console.error('Error al descargar:', error)
+      // Fallback: si falla el fetch, abrir en pestaña nueva
       const { data } = supabase.storage
         .from('permisos-programas')
         .getPublicUrl(archivo.storage_path)
       window.open(data.publicUrl, '_blank')
-    } else if (archivo.link_externo) {
-      window.open(archivo.link_externo, '_blank')
     }
   }
 
@@ -334,13 +384,17 @@ export default function PermisoDetalle() {
       try {
         const destinatarios = [
           permiso.email_jefe,
-          ...(permiso.emails_ayudantes || [])
+          ...(permiso.emails_ayudantes || []),
+          ...EMAILS_COPIA_FIJA
         ].filter((e): e is string => !!e)
 
-        if (destinatarios.length > 0) {
+        // ✅ Eliminar duplicados (por si alguno ya estaba)
+        const destinatariosUnicos = Array.from(new Set(destinatarios))
+
+        if (destinatariosUnicos.length > 0) {
           await enviarEmail({
             tipo: 'devolucion',
-            destinatarios,
+            destinatarios: destinatariosUnicos,
             datos: {
               permiso_id: permiso.id,
               jefatura_nombre: nombreCompleto || 'Jefatura',
@@ -436,13 +490,17 @@ export default function PermisoDetalle() {
       try {
         const destinatarios = [
           permiso.email_jefe,
-          ...(permiso.emails_ayudantes || [])
+          ...(permiso.emails_ayudantes || []),
+          ...EMAILS_COPIA_FIJA
         ].filter((e): e is string => !!e)
 
-        if (destinatarios.length > 0) {
+        // ✅ Eliminar duplicados
+        const destinatariosUnicos = Array.from(new Set(destinatarios))
+
+        if (destinatariosUnicos.length > 0) {
           await enviarEmail({
             tipo: 'cargado',
-            destinatarios,
+            destinatarios: destinatariosUnicos,
             datos: {
               permiso_id: permiso.id,
               fecha_salida: formatFechaCorta(permiso.fecha_salida)
