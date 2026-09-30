@@ -570,12 +570,20 @@ export default function BeneficiarioDetalle() {
     return isSuperAdmin || isJefatura
   }
 
-  // ✅ INFORMACIÓN (uniforme/promesa/obs): superadmin, jefatura y jefe de su rama
+  // ✅ INFORMACIÓN (uniforme/promesa/obs): superadmin, jefatura, jefe y subjefe de su rama
   const puedeEditarInformacion = (): boolean => {
     if (!beneficiario) return false
     if (isSuperAdmin || isJefatura) return true
     if (esJefe && ramaAsignada === beneficiario.rama) return true
     if (esSubJefe && ramaAsignada === beneficiario.rama) return true
+    return false
+  }
+
+  // ✅ PAGOS (crear): superadmin, tesorero y jefe de su rama. SubJefes y Ayudantes NO.
+  const puedeCrearPagos = (): boolean => {
+    if (!beneficiario) return false
+    if (isSuperAdmin || isTesorero) return true
+    if (esJefe && ramaAsignada === beneficiario.rama) return true
     return false
   }
 
@@ -2597,7 +2605,7 @@ setPagos(pagosOrdenados)
         titulo="Pagos"
         color={COL.terracota}
         accion={
-          puedeEditarInformacion() && (
+          puedeCrearPagos() && (
             <button
               onClick={handleAbrirFormPago}
               style={{
