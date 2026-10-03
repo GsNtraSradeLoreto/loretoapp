@@ -27,6 +27,8 @@ interface Movimiento {
   nombre_libre: string | null
   fecha_pago: string
   monto: number
+  pagado_por?: string | null
+  recibo_entregado?: boolean | null
 }
 
 interface Observacion {
@@ -77,19 +79,6 @@ const COLORES = {
 }
 
 // ============================================
-// HELPERS
-// ============================================
-const formatFecha = (fecha: string | null | undefined) => {
-  if (!fecha) return ''
-  const partes = fecha.split('-')
-  if (partes.length !== 3) return ''
-  return `${parseInt(partes[2])}/${parseInt(partes[1])}`
-}
-
-const formatMonto = (monto: number) => {
-  return `$${monto.toLocaleString('es-AR')}`
-}
-// ============================================
 // HOOK: Detectar mobile
 // ============================================
 function useIsMobile() {
@@ -106,6 +95,20 @@ function useIsMobile() {
   }, [])
 
   return isMobile
+}
+
+// ============================================
+// HELPERS
+// ============================================
+const formatFecha = (fecha: string | null | undefined) => {
+  if (!fecha) return ''
+  const partes = fecha.split('-')
+  if (partes.length !== 3) return ''
+  return `${parseInt(partes[2])}/${parseInt(partes[1])}`
+}
+
+const formatMonto = (monto: number) => {
+  return `$${monto.toLocaleString('es-AR')}`
 }
 
 const getNombreRama = (rama: Rama) => {
@@ -258,19 +261,34 @@ export default function Planillas() {
   // CRUD
   const crearMovimiento = async (
     concepto: Concepto, rama: Rama, beneficiarioId: string | null,
-    fecha: string, monto: number, nombreLibre?: string, categoria?: string
+    fecha: string, monto: number, pagadoPor?: string,
+    reciboEntregado?: boolean,
+    nombreLibre?: string, categoria?: string
   ) => {
     try {
-      const { error } = await supabase.from('planilla_movimientos').insert({
-        anio: ANIO_ACTUAL, rama, concepto,
-        beneficiario_id: beneficiarioId,
-        nombre_libre: nombreLibre || null,
-        categoria: categoria || 'beneficiario',
-        fecha_pago: fecha, monto,
-        creado_por: profile?.id
-      })
+      const { data: nuevoMov, error } = await supabase
+        .from('planilla_movimientos')
+        .insert({
+          anio: ANIO_ACTUAL, rama, concepto,
+          beneficiario_id: beneficiarioId,
+          nombre_libre: nombreLibre || null,
+          categoria: categoria || 'beneficiario',
+          fecha_pago: fecha, monto,
+          pagado_por: pagadoPor || 'familia',
+          recibo_entregado: reciboEntregado !== undefined ? reciboEntregado : true,
+          creado_por: profile?.id
+        })
+        .select()
+        .single()
+
       if (error) throw error
-      await cargarDatos(concepto, rama, true)
+
+      // ✅ Actualizar solo el estado local (sin recargar todo)
+      const key = `${concepto}-${rama}`
+      setMovimientos(prev => ({
+        ...prev,
+        [key]: [...(prev[key] || []), nuevoMov]
+      }))
     } catch (error) {
       console.error('Error al crear movimiento:', error)
       alert('Error al guardar el pago')
@@ -278,15 +296,30 @@ export default function Planillas() {
   }
 
   const actualizarMovimiento = async (
-    concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number
+    concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number,
+    pagadoPor?: string, reciboEntregado?: boolean
   ) => {
     try {
-      const { error } = await supabase
+      const { data: movActualizado, error } = await supabase
         .from('planilla_movimientos')
-        .update({ fecha_pago: fecha, monto })
+        .update({
+          fecha_pago: fecha,
+          monto,
+          pagado_por: pagadoPor || 'familia',
+          recibo_entregado: reciboEntregado !== undefined ? reciboEntregado : true
+        })
         .eq('id', id)
+        .select()
+        .single()
+
       if (error) throw error
-      await cargarDatos(concepto, rama, true)
+
+      // ✅ Actualizar solo el estado local
+      const key = `${concepto}-${rama}`
+      setMovimientos(prev => ({
+        ...prev,
+        [key]: (prev[key] || []).map(m => m.id === id ? movActualizado : m)
+      }))
     } catch (error) {
       console.error('Error al actualizar:', error)
       alert('Error al guardar')
@@ -297,7 +330,13 @@ export default function Planillas() {
     try {
       const { error } = await supabase.from('planilla_movimientos').delete().eq('id', id)
       if (error) throw error
-      await cargarDatos(concepto, rama, true)
+
+      // ✅ Actualizar solo el estado local
+      const key = `${concepto}-${rama}`
+      setMovimientos(prev => ({
+        ...prev,
+        [key]: (prev[key] || []).filter(m => m.id !== id)
+      }))
     } catch (error) {
       console.error('Error al eliminar:', error)
       alert('Error al eliminar')
@@ -309,13 +348,20 @@ export default function Planillas() {
     texto: string, observacionId?: string, nombreLibre?: string
   ) => {
     try {
+      const key = `${concepto}-${rama}`
+
       if (observacionId) {
         if (texto.trim() === '') {
           const { error } = await supabase
             .from('planilla_observaciones').delete().eq('id', observacionId)
           if (error) throw error
+
+          setObservaciones(prev => ({
+            ...prev,
+            [key]: (prev[key] || []).filter(o => o.id !== observacionId)
+          }))
         } else {
-          const { error } = await supabase
+          const { data: obsActualizada, error } = await supabase
             .from('planilla_observaciones')
             .update({
               observacion: texto,
@@ -323,19 +369,34 @@ export default function Planillas() {
               actualizado_en: new Date().toISOString()
             })
             .eq('id', observacionId)
+            .select()
+            .single()
           if (error) throw error
+
+          setObservaciones(prev => ({
+            ...prev,
+            [key]: (prev[key] || []).map(o => o.id === observacionId ? obsActualizada : o)
+          }))
         }
       } else if (texto.trim() !== '') {
-        const { error } = await supabase.from('planilla_observaciones').insert({
-          anio: ANIO_ACTUAL, rama, concepto,
-          beneficiario_id: beneficiarioId,
-          nombre_libre: nombreLibre || null,
-          observacion: texto,
-          actualizado_por: profile?.id
-        })
+        const { data: nuevaObs, error } = await supabase
+          .from('planilla_observaciones')
+          .insert({
+            anio: ANIO_ACTUAL, rama, concepto,
+            beneficiario_id: beneficiarioId,
+            nombre_libre: nombreLibre || null,
+            observacion: texto,
+            actualizado_por: profile?.id
+          })
+          .select()
+          .single()
         if (error) throw error
+
+        setObservaciones(prev => ({
+          ...prev,
+          [key]: [...(prev[key] || []), nuevaObs]
+        }))
       }
-      await cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al guardar observación:', error)
       alert('Error al guardar observación')
@@ -551,21 +612,75 @@ export default function Planillas() {
                                     )}
                                   </div>
 
-                                  {/* Tabla (solo en desktop) */}
+                                  {/* Cartel total + Tabla (solo desktop) */}
                                   {!isMobile && (
-                                    <TablaPlanilla
-                                      concepto={key}
-                                      rama={rama}
-                                      beneficiarios={beneficiarios[ramaKey] || []}
-                                      movimientos={movimientos[ramaKey] || []}
-                                      observaciones={observaciones[ramaKey] || []}
-                                      config={config}
-                                      puedeEditar={puedeEditar}
-                                      onCrear={crearMovimiento}
-                                      onActualizar={actualizarMovimiento}
-                                      onEliminar={eliminarMovimiento}
-                                      onGuardarObservacion={guardarObservacion}
-                                    />
+                                    <>
+                                      {/* Banner de total */}
+                                      <div style={{
+                                        backgroundColor: COLORES.verdeScout,
+                                        color: 'white',
+                                        borderRadius: '10px',
+                                        padding: '12px 16px',
+                                        marginBottom: '10px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        fontFamily: 'Oswald, sans-serif',
+                                        flexWrap: 'wrap',
+                                        gap: '8px'
+                                      }}>
+                                        <span style={{
+                                          fontSize: 'clamp(12px, 2.5vw, 14px)',
+                                          fontWeight: '700',
+                                          textTransform: 'uppercase',
+                                          letterSpacing: '0.5px'
+                                        }}>
+                                          TOTAL {key === 'afiliacion' ? 'AFILIACIÓN' : key === 'cuotas' ? 'CUOTAS' : key === 'camp_corto' ? 'CAMPAMENTO CORTO' : 'CAMPAMENTO ANUAL'} {rama.toUpperCase()}
+                                        </span>
+                                        <span style={{
+                                          fontSize: 'clamp(16px, 3.5vw, 20px)',
+                                          fontWeight: '700',
+                                          color: '#F3ECD8'
+                                        }}>
+                                          {formatMonto(
+                                            (movimientos[ramaKey] || []).reduce((sum, m) => sum + m.monto, 0)
+                                          )}
+                                        </span>
+                                      </div>
+
+                                      {/* Tabla */}
+                                      <TablaPlanilla
+                                        concepto={key}
+                                        rama={rama}
+                                        beneficiarios={beneficiarios[ramaKey] || []}
+                                        movimientos={movimientos[ramaKey] || []}
+                                        observaciones={observaciones[ramaKey] || []}
+                                        config={config}
+                                        puedeEditar={puedeEditar}
+                                        onCrear={crearMovimiento}
+                                        onActualizar={actualizarMovimiento}
+                                        onEliminar={eliminarMovimiento}
+                                        onGuardarObservacion={guardarObservacion}
+                                      />
+
+                                      {/* Banner leyenda recibos */}
+                                      <div style={{
+                                        marginTop: '10px',
+                                        padding: '8px 12px',
+                                        backgroundColor: '#FEF3C7',
+                                        border: `1.5px solid ${COLORES.dorado}`,
+                                        borderRadius: '8px',
+                                        fontFamily: 'Oswald, sans-serif',
+                                        fontSize: 'clamp(10px, 2.2vw, 12px)',
+                                        color: '#7A5C00',
+                                        fontWeight: '600',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px',
+                                        textAlign: 'center'
+                                      }}>
+                                        🟨 RESALTADAS EN AMARILLO LOS RECIBOS NO ENTREGADOS
+                                      </div>
+                                    </>
                                   )}
                                 </>
                               )}
@@ -599,17 +714,17 @@ function TablaPlanilla({
   observaciones: Observacion[]
   config: any
   puedeEditar: boolean
-  onCrear: (concepto: Concepto, rama: Rama, benefId: string | null, fecha: string, monto: number, nombreLibre?: string, categoria?: string) => void
-  onActualizar: (concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number) => void
+  onCrear: (concepto: Concepto, rama: Rama, benefId: string | null, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean, nombreLibre?: string, categoria?: string) => void
+  onActualizar: (concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onEliminar: (concepto: Concepto, rama: Rama, id: string) => void
   onGuardarObservacion: (concepto: Concepto, rama: Rama, benefId: string | null, texto: string, obsId?: string, nombreLibre?: string) => void
 }) {
   const esCuotas = concepto === 'cuotas'
   const esCamp = concepto === 'camp_corto' || concepto === 'camp_anual'
 
-  // Máximo de pagos (para afiliación y camps)
+  // Máximo de pagos (para afiliación y camps) — solo pagos de FAMILIA
   const maxPagos = esCuotas ? 0 : Math.max(2, ...beneficiarios.map(b => {
-    return movimientos.filter(m => m.beneficiario_id === b.id).length
+    return movimientos.filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo').length
   }))
 
   // Separar activos e inactivos
@@ -630,28 +745,23 @@ function TablaPlanilla({
     )
   }
 
-  // Totales por columna (para el footer)
   const getTotalMes = (mesKey: string) =>
     movimientos
       .filter(m => m.fecha_pago.startsWith(`2026-${mesKey}`))
       .reduce((sum, m) => sum + m.monto, 0)
-
-  const totalGeneral = movimientos.reduce((sum, m) => sum + m.monto, 0)
 
   return (
     <div style={{
       overflowX: 'auto',
       WebkitOverflowScrolling: 'touch',
       border: `2px solid ${COLORES.bordeSuave}`,
-      borderRadius: '10px',
-      position: 'relative'
+      borderRadius: '10px'
     }}>
       <table style={{
         borderCollapse: 'separate',
         borderSpacing: 0,
-        fontSize: 'clamp(10px, 2.2vw, 12px)',
+        fontSize: 'clamp(11px, 2.3vw, 13px)',
         fontFamily: 'Oswald, sans-serif',
-        minWidth: esCuotas ? '800px' : '600px',
         width: '100%'
       }}>
         <thead>
@@ -665,23 +775,46 @@ function TablaPlanilla({
             </th>
             {esCuotas ? (
               MESES_CUOTAS.map(m => (
-                <th key={m.key} style={{ ...thNormal, minWidth: '55px' }}>{m.label}</th>
+                <th key={m.key} style={{
+                  ...thNormal,
+                  padding: '8px 6px',
+                  minWidth: '90px'
+                }}>{m.label}</th>
               ))
             ) : (
               Array.from({ length: maxPagos }, (_, i) => (
-                <th key={i} style={{ ...thNormal, minWidth: '70px' }}>PAGO {i + 1}</th>
+                <th key={i} style={{
+                  ...thNormal,
+                  padding: '8px 6px',
+                  minWidth: '110px'
+                }}>PAGO {i + 1}</th>
               ))
             )}
-            <th style={{ ...thStickyRight, backgroundColor: COLORES.dorado, minWidth: '90px' }}>
-              TOTAL
-            </th>
             {esCamp && (
-              <th style={{ ...thStickyRight, backgroundColor: COLORES.terracota, minWidth: '100px', right: '90px' }}>
+              <th style={{
+                ...thNormal,
+                backgroundColor: COLORES.terracota,
+                minWidth: '100px',
+                padding: '8px 6px'
+              }}>
                 FALTA PAGAR
               </th>
             )}
-            <th style={{ ...thStickyRight, minWidth: '40px', width: '40px', right: esCamp ? '190px' : '90px' }}>
-              💬
+            <th style={{
+              ...thNormal,
+              minWidth: '180px',
+              maxWidth: '300px',
+              padding: '8px 8px',
+              textAlign: 'left'
+            }}>
+              OBSERVACIONES
+            </th>
+            <th style={{
+              ...thNormal,
+              minWidth: '110px',
+              padding: '8px 6px'
+            }}>
+              PAGÓ EL GRUPO
             </th>
           </tr>
         </thead>
@@ -690,6 +823,9 @@ function TablaPlanilla({
             const movsBenef = movimientos
               .filter(m => m.beneficiario_id === b.id)
               .sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
+
+            const movsFamilia = movsBenef.filter(m => m.pagado_por !== 'grupo')
+            const pagoGrupo = movsBenef.find(m => m.pagado_por === 'grupo')
 
             const obs = observaciones.find(o => o.beneficiario_id === b.id)
             const total = movsBenef.reduce((sum, m) => sum + m.monto, 0)
@@ -709,10 +845,11 @@ function TablaPlanilla({
                 <td style={{
                   ...tdStickyLeft,
                   backgroundColor: bgFila,
-                  opacity: esInactivo ? 0.65 : 1
+                  opacity: esInactivo ? 0.65 : 1,
+                  textDecoration: esInactivo ? 'line-through' : 'none'
                 }}>
                   <div style={{
-                    fontSize: 'clamp(10px, 2.2vw, 12px)',
+                    fontSize: 'clamp(11px, 2.3vw, 13px)',
                     fontWeight: '600',
                     color: esInactivo ? COLORES.gris : COLORES.textoPrincipal,
                     lineHeight: 1.2,
@@ -722,10 +859,11 @@ function TablaPlanilla({
                   </div>
                   {esInactivo && (
                     <div style={{
-                      fontSize: '9px',
+                      fontSize: '10px',
                       color: COLORES.terracota,
                       fontStyle: 'italic',
-                      marginTop: '2px'
+                      marginTop: '2px',
+                      textDecoration: 'none'
                     }}>
                       (Ex miembro)
                     </div>
@@ -734,73 +872,70 @@ function TablaPlanilla({
 
                 {esCuotas ? (
                   MESES_CUOTAS.map(mes => {
-                    const mov = movsBenef.find(m => m.fecha_pago.startsWith(`2026-${mes.key}`))
+                    const mov = movsFamilia.find(m => m.fecha_pago.startsWith(`2026-${mes.key}`))
                     return (
                       <CeldaPago
                         key={mes.key}
                         movimiento={mov}
                         puedeEditar={puedeEditar}
                         bgFila={bgFila}
-                        onCrear={(fecha, monto) => onCrear(concepto, rama, b.id, fecha, monto)}
-                        onActualizar={(id, fecha, monto) => onActualizar(concepto, rama, id, fecha, monto)}
+                        onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
+                        onActualizar={(id, fecha, monto, pagadoPor, reciboEntregado) => onActualizar(concepto, rama, id, fecha, monto, pagadoPor, reciboEntregado)}
                         onEliminar={(id) => onEliminar(concepto, rama, id)}
                       />
                     )
                   })
                 ) : (
                   Array.from({ length: maxPagos }, (_, i) => {
-                    const mov = movsBenef[i]
+                    const mov = movsFamilia[i]
                     return (
                       <CeldaPago
                         key={i}
                         movimiento={mov}
                         puedeEditar={puedeEditar}
                         bgFila={bgFila}
-                        onCrear={(fecha, monto) => onCrear(concepto, rama, b.id, fecha, monto)}
-                        onActualizar={(id, fecha, monto) => onActualizar(concepto, rama, id, fecha, monto)}
+                        onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
+                        onActualizar={(id, fecha, monto, pagadoPor, reciboEntregado) => onActualizar(concepto, rama, id, fecha, monto, pagadoPor, reciboEntregado)}
                         onEliminar={(id) => onEliminar(concepto, rama, id)}
                       />
                     )
                   })
                 )}
 
-                {/* TOTAL sticky derecha */}
-                <td style={{
-                  ...tdStickyRight,
-                  backgroundColor: esInactivo ? '#E8DEC4' : '#FEF9EC',
-                  right: 0,
-                  fontWeight: '700',
-                  color: COLORES.verdeScout,
-                  textAlign: 'center',
-                  opacity: esInactivo ? 0.65 : 1
-                }}>
-                  {total > 0 ? formatMonto(total) : '—'}
-                </td>
-
                 {/* FALTA PAGAR (solo camps) */}
                 {esCamp && (
                   <td style={{
-                    ...tdStickyRight,
-                    right: '90px',
+                    ...tdNormal,
                     backgroundColor: faltaPagar === 0
                       ? (esInactivo ? '#E8DEC4' : '#F0F7F0')
                       : '#FEE2E2',
                     color: faltaPagar === 0 ? COLORES.verdeClaro : COLORES.terracota,
                     fontWeight: '700',
                     textAlign: 'center',
-                    opacity: esInactivo ? 0.65 : 1
+                    opacity: esInactivo ? 0.65 : 1,
+                    minWidth: '100px',
+                    padding: '6px 6px'
                   }}>
-                    {faltaPagar === 0 ? '✅' : formatMonto(faltaPagar)}
+                    <div style={{
+                      fontSize: 'clamp(13px, 2.6vw, 16px)',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {faltaPagar === 0 ? '✅' : formatMonto(faltaPagar)}
+                    </div>
                   </td>
                 )}
 
-                {/* Observaciones sticky derecha */}
+                {/* Observaciones */}
                 <td style={{
-                  ...tdStickyRight,
-                  right: esCamp ? '190px' : '90px',
+                  ...tdNormal,
                   backgroundColor: esInactivo ? '#E8DEC4' : bgFila,
-                  padding: '4px',
-                  opacity: esInactivo ? 0.65 : 1
+                  padding: '8px',
+                  opacity: esInactivo ? 0.65 : 1,
+                  minWidth: '180px',
+                  maxWidth: '300px',
+                  fontSize: '13px',
+                  verticalAlign: 'middle',
+                  textAlign: 'left'
                 }}>
                   <CeldaObservacion
                     observacion={obs}
@@ -808,82 +943,35 @@ function TablaPlanilla({
                     onGuardar={(texto) => onGuardarObservacion(concepto, rama, b.id, texto, obs?.id)}
                   />
                 </td>
+
+                {/* PAGÓ EL GRUPO */}
+                <CeldaPagoGrupo
+                  movimiento={pagoGrupo}
+                  puedeEditar={puedeEditar}
+                  bgFila={bgFila}
+                  onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
+                  onActualizar={(id, fecha, monto, pagadoPor, reciboEntregado) => onActualizar(concepto, rama, id, fecha, monto, pagadoPor, reciboEntregado)}
+                  onEliminar={(id) => onEliminar(concepto, rama, id)}
+                />
               </tr>
             )
           })}
-
-          {/* Fila de totales */}
-          <tr>
-            <td style={{
-              ...tdStickyLeft,
-              backgroundColor: COLORES.verdeScout,
-              color: 'white',
-              fontWeight: '700',
-              textTransform: 'uppercase'
-            }}>
-              TOTAL
-            </td>
-            {esCuotas ? (
-              MESES_CUOTAS.map(mes => (
-                <td key={mes.key} style={{
-                  ...tdNormal,
-                  backgroundColor: COLORES.verdeScout,
-                  color: 'white',
-                  fontWeight: '700',
-                  textAlign: 'center'
-                }}>
-                  {getTotalMes(mes.key) > 0 ? formatMonto(getTotalMes(mes.key)) : ''}
-                </td>
-              ))
-            ) : (
-              Array.from({ length: maxPagos }, (_, i) => (
-                <td key={i} style={{
-                  ...tdNormal,
-                  backgroundColor: COLORES.verdeScout,
-                  color: 'white'
-                }} />
-              ))
-            )}
-            <td style={{
-              ...tdStickyRight,
-              right: 0,
-              backgroundColor: COLORES.dorado,
-              color: 'white',
-              fontWeight: '700',
-              textAlign: 'center'
-            }}>
-              {formatMonto(totalGeneral)}
-            </td>
-            {esCamp && (
-              <td style={{
-                ...tdStickyRight,
-                right: '90px',
-                backgroundColor: COLORES.terracota
-              }} />
-            )}
-            <td style={{
-              ...tdStickyRight,
-              right: esCamp ? '190px' : '90px',
-              backgroundColor: COLORES.verdeScout
-            }} />
-          </tr>
         </tbody>
       </table>
     </div>
   )
 }
-
 // ============================================
-// CELDA PAGO
+// CELDA PAGÓ EL GRUPO
 // ============================================
-function CeldaPago({
+function CeldaPagoGrupo({
   movimiento, puedeEditar, bgFila, onCrear, onActualizar, onEliminar
 }: {
   movimiento: Movimiento | undefined
   puedeEditar: boolean
   bgFila: string
-  onCrear: (fecha: string, monto: number) => void
-  onActualizar: (id: string, fecha: string, monto: number) => void
+  onCrear: (fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
+  onActualizar: (id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onEliminar: (id: string) => void
 }) {
   const [editando, setEditando] = useState(false)
@@ -906,8 +994,8 @@ function CeldaPago({
   const cerrarYGuardar = () => {
     const montoNum = parseFloat(monto)
     if (fecha && montoNum > 0) {
-      if (movimiento) onActualizar(movimiento.id, fecha, montoNum)
-      else onCrear(fecha, montoNum)
+      if (movimiento) onActualizar(movimiento.id, fecha, montoNum, 'grupo', true)
+      else onCrear(fecha, montoNum, 'grupo', true)
     } else if (movimiento && !monto) {
       onEliminar(movimiento.id)
     }
@@ -929,8 +1017,8 @@ function CeldaPago({
 
   if (editando) {
     return (
-      <td style={{ ...tdNormal, padding: '3px', backgroundColor: bgFila }}>
-        <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '60px' }}>
+      <td style={{ ...tdNormal, padding: '4px', backgroundColor: bgFila, minWidth: '110px' }}>
+        <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
           <input
             type="date"
             value={fecha}
@@ -976,18 +1064,197 @@ function CeldaPago({
         ...tdNormal,
         textAlign: 'center',
         cursor: puedeEditar ? 'pointer' : 'default',
-        backgroundColor: bgFila
+        backgroundColor: '#E8F5E9',
+        padding: '8px 6px'
       }}
     >
-      <div style={{ fontSize: '10px', color: COLORES.textoSecundario }}>
-        {formatFecha(movimiento.fecha_pago)}
-      </div>
       <div style={{
-        fontSize: 'clamp(11px, 2.5vw, 13px)',
-        fontWeight: '600',
-        color: COLORES.textoPrincipal
+        whiteSpace: 'nowrap',
+        lineHeight: 1.3
       }}>
-        {formatMonto(movimiento.monto)}
+        <span style={{
+          fontSize: '11px',
+          color: COLORES.textoSecundario,
+          fontWeight: '400'
+        }}>
+          {formatFecha(movimiento.fecha_pago)}
+        </span>
+        <span style={{
+          fontSize: '11px',
+          color: COLORES.textoSecundario,
+          fontWeight: '400'
+        }}>
+          {' - '}
+        </span>
+        <span style={{
+          fontSize: 'clamp(13px, 2.6vw, 16px)',
+          color: COLORES.textoPrincipal,
+          fontWeight: '700'
+        }}>
+          {formatMonto(movimiento.monto)}
+        </span>
+      </div>
+    </td>
+  )
+}
+
+// ============================================
+// CELDA PAGO
+// ============================================
+function CeldaPago({
+  movimiento, puedeEditar, bgFila, onCrear, onActualizar, onEliminar
+}: {
+  movimiento: Movimiento | undefined
+  puedeEditar: boolean
+  bgFila: string
+  onCrear: (fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
+  onActualizar: (id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
+  onEliminar: (id: string) => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [fecha, setFecha] = useState('')
+  const [monto, setMonto] = useState('')
+  const [reciboEntregado, setReciboEntregado] = useState(true)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  const abrirEdicion = () => {
+    if (!puedeEditar) return
+    if (movimiento) {
+      setFecha(movimiento.fecha_pago)
+      setMonto(movimiento.monto.toString())
+      setReciboEntregado(movimiento.recibo_entregado !== false)
+    } else {
+      setFecha(new Date().toISOString().split('T')[0])
+      setMonto('')
+      setReciboEntregado(true)
+    }
+    setEditando(true)
+  }
+
+  const cerrarYGuardar = () => {
+    const montoNum = parseFloat(monto)
+    if (fecha && montoNum > 0) {
+      if (movimiento) onActualizar(movimiento.id, fecha, montoNum, 'familia', reciboEntregado)
+      else onCrear(fecha, montoNum, 'familia', reciboEntregado)
+    } else if (movimiento && !monto) {
+      onEliminar(movimiento.id)
+    }
+    setEditando(false)
+    setFecha('')
+    setMonto('')
+    setReciboEntregado(true)
+  }
+
+  useEffect(() => {
+    if (!editando) return
+    const handleClickFuera = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        cerrarYGuardar()
+      }
+    }
+    document.addEventListener('mousedown', handleClickFuera)
+    return () => document.removeEventListener('mousedown', handleClickFuera)
+  }, [editando, fecha, monto, reciboEntregado])
+
+  if (editando) {
+    return (
+      <td style={{ ...tdNormal, padding: '4px', backgroundColor: bgFila, minWidth: '120px' }}>
+        <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <input
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            autoFocus
+            style={inputInlineStyle}
+          />
+          <input
+            type="number"
+            value={monto}
+            onChange={(e) => setMonto(e.target.value)}
+            placeholder="$"
+            onKeyDown={(e) => { if (e.key === 'Enter') cerrarYGuardar() }}
+            style={inputInlineStyle}
+          />
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            fontSize: '10px',
+            fontFamily: 'Oswald, sans-serif',
+            cursor: 'pointer',
+            userSelect: 'none',
+            color: COLORES.textoPrincipal
+          }}>
+            <input
+              type="checkbox"
+              checked={reciboEntregado}
+              onChange={(e) => setReciboEntregado(e.target.checked)}
+              style={{ width: '13px', height: '13px', cursor: 'pointer' }}
+            />
+            📄 Recibo entregado
+          </label>
+        </div>
+      </td>
+    )
+  }
+
+  if (!movimiento) {
+    return (
+      <td
+        onClick={abrirEdicion}
+        style={{
+          ...tdNormal,
+          textAlign: 'center',
+          cursor: puedeEditar ? 'pointer' : 'default',
+          backgroundColor: bgFila,
+          color: '#D1C9B4',
+          fontSize: '14px'
+        }}
+      >
+        {puedeEditar ? '+' : '—'}
+      </td>
+    )
+  }
+
+  const sinRecibo = movimiento.recibo_entregado === false
+  const esPagoGrupo = movimiento.pagado_por === 'grupo'
+
+  return (
+    <td
+      onClick={abrirEdicion}
+      style={{
+        ...tdNormal,
+        textAlign: 'center',
+        cursor: puedeEditar ? 'pointer' : 'default',
+        backgroundColor: sinRecibo ? '#FCD34D' : (esPagoGrupo ? '#E8F5E9' : bgFila),
+        padding: '8px 6px'
+      }}
+    >
+      <div style={{
+        whiteSpace: 'nowrap',
+        lineHeight: 1.3
+      }}>
+        <span style={{
+          fontSize: '11px',
+          color: COLORES.textoSecundario,
+          fontWeight: '400'
+        }}>
+          {formatFecha(movimiento.fecha_pago)}
+        </span>
+        <span style={{
+          fontSize: '11px',
+          color: COLORES.textoSecundario,
+          fontWeight: '400'
+        }}>
+          {' - '}
+        </span>
+        <span style={{
+          fontSize: 'clamp(13px, 2.6vw, 16px)',
+          color: COLORES.textoPrincipal,
+          fontWeight: '700'
+        }}>
+          {formatMonto(movimiento.monto)}
+        </span>
       </div>
     </td>
   )
@@ -1039,7 +1306,7 @@ function CeldaObservacion({
           autoFocus
           placeholder="Observación..."
           style={{
-            width: '100%', padding: '4px 6px', fontSize: '11px',
+            width: '100%', padding: '4px 6px', fontSize: '12px',
             border: '2px solid #24352A', borderRadius: '4px',
             outline: 'none', fontFamily: 'Oswald, sans-serif',
             resize: 'vertical', boxSizing: 'border-box'
@@ -1052,29 +1319,16 @@ function CeldaObservacion({
   return (
     <div
       onClick={abrirEdicion}
-      title={observacion?.observacion || ''}
       style={{
         cursor: puedeEditar ? 'pointer' : 'default',
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '24px',
-        fontSize: '16px'
+        fontSize: '13px',
+        color: observacion ? COLORES.textoPrincipal : 'transparent',
+        lineHeight: 1.35,
+        wordBreak: 'break-word',
+        minHeight: '22px'
       }}
     >
-      💬
-      {observacion && (
-        <span style={{
-          position: 'absolute',
-          top: '0px',
-          right: '4px',
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          backgroundColor: COLORES.terracota
-        }} />
-      )}
+      {observacion?.observacion || ''}
     </div>
   )
 }
@@ -1084,7 +1338,7 @@ function CeldaObservacion({
 // ============================================
 const thNormal: React.CSSProperties = {
   padding: '8px 4px',
-  fontSize: 'clamp(9px, 2vw, 11px)',
+  fontSize: 'clamp(10px, 2.1vw, 12px)',
   fontWeight: '700',
   color: 'white',
   textTransform: 'uppercase',
@@ -1105,14 +1359,9 @@ const thStickyLeft: React.CSSProperties = {
   textAlign: 'left'
 }
 
-const thStickyRight: React.CSSProperties = {
-  ...thNormal,
-  zIndex: 3
-}
-
 const tdNormal: React.CSSProperties = {
-  padding: '6px 4px',
-  fontSize: 'clamp(10px, 2.2vw, 12px)',
+  padding: '6px 6px',
+  fontSize: 'clamp(11px, 2.3vw, 13px)',
   color: '#24352A',
   borderBottom: '1px solid #E8DEC4',
   borderRight: '1px solid #E8DEC4',
@@ -1127,13 +1376,6 @@ const tdStickyLeft: React.CSSProperties = {
   minWidth: '140px',
   maxWidth: '140px',
   boxShadow: '2px 0 4px rgba(0,0,0,0.06)'
-}
-
-const tdStickyRight: React.CSSProperties = {
-  ...tdNormal,
-  position: 'sticky',
-  zIndex: 1,
-  boxShadow: '-2px 0 4px rgba(0,0,0,0.06)'
 }
 
 const inputInlineStyle: React.CSSProperties = {

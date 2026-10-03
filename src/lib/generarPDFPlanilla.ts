@@ -23,6 +23,8 @@ interface Movimiento {
   nombre_libre: string | null
   fecha_pago: string
   monto: number
+  pagado_por?: string | null
+  recibo_entregado?: boolean | null
 }
 
 interface Observacion {
@@ -80,10 +82,6 @@ const getNombreConcepto = (concepto: Concepto): string => {
   return map[concepto]
 }
 
-const getNombreRama = (rama: Rama): string => {
-  return rama
-}
-
 // ============================================
 // GENERAR PDF
 // ============================================
@@ -110,14 +108,12 @@ export function generarPDFPlanilla({
   })
 
   const esCuotas = concepto === 'cuotas'
-  const esAfiliacion = concepto === 'afiliacion'
   const esCamp = concepto === 'camp_corto' || concepto === 'camp_anual'
 
-  // ====== CÁLCULO DE COLUMNAS DINÁMICAS ======
-  // Para afiliación y camps: máximo de pagos por beneficiario
+  // ====== CÁLCULO DE COLUMNAS ======
   const maxPagosPorBenef = new Map<string, number>()
   beneficiarios.forEach(b => {
-    const count = movimientos.filter(m => m.beneficiario_id === b.id).length
+    const count = movimientos.filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo').length
     maxPagosPorBenef.set(b.id, count)
   })
   const maxPagos = Math.max(2, ...Array.from(maxPagosPorBenef.values()))
@@ -131,9 +127,9 @@ export function generarPDFPlanilla({
       headers.push(`Pago ${i + 1}`)
     }
   }
-  headers.push('TOTAL')
-  if (esCamp) headers.push('FALTA PAGAR')
-  headers.push('OBSERVACIONES')
+  if (esCamp) headers.push('Falta pagar')
+  headers.push('Observaciones')
+  headers.push('Pagó el grupo')
 
   // ====== SEPARAR ACTIVOS E INACTIVOS ======
   const activos = beneficiarios.filter(b => b.estado === 'activo')
@@ -146,7 +142,8 @@ export function generarPDFPlanilla({
       .filter(m => m.beneficiario_id === b.id)
       .sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
 
-    const total = movsBenef.reduce((sum, m) => sum + m.monto, 0)
+    const movsFamilia = movsBenef.filter(m => m.pagado_por !== 'grupo')
+    const pagoGrupo = movsBenef.find(m => m.pagado_por === 'grupo')
     const obs = observaciones.find(o => o.beneficiario_id === b.id)
 
     const esInactivo = b.estado === 'inactivo'
@@ -156,64 +153,49 @@ export function generarPDFPlanilla({
 
     if (esCuotas) {
       MESES_CUOTAS.forEach(mes => {
-        const mov = movsBenef.find(m => m.fecha_pago.startsWith(`2026-${mes.key}`))
+        const mov = movsFamilia.find(m => m.fecha_pago.startsWith(`2026-${mes.key}`))
         if (mov) {
-          fila.push(`${formatFecha(mov.fecha_pago)}\n${formatMonto(mov.monto)}`)
+          fila.push(`${formatFecha(mov.fecha_pago)} - ${formatMonto(mov.monto)}`)
         } else {
           fila.push('')
         }
       })
     } else {
       for (let i = 0; i < maxPagos; i++) {
-        const mov = movsBenef[i]
+        const mov = movsFamilia[i]
         if (mov) {
-          fila.push(`${formatFecha(mov.fecha_pago)}\n${formatMonto(mov.monto)}`)
+          fila.push(`${formatFecha(mov.fecha_pago)} - ${formatMonto(mov.monto)}`)
         } else {
           fila.push('')
         }
       }
     }
 
-    fila.push(formatMonto(total) || '$0')
-
+    // Falta pagar (solo camps)
     if (esCamp) {
       const valorCamp = concepto === 'camp_corto'
         ? (b.tiene_hermanos ? config?.camp_corto_2026?.hermano : config?.camp_corto_2026?.unico) || 0
         : (b.tiene_hermanos ? config?.camp_anual_2027?.hermano : config?.camp_anual_2027?.unico) || 0
-      const falta = Math.max(0, valorCamp - total)
+      const totalFamilia = movsFamilia.reduce((sum, m) => sum + m.monto, 0)
+      const falta = Math.max(0, valorCamp - totalFamilia)
       fila.push(falta === 0 ? '✅' : formatMonto(falta))
     }
 
     fila.push(obs?.observacion || '')
+    fila.push(pagoGrupo ? `${formatFecha(pagoGrupo.fecha_pago)} - ${formatMonto(pagoGrupo.monto)}` : '')
 
     return fila
   })
 
-  // ====== FILA DE TOTALES ======
-  const totalGeneral = movimientos.reduce((sum, m) => sum + m.monto, 0)
-  const filaTotales: any[] = ['TOTAL']
-  if (esCuotas) {
-    MESES_CUOTAS.forEach(() => filaTotales.push(''))
-  } else {
-    for (let i = 0; i < maxPagos; i++) filaTotales.push('')
-  }
-  filaTotales.push(formatMonto(totalGeneral))
-  if (esCamp) filaTotales.push('')
-  filaTotales.push('')
-
-  rows.push(filaTotales)
-
-  // ====== TÍTULO Y HEADER DEL PDF ======
+  // ====== TÍTULO ======
   const nombreConcepto = getNombreConcepto(concepto)
   const fechaHoy = new Date()
   const fechaFormateada = `${fechaHoy.getDate()}/${fechaHoy.getMonth() + 1}/${fechaHoy.getFullYear()}`
 
-  // Header verde bosque
-  doc.setFillColor(36, 53, 42) // #24352A
+  doc.setFillColor(36, 53, 42)
   doc.rect(0, 0, 297, 20, 'F')
 
-  // Título
-  doc.setTextColor(243, 236, 216) // crema
+  doc.setTextColor(243, 236, 216)
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
   doc.text('LORETAPP', 10, 9)
@@ -222,13 +204,30 @@ export function generarPDFPlanilla({
   doc.setFont('helvetica', 'normal')
   doc.text(`Planilla ${nombreConcepto} 2026 — ${rama}`, 10, 15)
 
-  // Fecha a la derecha
   doc.setFontSize(9)
   doc.text(`Generado: ${fechaFormateada}`, 287, 12, { align: 'right' })
 
-  // ====== TABLA CON AUTOTABLE ======
+  // ====== TOTAL arriba ======
+  const totalGeneral = movimientos.reduce((sum, m) => sum + m.monto, 0)
+  const yTotalBanner = 23
+
+  doc.setFillColor(36, 53, 42)
+  doc.rect(10, yTotalBanner, 277, 9, 'F')
+  doc.setTextColor(243, 236, 216)
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'bold')
+  doc.text(`TOTAL ${nombreConcepto.toUpperCase()} ${rama.toUpperCase()}:`, 14, yTotalBanner + 6)
+  doc.text(formatMonto(totalGeneral), 283, yTotalBanner + 6, { align: 'right' })
+
+  // ====== ÍNDICES DE COLUMNAS ======
+  const numColumnasPago = esCuotas ? MESES_CUOTAS.length : maxPagos
+  const colFaltaPagarIndex = esCamp ? 1 + numColumnasPago : -1
+  const colObsIndex = 1 + numColumnasPago + (esCamp ? 1 : 0)
+  const colGrupoIndex = colObsIndex + 1
+
+  // ====== TABLA ======
   autoTable(doc, {
-    startY: 24,
+    startY: yTotalBanner + 12,
     head: [['Beneficiario', ...headers]],
     body: rows,
     theme: 'grid',
@@ -252,7 +251,7 @@ export function generarPDFPlanilla({
     },
     columnStyles: {
       0: {
-        cellWidth: 45,
+        cellWidth: 42,
         halign: 'left',
         fontStyle: 'bold',
         fontSize: 7
@@ -262,7 +261,7 @@ export function generarPDFPlanilla({
       fillColor: [250, 248, 244]
     },
     didParseCell: (data) => {
-      // Estilos de la primera columna (nombre)
+      // Nombre ex miembro
       if (data.column.index === 0 && data.section === 'body') {
         const nombre = data.cell.raw as string
         if (nombre.includes('(Ex miembro)')) {
@@ -270,39 +269,88 @@ export function generarPDFPlanilla({
           data.cell.styles.fontStyle = 'italic'
         }
       }
-      // Estilo de la columna TOTAL
-      const colTotalIndex = 1 + (esCuotas ? MESES_CUOTAS.length : maxPagos)
-      if (data.column.index === colTotalIndex && data.section === 'body') {
-        data.cell.styles.fillColor = [254, 249, 236]
-        data.cell.styles.fontStyle = 'bold'
+
+      // Columna Observaciones
+      if (data.column.index === colObsIndex && data.section === 'body') {
+        data.cell.styles.halign = 'left'
+        data.cell.styles.fontSize = 7
       }
-      // Estilo de la columna FALTA PAGAR (solo camps)
-      if (esCamp) {
-        const colFaltaIndex = colTotalIndex + 1
-        if (data.column.index === colFaltaIndex && data.section === 'body') {
-          const valor = data.cell.raw as string
-          if (valor === '✅') {
-            data.cell.styles.fillColor = [240, 247, 240]
-            data.cell.styles.textColor = [92, 122, 94]
-          } else if (valor && valor.startsWith('$')) {
-            data.cell.styles.fillColor = [254, 226, 226]
-            data.cell.styles.textColor = [191, 78, 48]
-          }
+
+      // Columna Falta pagar (camps)
+      if (esCamp && data.column.index === colFaltaPagarIndex && data.section === 'body') {
+        const valor = data.cell.raw as string
+        if (valor === '✅') {
+          data.cell.styles.fillColor = [240, 247, 240]
+          data.cell.styles.textColor = [92, 122, 94]
+        } else if (valor && valor.startsWith('$')) {
+          data.cell.styles.fillColor = [254, 226, 226]
+          data.cell.styles.textColor = [191, 78, 48]
         }
       }
-      // Fila de totales
-      if (data.row.index === rows.length - 1 && data.section === 'body') {
-        data.cell.styles.fillColor = [36, 53, 42]
-        data.cell.styles.textColor = [255, 255, 255]
-        data.cell.styles.fontStyle = 'bold'
+
+      // Celdas de pagos de familia: fondo amarillo si no tiene recibo
+      if (
+        data.section === 'body' &&
+        data.column.index > 0 &&
+        data.column.index <= numColumnasPago
+      ) {
+        const beneficiario = ordenados[data.row.index]
+        const movsFamilia = movimientos
+          .filter(m => m.beneficiario_id === beneficiario.id && m.pagado_por !== 'grupo')
+          .sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
+
+        let movAsignado: Movimiento | undefined
+        if (esCuotas) {
+          const mes = MESES_CUOTAS[data.column.index - 1]
+          movAsignado = movsFamilia.find(m => m.fecha_pago.startsWith(`2026-${mes.key}`))
+        } else {
+          movAsignado = movsFamilia[data.column.index - 1]
+        }
+
+        if (movAsignado) {
+          if (movAsignado.recibo_entregado === false) {
+            data.cell.styles.fillColor = [252, 211, 77]
+          }
+          // Formato: fecha chica + monto en negrita
+          const fecha = formatFecha(movAsignado.fecha_pago)
+          const monto = formatMonto(movAsignado.monto)
+          data.cell.text = [`${fecha} - ${monto}`]
+          data.cell.styles.fontStyle = 'bold'
+          data.cell.styles.fontSize = 8
+        }
+      }
+
+      // Columna Pagó el grupo
+      if (data.section === 'body' && data.column.index === colGrupoIndex) {
+        const beneficiario = ordenados[data.row.index]
+        const pagoGrupo = movimientos.find(
+          m => m.beneficiario_id === beneficiario.id && m.pagado_por === 'grupo'
+        )
+        if (pagoGrupo) {
+          data.cell.styles.fillColor = [232, 245, 233]
+          const fecha = formatFecha(pagoGrupo.fecha_pago)
+          const monto = formatMonto(pagoGrupo.monto)
+          data.cell.text = [`${fecha} - ${monto}`]
+          data.cell.styles.fontStyle = 'bold'
+          data.cell.styles.fontSize = 8
+        }
       }
     }
   })
+
+  // ====== LEYENDA abajo ======
+  const finalY = (doc as any).lastAutoTable.finalY + 4
+
+  doc.setFillColor(252, 211, 77)
+  doc.rect(10, finalY, 277, 7, 'F')
+  doc.setTextColor(122, 92, 0)
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.text('RESALTADAS EN AMARILLO LOS RECIBOS NO ENTREGADOS', 148.5, finalY + 5, { align: 'center' })
 
   // ====== NOMBRE DEL ARCHIVO ======
   const fechaArchivo = `${fechaHoy.getDate()}-${fechaHoy.getMonth() + 1}-${fechaHoy.getFullYear().toString().slice(-2)}`
   const nombreArchivo = `${nombreConcepto} ${rama} ${fechaArchivo}.pdf`
 
-  // ====== DESCARGAR ======
   doc.save(nombreArchivo)
 }
