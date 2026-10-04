@@ -29,6 +29,9 @@ interface Movimiento {
   monto: number
   pagado_por?: string | null
   recibo_entregado?: boolean | null
+  mes_inicio?: string | null
+  mes_fin?: string | null
+  no_aplica?: boolean | null
 }
 
 interface Observacion {
@@ -286,7 +289,9 @@ export default function Planillas() {
     concepto: Concepto, rama: Rama, beneficiarioId: string | null,
     fecha: string, monto: number, pagadoPor?: string,
     reciboEntregado?: boolean,
-    nombreLibre?: string, categoria?: string
+    nombreLibre?: string, categoria?: string,
+    mesInicio?: string, mesFin?: string,
+    noAplica?: boolean
   ) => {
     try {
       const { data: nuevoMov, error } = await supabase
@@ -299,6 +304,9 @@ export default function Planillas() {
           fecha_pago: fecha, monto,
           pagado_por: pagadoPor || 'familia',
           recibo_entregado: reciboEntregado !== undefined ? reciboEntregado : true,
+          mes_inicio: mesInicio || null,
+          mes_fin: mesFin || null,
+          no_aplica: noAplica || false,
           creado_por: profile?.id
         })
         .select()
@@ -319,7 +327,8 @@ export default function Planillas() {
 
   const actualizarMovimiento = async (
     concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number,
-    pagadoPor?: string, reciboEntregado?: boolean
+    pagadoPor?: string, reciboEntregado?: boolean,
+    mesInicio?: string, mesFin?: string
   ) => {
     try {
       const { data: movActualizado, error } = await supabase
@@ -328,7 +337,9 @@ export default function Planillas() {
           fecha_pago: fecha,
           monto,
           pagado_por: pagadoPor || 'familia',
-          recibo_entregado: reciboEntregado !== undefined ? reciboEntregado : true
+          recibo_entregado: reciboEntregado !== undefined ? reciboEntregado : true,
+          mes_inicio: mesInicio !== undefined ? mesInicio : undefined,
+          mes_fin: mesFin !== undefined ? mesFin : undefined
         })
         .eq('id', id)
         .select()
@@ -835,7 +846,7 @@ function TablaPlanilla({
   asistencias: Asistencia[]
   config: any
   puedeEditar: boolean
-  onCrear: (concepto: Concepto, rama: Rama, benefId: string | null, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean, nombreLibre?: string, categoria?: string) => void
+  onCrear: (concepto: Concepto, rama: Rama, benefId: string | null, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean, nombreLibre?: string, categoria?: string, mesInicio?: string, mesFin?: string, noAplica?: boolean) => void
   onActualizar: (concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onEliminar: (concepto: Concepto, rama: Rama, id: string) => void
   onGuardarObservacion: (concepto: Concepto, rama: Rama, benefId: string | null, texto: string, obsId?: string, nombreLibre?: string) => void
@@ -852,6 +863,20 @@ function TablaPlanilla({
   const [ordenColumna, setOrdenColumna] = useState<ColumnaOrdenable>('beneficiario')
   const [ordenDireccion, setOrdenDireccion] = useState<DireccionOrden>('asc')
 
+  // Estado del drag (arrastre sobre celdas de Cuotas)
+  const [drag, setDrag] = useState<{
+    beneficiarioId: string
+    mesInicio: string
+    mesActual: string
+  } | null>(null)
+
+  // Estado del editor abierto tras el drag
+  const [editorCuotas, setEditorCuotas] = useState<{
+    beneficiarioId: string
+    mesInicio: string
+    mesFin: string
+  } | null>(null)
+
   // Máximo de pagos
   const maxPagosBase = esCuotas ? 0 : Math.max(2, ...beneficiarios.map(b => {
     return movimientos.filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo').length
@@ -863,7 +888,52 @@ function TablaPlanilla({
     setOrdenColumna('beneficiario')
     setOrdenDireccion('asc')
     setColumnasExtra(0)
+    setDrag(null)
+    setEditorCuotas(null)
   }, [concepto, rama])
+
+  // ============================================
+  // DRAG de Cuotas (selección de rango de meses)
+  // ============================================
+  const handleMesMouseDown = (beneficiarioId: string, mesKey: string) => {
+    if (!puedeEditar || !esCuotas) return
+    setDrag({ beneficiarioId, mesInicio: mesKey, mesActual: mesKey })
+  }
+
+  const handleMesMouseEnter = (beneficiarioId: string, mesKey: string) => {
+    if (!drag) return
+    if (drag.beneficiarioId !== beneficiarioId) return
+    setDrag({ ...drag, mesActual: mesKey })
+  }
+
+  const handleMesMouseUp = () => {
+    if (!drag) return
+    // Normalizar: inicio siempre <= fin
+    const [inicio, fin] = drag.mesInicio <= drag.mesActual
+      ? [drag.mesInicio, drag.mesActual]
+      : [drag.mesActual, drag.mesInicio]
+    setEditorCuotas({
+      beneficiarioId: drag.beneficiarioId,
+      mesInicio: inicio,
+      mesFin: fin
+    })
+    setDrag(null)
+  }
+
+  // Detectar si un mes está dentro del rango del drag
+  const mesEnDrag = (beneficiarioId: string, mesKey: string) => {
+    if (!drag || drag.beneficiarioId !== beneficiarioId) return false
+    const [inicio, fin] = drag.mesInicio <= drag.mesActual
+      ? [drag.mesInicio, drag.mesActual]
+      : [drag.mesActual, drag.mesInicio]
+    return mesKey >= inicio && mesKey <= fin
+  }
+
+  // Detectar si un mes está dentro del rango del editor abierto
+  const mesEnEditor = (beneficiarioId: string, mesKey: string) => {
+    if (!editorCuotas || editorCuotas.beneficiarioId !== beneficiarioId) return false
+    return mesKey >= editorCuotas.mesInicio && mesKey <= editorCuotas.mesFin
+  }
 
   // Función para cambiar el orden
   const cambiarOrden = (columna: ColumnaOrdenable) => {
@@ -892,8 +962,6 @@ function TablaPlanilla({
       const esInactivoA = a.estado === 'inactivo'
       const esInactivoB = b.estado === 'inactivo'
       if (esInactivoA !== esInactivoB) {
-        // En asc: activos primero
-        // En desc: inactivos primero
         if (ordenDireccion === 'asc') return esInactivoA ? 1 : -1
         else return esInactivoA ? -1 : 1
       }
@@ -951,11 +1019,6 @@ function TablaPlanilla({
           : 'No hay beneficiarios en esta rama'}
       </div>
     )
-  }
-
-  // Borde grueso
-  const bordeGruesoIzquierda: React.CSSProperties = {
-    borderLeft: `4px solid ${COLORES.verdeScout}`
   }
 
   return (
@@ -1044,8 +1107,8 @@ function TablaPlanilla({
               })
             )}
 
-            {/* TOTAL (ordenable) - solo camps */}
-            {esCamp && (
+            {/* TOTAL (ordenable) - camps y cuotas */}
+            {(esCamp || esCuotas) && (
               <th
                 onClick={() => cambiarOrden('total')}
                 style={{
@@ -1100,17 +1163,19 @@ function TablaPlanilla({
               </th>
             )}
 
-            {/* OBSERVACIONES */}
-            <th style={{
-              ...thNormal,
-              minWidth: '180px',
-              maxWidth: '300px',
-              padding: '8px 8px',
-              textAlign: 'center',
-              ...(esCamp ? {} : { borderLeft: '2px solid #24352A' })
-            }}>
-              OBSERVACIONES
-            </th>
+            {/* OBSERVACIONES (no va en cuotas) */}
+            {!esCuotas && (
+              <th style={{
+                ...thNormal,
+                minWidth: '180px',
+                maxWidth: '300px',
+                padding: '8px 8px',
+                textAlign: 'center',
+                ...(esCamp ? {} : { borderLeft: '2px solid #24352A' })
+              }}>
+                OBSERVACIONES
+              </th>
+            )}
 
             {/* PAGÓ EL GRUPO (solo afiliación) */}
             {esAfiliacion && (
@@ -1138,7 +1203,9 @@ function TablaPlanilla({
             const asistencia = asistencias.find(a => a.beneficiario_id === b.id)
             const asiste = asistencia?.asiste || 'no_se_sabe'
 
-            const totalFamilia = movsFamilia.reduce((sum, m) => sum + m.monto, 0)
+            const totalFamilia = movsFamilia
+              .filter(m => !m.no_aplica)
+              .reduce((sum, m) => sum + m.monto, 0)
             const esInactivo = b.estado === 'inactivo'
             const bgFila = idx % 2 === 0 ? 'white' : '#FAF8F4'
             const nombreFormateado = formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
@@ -1184,16 +1251,55 @@ function TablaPlanilla({
 
                 {esCuotas ? (
                   MESES_CUOTAS.map(mes => {
-                    const mov = movsFamilia.find(m => m.fecha_pago.startsWith(`2026-${mes.key}`))
+                    // Buscar si algún movimiento cubre este mes (pago o no_aplica)
+                    const movQueCubre = movsFamilia.find(m =>
+                      m.mes_inicio && m.mes_fin &&
+                      mes.key >= m.mes_inicio && mes.key <= m.mes_fin
+                    )
+                    const esPrimerMesDelPago = movQueCubre?.mes_inicio === mes.key
+                    const enDrag = mesEnDrag(b.id, mes.key)
+                    const enEditor = mesEnEditor(b.id, mes.key)
+
                     return (
-                      <CeldaPago
+                      <CeldaMesCuota
                         key={mes.key}
-                        movimiento={mov}
-                        puedeEditar={puedeEditar}
+                        mesKey={mes.key}
+                        movimiento={movQueCubre}
+                        esPrimerMesDelPago={esPrimerMesDelPago}
+                        esUltimoMesDelPago={movQueCubre?.mes_fin === mes.key}
+                        enDrag={enDrag}
+                        enEditor={enEditor}
+                        esInactivo={esInactivo}
                         bgFila={bgFila}
-                        onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
-                        onActualizar={(id, fecha, monto, pagadoPor, reciboEntregado) => onActualizar(concepto, rama, id, fecha, monto, pagadoPor, reciboEntregado)}
-                        onEliminar={(id) => onEliminar(concepto, rama, id)}
+                        puedeEditar={puedeEditar}
+                        editorAbierto={editorCuotas?.beneficiarioId === b.id && editorCuotas?.mesInicio === mes.key}
+                        editorRango={editorCuotas?.beneficiarioId === b.id ? editorCuotas : null}
+                        onMouseDown={() => handleMesMouseDown(b.id, mes.key)}
+                        onMouseEnter={() => handleMesMouseEnter(b.id, mes.key)}
+                        onMouseUp={handleMesMouseUp}
+                        onClickCelda={() => {
+                          if (movQueCubre && movQueCubre.mes_inicio && movQueCubre.mes_fin) {
+                            setEditorCuotas({
+                              beneficiarioId: b.id,
+                              mesInicio: movQueCubre.mes_inicio,
+                              mesFin: movQueCubre.mes_fin
+                            })
+                          }
+                        }}
+                        onGuardar={(fecha, monto, reciboEntregado) => {
+                          onCrear(concepto, rama, b.id, fecha, monto, 'familia', reciboEntregado, undefined, undefined, editorCuotas?.mesInicio, editorCuotas?.mesFin, false)
+                          setEditorCuotas(null)
+                        }}
+                        onGuardarNoAplica={() => {
+                          const hoy = new Date().toISOString().split('T')[0]
+                          onCrear(concepto, rama, b.id, hoy, 0, 'familia', true, undefined, undefined, editorCuotas?.mesInicio, editorCuotas?.mesFin, true)
+                          setEditorCuotas(null)
+                        }}
+                        onCancelar={() => setEditorCuotas(null)}
+                        onEliminar={(id) => {
+                          onEliminar(concepto, rama, id)
+                          setEditorCuotas(null)
+                        }}
                       />
                     )
                   })
@@ -1214,8 +1320,8 @@ function TablaPlanilla({
                   })
                 )}
 
-                {/* TOTAL (solo camps) */}
-                {esCamp && (
+                {/* TOTAL (camps y cuotas) */}
+                {(esCamp || esCuotas) && (
                   <td style={{
                     ...tdNormal,
                     backgroundColor: esInactivo ? '#E8DEC4' : '#FEF9EC',
@@ -1277,24 +1383,26 @@ function TablaPlanilla({
                 )}
 
                 {/* Observaciones */}
-                <td style={{
-                  ...tdNormal,
-                  backgroundColor: bgFila,
-                  padding: '8px',
-                  opacity: esInactivo ? 0.75 : 1,
-                  minWidth: '180px',
-                  maxWidth: '300px',
-                  fontSize: '13px',
-                  verticalAlign: 'middle',
-                  textAlign: 'center',
-                  ...(esCamp ? {} : { borderLeft: '2px solid #24352A' })
-                }}>
-                  <CeldaObservacion
-                    observacion={obs}
-                    puedeEditar={puedeEditar}
-                    onGuardar={(texto) => onGuardarObservacion(concepto, rama, b.id, texto, obs?.id)}
-                  />
-                </td>
+                {!esCuotas && (
+                  <td style={{
+                    ...tdNormal,
+                    backgroundColor: bgFila,
+                    padding: '8px',
+                    opacity: esInactivo ? 0.75 : 1,
+                    minWidth: '180px',
+                    maxWidth: '300px',
+                    fontSize: '13px',
+                    verticalAlign: 'middle',
+                    textAlign: 'center',
+                    ...(esCamp ? {} : { borderLeft: '2px solid #24352A' })
+                  }}>
+                    <CeldaObservacion
+                      observacion={obs}
+                      puedeEditar={puedeEditar}
+                      onGuardar={(texto) => onGuardarObservacion(concepto, rama, b.id, texto, obs?.id)}
+                    />
+                  </td>
+                )}
 
                 {/* PAGÓ EL GRUPO (solo afiliación) */}
                 {!esCamp && esAfiliacion && (
@@ -1313,6 +1421,489 @@ function TablaPlanilla({
         </tbody>
       </table>
     </div>
+  )
+}
+
+// ============================================
+// CELDA MES CUOTA (con drag, barra estirada y editor)
+// ============================================
+function CeldaMesCuota({
+  mesKey, movimiento, esPrimerMesDelPago, esUltimoMesDelPago,
+  enDrag, enEditor, esInactivo, bgFila, puedeEditar,
+  editorAbierto, editorRango,
+  onMouseDown, onMouseEnter, onMouseUp, onClickCelda,
+  onGuardar, onGuardarNoAplica, onCancelar, onEliminar
+}: {
+  mesKey: string
+  movimiento: Movimiento | undefined
+  esPrimerMesDelPago: boolean
+  esUltimoMesDelPago: boolean
+  enDrag: boolean
+  enEditor: boolean
+  esInactivo: boolean
+  bgFila: string
+  puedeEditar: boolean
+  editorAbierto: boolean
+  editorRango: { beneficiarioId: string; mesInicio: string; mesFin: string } | null
+  onMouseDown: () => void
+  onMouseEnter: () => void
+  onMouseUp: () => void
+  onClickCelda?: () => void
+  onGuardar: (fecha: string, monto: number, reciboEntregado: boolean) => void
+  onGuardarNoAplica: () => void
+  onCancelar: () => void
+  onEliminar: (id: string) => void
+}) {
+  const [fecha, setFecha] = useState('')
+  const [monto, setMonto] = useState('')
+  const [reciboEntregado, setReciboEntregado] = useState(true)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  // ¿Este movimiento es un "no aplica"?
+  const esNoAplica = movimiento?.no_aplica === true
+
+  // Cuando se abre el editor, precargar valores
+  useEffect(() => {
+    if (editorAbierto && movimiento && !movimiento.no_aplica) {
+      setFecha(movimiento.fecha_pago)
+      setMonto(movimiento.monto.toString())
+      setReciboEntregado(movimiento.recibo_entregado !== false)
+    } else if (editorAbierto) {
+      setFecha(new Date().toISOString().split('T')[0])
+      setMonto('')
+      setReciboEntregado(true)
+    }
+  }, [editorAbierto, movimiento])
+
+  // Cerrar al click afuera
+  useEffect(() => {
+    if (!editorAbierto) return
+    const handleClickFuera = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        onCancelar()
+      }
+    }
+    document.addEventListener('mousedown', handleClickFuera)
+    return () => document.removeEventListener('mousedown', handleClickFuera)
+  }, [editorAbierto, fecha, monto, reciboEntregado])
+
+  const guardar = () => {
+    const montoNum = parseFloat(monto)
+    if (fecha && montoNum > 0) {
+      if (movimiento) onEliminar(movimiento.id)
+      onGuardar(fecha, montoNum, reciboEntregado)
+    } else {
+      onCancelar()
+    }
+  }
+
+  // Determinar si esta celda es el inicio visual de la barra (donde va el texto)
+  const esInicioBarra = esPrimerMesDelPago
+
+  // ============================================
+  // RENDER: EDITOR ABIERTO
+  // ============================================
+  if (editorAbierto && editorRango) {
+    const cantMeses = MESES_CUOTAS.filter(m =>
+      m.key >= editorRango.mesInicio && m.key <= editorRango.mesFin
+    ).length
+
+    // Este es el mes donde se renderiza el editor (el primero del rango)
+    const esElMesDelEditor = editorRango.mesInicio === mesKey
+
+    if (!esElMesDelEditor) {
+      // Los demás meses del rango solo se pintan de verde
+      return (
+        <td style={{
+          ...tdNormal,
+          backgroundColor: '#D1FAE5',
+          border: `2px solid ${COLORES.verdeScout}`,
+          padding: '6px 4px',
+          textAlign: 'center'
+        }} />
+      )
+    }
+
+    return (
+      <td
+        colSpan={cantMeses}
+        style={{
+          ...tdNormal,
+          backgroundColor: '#F0F7F0',
+          border: `2px solid ${COLORES.verdeScout}`,
+          padding: '6px',
+          position: 'relative'
+        }}
+      >
+        <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '200px' }}>
+          <div style={{
+            fontSize: '10px',
+            color: COLORES.textoSecundario,
+            textAlign: 'center',
+            fontWeight: '600',
+            textTransform: 'uppercase'
+          }}>
+            {cantMeses} mes{cantMeses > 1 ? 'es' : ''} ({editorRango.mesInicio}–{editorRango.mesFin})
+          </div>
+
+          {esNoAplica ? (
+            // Si ya está marcado como "no aplica", no mostramos inputs de pago
+            <div style={{
+              textAlign: 'center',
+              fontSize: '12px',
+              padding: '6px',
+              color: COLORES.textoPrincipal,
+              fontStyle: 'italic'
+            }}>
+              🚫 Marcado como "no aplica"
+            </div>
+          ) : (
+            <>
+              <input
+                type="date"
+                value={fecha}
+                onChange={(e) => setFecha(e.target.value)}
+                autoFocus
+                style={inputInlineStyle}
+              />
+              <input
+                type="number"
+                value={monto}
+                onChange={(e) => setMonto(e.target.value)}
+                placeholder="$"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') guardar()
+                  if (e.key === 'Escape') onCancelar()
+                }}
+                style={inputInlineStyle}
+              />
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '10px',
+                fontFamily: 'Oswald, sans-serif',
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: COLORES.textoPrincipal
+              }}>
+                <input
+                  type="checkbox"
+                  checked={reciboEntregado}
+                  onChange={(e) => setReciboEntregado(e.target.checked)}
+                  style={{ width: '13px', height: '13px', cursor: 'pointer' }}
+                />
+                📄 Recibo entregado
+              </label>
+            </>
+          )}
+
+          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {!esNoAplica && (
+              <button
+                onClick={guardar}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  backgroundColor: COLORES.verdeScout,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontFamily: 'Oswald, sans-serif'
+                }}
+              >
+                ✓ Guardar
+              </button>
+            )}
+            {!movimiento && (
+              <button
+                onClick={onGuardarNoAplica}
+                title="Marcar este mes como 'no aplica' (el beneficiario todavía no estaba en el grupo)"
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  backgroundColor: '#333',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontFamily: 'Oswald, sans-serif'
+                }}
+              >
+                🚫 No aplica
+              </button>
+            )}
+            {movimiento && (
+              <button
+                onClick={() => {
+                  if (window.confirm('¿Eliminar este registro?')) {
+                    onEliminar(movimiento.id)
+                  }
+                }}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  backgroundColor: COLORES.terracota,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontFamily: 'Oswald, sans-serif'
+                }}
+              >
+                🗑️ Eliminar
+              </button>
+            )}
+            <button
+              onClick={onCancelar}
+              style={{
+                padding: '2px 8px',
+                fontSize: '11px',
+                backgroundColor: '#ccc',
+                color: '#333',
+                border: 'none',
+                borderRadius: '3px',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif'
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      </td>
+    )
+  }
+
+  // ============================================
+  // RENDER: CELDA NORMAL (con drag)
+  // ============================================
+  const sinRecibo = movimiento?.recibo_entregado === false
+  const dentroDeBarra = movimiento !== undefined
+
+  const bgColor = enDrag || enEditor
+    ? '#A7D7A7'
+    : esNoAplica
+      ? '#000000'
+      : sinRecibo
+        ? '#FCD34D'
+        : dentroDeBarra
+          ? '#7FB77E'
+          : bgFila
+
+  const bordeDrag = enDrag ? `2px solid ${COLORES.verdeScout}` : `1px solid ${COLORES.bordeSuave}`
+
+  // Calcular cuántos meses cubre la barra (para el colSpan)
+  let cantMesesBarra = 1
+  if (movimiento && esInicioBarra) {
+    const ini = movimiento.mes_inicio || mesKey
+    const fin = movimiento.mes_fin || mesKey
+    cantMesesBarra = MESES_CUOTAS.filter(m => m.key >= ini && m.key <= fin).length
+  }
+
+  // Si este mes NO es el inicio del pago, no renderizamos <td>
+  if (movimiento && !esInicioBarra) {
+    return null
+  }
+
+  return (
+    <td
+      colSpan={cantMesesBarra}
+      onMouseDown={onMouseDown}
+      onMouseEnter={onMouseEnter}
+      onMouseUp={onMouseUp}
+      onClick={() => {
+        if (movimiento && onClickCelda) {
+          onClickCelda()
+        }
+      }}
+      style={{
+        ...tdNormal,
+        backgroundColor: bgColor,
+        border: bordeDrag,
+        textAlign: 'center',
+        cursor: puedeEditar ? 'cell' : 'default',
+        padding: '6px 4px',
+        minWidth: '90px',
+        opacity: esInactivo ? 0.75 : 1,
+        userSelect: 'none'
+      }}
+    >
+      {esNoAplica ? (
+        <span style={{
+          color: '#FFFFFF',
+          fontSize: 'clamp(11px, 2.2vw, 13px)',
+          fontWeight: '600',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          N/A
+        </span>
+      ) : movimiento ? (
+        <div style={{ whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+          <span style={{ fontSize: '11px', color: '#000000', fontWeight: '400' }}>
+            {formatFecha(movimiento.fecha_pago)}
+          </span>
+          <span style={{ fontSize: '11px', color: '#000000', fontWeight: '400' }}>
+            {' - '}
+          </span>
+          <span style={{ fontSize: 'clamp(13px, 2.6vw, 16px)', color: COLORES.textoPrincipal, fontWeight: '700' }}>
+            {formatMonto(movimiento.monto)}
+          </span>
+        </div>
+      ) : puedeEditar ? (
+        <span style={{ color: '#D1C9B4', fontSize: '14px' }}>+</span>
+      ) : (
+        <span style={{ color: 'transparent' }}>·</span>
+      )}
+    </td>
+  )
+}
+
+// ============================================
+// CELDA PAGO
+// ============================================
+function CeldaPago({
+  movimiento, puedeEditar, bgFila, onCrear, onActualizar, onEliminar
+}: {
+  movimiento: Movimiento | undefined
+  puedeEditar: boolean
+  bgFila: string
+  onCrear: (fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
+  onActualizar: (id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
+  onEliminar: (id: string) => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [fecha, setFecha] = useState('')
+  const [monto, setMonto] = useState('')
+  const [reciboEntregado, setReciboEntregado] = useState(true)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  const abrirEdicion = () => {
+    if (!puedeEditar) return
+    if (movimiento) {
+      setFecha(movimiento.fecha_pago)
+      setMonto(movimiento.monto.toString())
+      setReciboEntregado(movimiento.recibo_entregado !== false)
+    } else {
+      setFecha(new Date().toISOString().split('T')[0])
+      setMonto('')
+      setReciboEntregado(true)
+    }
+    setEditando(true)
+  }
+
+  const cerrarYGuardar = () => {
+    const montoNum = parseFloat(monto)
+    if (fecha && montoNum > 0) {
+      if (movimiento) onActualizar(movimiento.id, fecha, montoNum, 'familia', reciboEntregado)
+      else onCrear(fecha, montoNum, 'familia', reciboEntregado)
+    } else if (movimiento && !monto) {
+      onEliminar(movimiento.id)
+    }
+    setEditando(false)
+    setFecha('')
+    setMonto('')
+    setReciboEntregado(true)
+  }
+
+  useEffect(() => {
+    if (!editando) return
+    const handleClickFuera = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        cerrarYGuardar()
+      }
+    }
+    document.addEventListener('mousedown', handleClickFuera)
+    return () => document.removeEventListener('mousedown', handleClickFuera)
+  }, [editando, fecha, monto, reciboEntregado])
+
+  if (editando) {
+    return (
+      <td style={{ ...tdNormal, padding: '4px', backgroundColor: bgFila, minWidth: '120px' }}>
+        <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <input
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            autoFocus
+            style={inputInlineStyle}
+          />
+          <input
+            type="number"
+            value={monto}
+            onChange={(e) => setMonto(e.target.value)}
+            placeholder="$"
+            onKeyDown={(e) => { if (e.key === 'Enter') cerrarYGuardar() }}
+            style={inputInlineStyle}
+          />
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            fontSize: '10px',
+            fontFamily: 'Oswald, sans-serif',
+            cursor: 'pointer',
+            userSelect: 'none',
+            color: COLORES.textoPrincipal
+          }}>
+            <input
+              type="checkbox"
+              checked={reciboEntregado}
+              onChange={(e) => setReciboEntregado(e.target.checked)}
+              style={{ width: '13px', height: '13px', cursor: 'pointer' }}
+            />
+            📄 Recibo entregado
+          </label>
+        </div>
+      </td>
+    )
+  }
+
+  if (!movimiento) {
+    return (
+      <td
+        onClick={abrirEdicion}
+        style={{
+          ...tdNormal,
+          textAlign: 'center',
+          cursor: puedeEditar ? 'pointer' : 'default',
+          backgroundColor: bgFila,
+          color: '#D1C9B4',
+          fontSize: '14px'
+        }}
+      >
+        {puedeEditar ? '+' : '—'}
+      </td>
+    )
+  }
+
+  const sinRecibo = movimiento.recibo_entregado === false
+
+  return (
+    <td
+      onClick={abrirEdicion}
+      style={{
+        ...tdNormal,
+        textAlign: 'center',
+        cursor: puedeEditar ? 'pointer' : 'default',
+        backgroundColor: sinRecibo ? '#FCD34D' : '#7FB77E',
+        padding: '8px 6px'
+      }}
+    >
+      <div style={{ whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+        <span style={{ fontSize: '11px', color: '#000000', fontWeight: '400' }}>
+          {formatFecha(movimiento.fecha_pago)}
+        </span>
+        <span style={{ fontSize: '11px', color: '#000000', fontWeight: '400' }}>
+          {' - '}
+        </span>
+        <span style={{ fontSize: 'clamp(13px, 2.6vw, 16px)', color: COLORES.textoPrincipal, fontWeight: '700' }}>
+          {formatMonto(movimiento.monto)}
+        </span>
+      </div>
+    </td>
   )
 }
 
@@ -1485,163 +2076,16 @@ function CeldaPagoGrupo({
         ...tdNormal,
         textAlign: 'center',
         cursor: puedeEditar ? 'pointer' : 'default',
-        backgroundColor: '#E8F5E9',
+        backgroundColor: '#7FB77E',
         padding: '8px 6px',
         borderLeft: '2px solid #24352A'
       }}
     >
       <div style={{ whiteSpace: 'nowrap', lineHeight: 1.3 }}>
-        <span style={{ fontSize: '11px', color: COLORES.textoSecundario, fontWeight: '400' }}>
+        <span style={{ fontSize: '11px', color: '#000000', fontWeight: '400' }}>
           {formatFecha(movimiento.fecha_pago)}
         </span>
-        <span style={{ fontSize: '11px', color: COLORES.textoSecundario, fontWeight: '400' }}>
-          {' - '}
-        </span>
-        <span style={{ fontSize: 'clamp(13px, 2.6vw, 16px)', color: COLORES.textoPrincipal, fontWeight: '700' }}>
-          {formatMonto(movimiento.monto)}
-        </span>
-      </div>
-    </td>
-  )
-}
-
-// ============================================
-// CELDA PAGO
-// ============================================
-function CeldaPago({
-  movimiento, puedeEditar, bgFila, onCrear, onActualizar, onEliminar
-}: {
-  movimiento: Movimiento | undefined
-  puedeEditar: boolean
-  bgFila: string
-  onCrear: (fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
-  onActualizar: (id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
-  onEliminar: (id: string) => void
-}) {
-  const [editando, setEditando] = useState(false)
-  const [fecha, setFecha] = useState('')
-  const [monto, setMonto] = useState('')
-  const [reciboEntregado, setReciboEntregado] = useState(true)
-  const wrapperRef = useRef<HTMLDivElement>(null)
-
-  const abrirEdicion = () => {
-    if (!puedeEditar) return
-    if (movimiento) {
-      setFecha(movimiento.fecha_pago)
-      setMonto(movimiento.monto.toString())
-      setReciboEntregado(movimiento.recibo_entregado !== false)
-    } else {
-      setFecha(new Date().toISOString().split('T')[0])
-      setMonto('')
-      setReciboEntregado(true)
-    }
-    setEditando(true)
-  }
-
-  const cerrarYGuardar = () => {
-    const montoNum = parseFloat(monto)
-    if (fecha && montoNum > 0) {
-      if (movimiento) onActualizar(movimiento.id, fecha, montoNum, 'familia', reciboEntregado)
-      else onCrear(fecha, montoNum, 'familia', reciboEntregado)
-    } else if (movimiento && !monto) {
-      onEliminar(movimiento.id)
-    }
-    setEditando(false)
-    setFecha('')
-    setMonto('')
-    setReciboEntregado(true)
-  }
-
-  useEffect(() => {
-    if (!editando) return
-    const handleClickFuera = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        cerrarYGuardar()
-      }
-    }
-    document.addEventListener('mousedown', handleClickFuera)
-    return () => document.removeEventListener('mousedown', handleClickFuera)
-  }, [editando, fecha, monto, reciboEntregado])
-
-  if (editando) {
-    return (
-      <td style={{ ...tdNormal, padding: '4px', backgroundColor: bgFila, minWidth: '120px' }}>
-        <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-          <input
-            type="date"
-            value={fecha}
-            onChange={(e) => setFecha(e.target.value)}
-            autoFocus
-            style={inputInlineStyle}
-          />
-          <input
-            type="number"
-            value={monto}
-            onChange={(e) => setMonto(e.target.value)}
-            placeholder="$"
-            onKeyDown={(e) => { if (e.key === 'Enter') cerrarYGuardar() }}
-            style={inputInlineStyle}
-          />
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            fontSize: '10px',
-            fontFamily: 'Oswald, sans-serif',
-            cursor: 'pointer',
-            userSelect: 'none',
-            color: COLORES.textoPrincipal
-          }}>
-            <input
-              type="checkbox"
-              checked={reciboEntregado}
-              onChange={(e) => setReciboEntregado(e.target.checked)}
-              style={{ width: '13px', height: '13px', cursor: 'pointer' }}
-            />
-            📄 Recibo entregado
-          </label>
-        </div>
-      </td>
-    )
-  }
-
-  if (!movimiento) {
-    return (
-      <td
-        onClick={abrirEdicion}
-        style={{
-          ...tdNormal,
-          textAlign: 'center',
-          cursor: puedeEditar ? 'pointer' : 'default',
-          backgroundColor: bgFila,
-          color: '#D1C9B4',
-          fontSize: '14px'
-        }}
-      >
-        {puedeEditar ? '+' : '—'}
-      </td>
-    )
-  }
-
-  const sinRecibo = movimiento.recibo_entregado === false
-  const esPagoGrupo = movimiento.pagado_por === 'grupo'
-
-  return (
-    <td
-      onClick={abrirEdicion}
-      style={{
-        ...tdNormal,
-        textAlign: 'center',
-        cursor: puedeEditar ? 'pointer' : 'default',
-        backgroundColor: sinRecibo ? '#FCD34D' : (esPagoGrupo ? '#E8F5E9' : bgFila),
-        padding: '8px 6px'
-      }}
-    >
-      <div style={{ whiteSpace: 'nowrap', lineHeight: 1.3 }}>
-        <span style={{ fontSize: '11px', color: COLORES.textoSecundario, fontWeight: '400' }}>
-          {formatFecha(movimiento.fecha_pago)}
-        </span>
-        <span style={{ fontSize: '11px', color: COLORES.textoSecundario, fontWeight: '400' }}>
+        <span style={{ fontSize: '11px', color: '#000000', fontWeight: '400' }}>
           {' - '}
         </span>
         <span style={{ fontSize: 'clamp(13px, 2.6vw, 16px)', color: COLORES.textoPrincipal, fontWeight: '700' }}>
