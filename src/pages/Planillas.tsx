@@ -53,6 +53,8 @@ interface Asistencia {
 
 type Rama = 'Manada' | 'Unidad Scout' | 'Caminantes' | 'Rovers' | 'Dirigentes y otros'
 type Concepto = 'afiliacion' | 'cuotas' | 'camp_corto' | 'camp_anual'
+type ColumnaOrdenable = 'beneficiario' | 'total' | 'faltan' | 'asiste'
+type DireccionOrden = 'asc' | 'desc'
 
 const RAMAS: Rama[] = ['Manada', 'Unidad Scout', 'Caminantes', 'Rovers', 'Dirigentes y otros']
 
@@ -593,14 +595,12 @@ export default function Planillas() {
                       const ramaAbierta = ramasAbiertas.has(ramaKey)
                       const cargandoEsta = cargando.has(ramaKey)
 
-                      // Calcular datos para el banner
                       const movsEstaRama = movimientos[ramaKey] || []
                       const asistenciasEstaRama = asistencias[ramaKey] || []
                       const bensEstaRama = beneficiarios[ramaKey] || []
 
                       const totalPagos = movsEstaRama.reduce((sum, m) => sum + m.monto, 0)
 
-                      // Calcular total FALTAN según la lógica nueva
                       const totalFaltan = bensEstaRama.reduce((sum, b) => {
                         const asist = asistenciasEstaRama.find(a => a.beneficiario_id === b.id)
                         const estadoAsiste = asist?.asiste || 'no_se_sabe'
@@ -843,16 +843,102 @@ function TablaPlanilla({
 }) {
   const esCuotas = concepto === 'cuotas'
   const esCamp = concepto === 'camp_corto' || concepto === 'camp_anual'
+  const esAfiliacion = concepto === 'afiliacion'
 
-  // Máximo de pagos (para afiliación y camps) — solo pagos de FAMILIA
-  const maxPagos = esCuotas ? 0 : Math.max(2, ...beneficiarios.map(b => {
+  // Estado local: columnas extra que el usuario quiere agregar manualmente
+  const [columnasExtra, setColumnasExtra] = useState(0)
+
+  // Ordenamiento
+  const [ordenColumna, setOrdenColumna] = useState<ColumnaOrdenable>('beneficiario')
+  const [ordenDireccion, setOrdenDireccion] = useState<DireccionOrden>('asc')
+
+  // Máximo de pagos
+  const maxPagosBase = esCuotas ? 0 : Math.max(2, ...beneficiarios.map(b => {
     return movimientos.filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo').length
   }))
+  const maxPagos = esCuotas ? 0 : maxPagosBase + columnasExtra
+
+  // Resetear orden al cambiar de rama/concepto
+  useEffect(() => {
+    setOrdenColumna('beneficiario')
+    setOrdenDireccion('asc')
+    setColumnasExtra(0)
+  }, [concepto, rama])
+
+  // Función para cambiar el orden
+  const cambiarOrden = (columna: ColumnaOrdenable) => {
+    if (ordenColumna === columna) {
+      setOrdenDireccion(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setOrdenColumna(columna)
+      setOrdenDireccion('asc')
+    }
+  }
+
+  // Función para obtener el ícono
+  const getIcono = (columna: ColumnaOrdenable) => {
+    if (ordenColumna !== columna) return ' ↕'
+    return ordenDireccion === 'asc' ? ' ▲' : ' ▼'
+  }
 
   // Separar activos e inactivos
   const activos = beneficiarios.filter(b => b.estado === 'activo')
   const inactivos = beneficiarios.filter(b => b.estado === 'inactivo')
-  const ordenados = [...activos, ...inactivos]
+  const ordenadosBase = [...activos, ...inactivos]
+
+  // Aplicar orden
+  const ordenados = [...ordenadosBase].sort((a, b) => {
+    if (ordenColumna === 'beneficiario') {
+      const esInactivoA = a.estado === 'inactivo'
+      const esInactivoB = b.estado === 'inactivo'
+      if (esInactivoA !== esInactivoB) {
+        // En asc: activos primero
+        // En desc: inactivos primero
+        if (ordenDireccion === 'asc') return esInactivoA ? 1 : -1
+        else return esInactivoA ? -1 : 1
+      }
+      const cmp = a.apellido.localeCompare(b.apellido, 'es', { sensitivity: 'base' })
+      return ordenDireccion === 'asc' ? cmp : -cmp
+    }
+
+    if (ordenColumna === 'total') {
+      const totalA = movimientos
+        .filter(m => m.beneficiario_id === a.id)
+        .reduce((sum, m) => sum + m.monto, 0)
+      const totalB = movimientos
+        .filter(m => m.beneficiario_id === b.id)
+        .reduce((sum, m) => sum + m.monto, 0)
+      return ordenDireccion === 'asc' ? totalA - totalB : totalB - totalA
+    }
+
+    if (ordenColumna === 'faltan') {
+      const calcFaltan = (benef: Beneficiario) => {
+        const asist = asistencias.find(x => x.beneficiario_id === benef.id)
+        const estadoAsiste = asist?.asiste || 'no_se_sabe'
+        if (estadoAsiste !== 'si' || benef.estado === 'inactivo') return 0
+        const valorCamp = concepto === 'camp_corto'
+          ? (benef.tiene_hermanos ? config?.camp_corto_2026?.hermano : config?.camp_corto_2026?.unico) || 0
+          : (benef.tiene_hermanos ? config?.camp_anual_2027?.hermano : config?.camp_anual_2027?.unico) || 0
+        const pagado = movimientos
+          .filter(m => m.beneficiario_id === benef.id && m.pagado_por !== 'grupo')
+          .reduce((s, m) => s + m.monto, 0)
+        return Math.max(0, valorCamp - pagado)
+      }
+      const faltanA = calcFaltan(a)
+      const faltanB = calcFaltan(b)
+      return ordenDireccion === 'asc' ? faltanA - faltanB : faltanB - faltanA
+    }
+
+    if (ordenColumna === 'asiste') {
+      const orden: Record<string, number> = { 'si': 0, 'no_se_sabe': 1, 'no': 2 }
+      const asistA = asistencias.find(x => x.beneficiario_id === a.id)?.asiste || 'no_se_sabe'
+      const asistB = asistencias.find(x => x.beneficiario_id === b.id)?.asiste || 'no_se_sabe'
+      const cmp = orden[asistA] - orden[asistB]
+      return ordenDireccion === 'asc' ? cmp : -cmp
+    }
+
+    return 0
+  })
 
   if (beneficiarios.length === 0) {
     return (
@@ -865,6 +951,11 @@ function TablaPlanilla({
           : 'No hay beneficiarios en esta rama'}
       </div>
     )
+  }
+
+  // Borde grueso
+  const bordeGruesoIzquierda: React.CSSProperties = {
+    borderLeft: `4px solid ${COLORES.verdeScout}`
   }
 
   return (
@@ -883,13 +974,21 @@ function TablaPlanilla({
       }}>
         <thead>
           <tr>
-            <th style={{
-              ...thStickyLeft,
-              minWidth: '140px',
-              maxWidth: '140px'
-            }}>
-              Beneficiario
+            {/* Beneficiario (ordenable) */}
+            <th
+              onClick={() => cambiarOrden('beneficiario')}
+              style={{
+                ...thStickyLeft,
+                minWidth: '140px',
+                maxWidth: '140px',
+                cursor: 'pointer',
+                userSelect: 'none'
+              }}
+            >
+              Beneficiario{getIcono('beneficiario')}
             </th>
+
+            {/* Pagos / Meses */}
             {esCuotas ? (
               MESES_CUOTAS.map(m => (
                 <th key={m.key} style={{
@@ -899,56 +998,127 @@ function TablaPlanilla({
                 }}>{m.label}</th>
               ))
             ) : (
-              Array.from({ length: maxPagos }, (_, i) => (
-                <th key={i} style={{
-                  ...thNormal,
-                  padding: '8px 6px',
-                  minWidth: '110px'
-                }}>PAGO {i + 1}</th>
-              ))
+              Array.from({ length: maxPagos }, (_, i) => {
+                const esUltimaColumnaPago = i === maxPagos - 1
+                return (
+                  <th key={i} style={{
+                    ...thNormal,
+                    padding: '8px 6px',
+                    minWidth: '110px',
+                    position: 'relative'
+                  }}>
+                    PAGO {i + 1}
+                    {esUltimaColumnaPago && puedeEditar && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setColumnasExtra(prev => prev + 1)
+                        }}
+                        title="Agregar columna de pago"
+                        style={{
+                          position: 'absolute',
+                          top: '50%',
+                          right: '2px',
+                          transform: 'translateY(-50%)',
+                          width: '18px',
+                          height: '18px',
+                          padding: 0,
+                          backgroundColor: '#5C7A5E',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '3px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          lineHeight: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        +
+                      </button>
+                    )}
+                  </th>
+                )
+              })
             )}
+
+            {/* TOTAL (ordenable) - solo camps */}
             {esCamp && (
-              <>
-                <th style={{
+              <th
+                onClick={() => cambiarOrden('total')}
+                style={{
                   ...thNormal,
                   backgroundColor: COLORES.dorado,
-                  minWidth: '100px',
-                  padding: '8px 6px'
-                }}>
-                  PAGOS
-                </th>
-                <th style={{
+                  minWidth: '110px',
+                  padding: '8px 6px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  borderLeft: '2px solid #24352A'
+                }}
+              >
+                TOTAL{getIcono('total')}
+              </th>
+            )}
+
+            {/* FALTAN (ordenable) - solo camps */}
+            {esCamp && (
+              <th
+                onClick={() => cambiarOrden('faltan')}
+                style={{
                   ...thNormal,
                   backgroundColor: COLORES.terracota,
                   minWidth: '100px',
-                  padding: '8px 6px'
-                }}>
-                  FALTAN
-                </th>
-                <th style={{
+                  padding: '8px 6px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  borderRight: '2px solid #24352A'
+                }}
+              >
+                FALTAN{getIcono('faltan')}
+              </th>
+            )}
+
+            {/* ASISTE (ordenable) - solo camps */}
+            {esCamp && (
+              <th
+                onClick={() => cambiarOrden('asiste')}
+                style={{
                   ...thNormal,
                   backgroundColor: COLORES.verdeClaro,
-                  minWidth: '100px',
-                  padding: '8px 6px'
-                }}>
-                  ASISTE
-                </th>
-              </>
+                  minWidth: '50px',
+                  maxWidth: '60px',
+                  padding: '8px 4px',
+                  fontSize: 'clamp(9px, 1.9vw, 11px)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  borderRight: '2px solid #24352A'
+                }}
+              >
+                ASISTE{getIcono('asiste')}
+              </th>
             )}
+
+            {/* OBSERVACIONES */}
             <th style={{
               ...thNormal,
               minWidth: '180px',
               maxWidth: '300px',
               padding: '8px 8px',
-              textAlign: 'left'
+              textAlign: 'center',
+              ...(esCamp ? {} : { borderLeft: '2px solid #24352A' })
             }}>
               OBSERVACIONES
             </th>
-            {!esCamp && (
+
+            {/* PAGÓ EL GRUPO (solo afiliación) */}
+            {esAfiliacion && (
               <th style={{
                 ...thNormal,
                 minWidth: '110px',
-                padding: '8px 6px'
+                padding: '8px 6px',
+                borderLeft: '2px solid #24352A'
               }}>
                 PAGÓ EL GRUPO
               </th>
@@ -973,14 +1143,12 @@ function TablaPlanilla({
             const bgFila = idx % 2 === 0 ? 'white' : '#FAF8F4'
             const nombreFormateado = formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
 
-            // Valor del camp y cálculo del FALTAN
             const valorCamp = esCamp ? (
               concepto === 'camp_corto'
                 ? (b.tiene_hermanos ? config?.camp_corto_2026?.hermano : config?.camp_corto_2026?.unico) || 0
                 : (b.tiene_hermanos ? config?.camp_anual_2027?.hermano : config?.camp_anual_2027?.unico) || 0
             ) : 0
 
-            // FALTAN: solo si asiste = SI y está activo
             const debeComputarFaltan = asiste === 'si' && !esInactivo
             const faltan = debeComputarFaltan ? Math.max(0, valorCamp - totalFamilia) : 0
 
@@ -1046,63 +1214,66 @@ function TablaPlanilla({
                   })
                 )}
 
-                {/* Columnas exclusivas de CAMPS */}
+                {/* TOTAL (solo camps) */}
                 {esCamp && (
-                  <>
-                    {/* PAGOS (total pagado por el beneficiario) */}
-                    <td style={{
-                      ...tdNormal,
-                      backgroundColor: esInactivo ? '#E8DEC4' : '#FEF9EC',
-                      textAlign: 'center',
-                      fontWeight: '700',
-                      opacity: esInactivo ? 0.65 : 1,
-                      minWidth: '100px',
-                      padding: '6px 6px'
+                  <td style={{
+                    ...tdNormal,
+                    backgroundColor: esInactivo ? '#E8DEC4' : '#FEF9EC',
+                    textAlign: 'center',
+                    fontWeight: '700',
+                    opacity: esInactivo ? 0.65 : 1,
+                    minWidth: '110px',
+                    padding: '6px 6px',
+                    borderLeft: '2px solid #24352A'
+                  }}>
+                    <div style={{
+                      fontSize: 'clamp(15px, 3vw, 18px)',
+                      color: COLORES.textoPrincipal,
+                      whiteSpace: 'nowrap'
                     }}>
-                      <div style={{
-                        fontSize: 'clamp(13px, 2.6vw, 16px)',
-                        color: COLORES.textoPrincipal,
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {totalFamilia > 0 ? formatMonto(totalFamilia) : '—'}
-                      </div>
-                    </td>
+                      {totalFamilia > 0 ? formatMonto(totalFamilia) : '—'}
+                    </div>
+                  </td>
+                )}
 
-                    {/* FALTAN */}
-                    <td style={{
-                      ...tdNormal,
-                      backgroundColor:
-                        asiste !== 'si'
-                          ? (asiste === 'no' ? '#FEE2E2' : '#F3F4F6')
-                          : (faltan === 0 ? '#F0F7F0' : '#FEE2E2'),
-                      color:
-                        asiste !== 'si'
-                          ? (asiste === 'no' ? COLORES.terracota : COLORES.textoSecundario)
-                          : (faltan === 0 ? COLORES.verdeClaro : COLORES.terracota),
-                      textAlign: 'center',
-                      fontWeight: '700',
-                      opacity: esInactivo ? 0.65 : 1,
-                      minWidth: '100px',
-                      padding: '6px 6px'
+                {/* FALTAN (solo camps) */}
+                {esCamp && (
+                  <td style={{
+                    ...tdNormal,
+                    backgroundColor:
+                      asiste !== 'si'
+                        ? (asiste === 'no' ? '#FEE2E2' : '#F3F4F6')
+                        : (faltan === 0 ? '#F0F7F0' : '#FEE2E2'),
+                    color:
+                      asiste !== 'si'
+                        ? (asiste === 'no' ? COLORES.terracota : COLORES.textoSecundario)
+                        : (faltan === 0 ? COLORES.verdeClaro : COLORES.terracota),
+                    textAlign: 'center',
+                    fontWeight: '700',
+                    opacity: esInactivo ? 0.65 : 1,
+                    minWidth: '100px',
+                    padding: '6px 6px',
+                    borderRight: '2px solid #24352A'
+                  }}>
+                    <div style={{
+                      fontSize: 'clamp(13px, 2.6vw, 16px)',
+                      whiteSpace: 'nowrap'
                     }}>
-                      <div style={{
-                        fontSize: 'clamp(13px, 2.6vw, 16px)',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {asiste === 'si'
-                          ? (faltan === 0 ? '✅' : formatMonto(faltan))
-                          : '—'}
-                      </div>
-                    </td>
+                      {asiste === 'si'
+                        ? (faltan === 0 ? '✅' : formatMonto(faltan))
+                        : '—'}
+                    </div>
+                  </td>
+                )}
 
-                    {/* ASISTE (editable) */}
-                    <CeldaAsistencia
-                      asistencia={asistencia}
-                      puedeEditar={puedeEditar}
-                      bgFila={bgFila}
-                      onGuardar={(nuevoEstado) => onGuardarAsistencia(concepto, rama, b.id, nuevoEstado, undefined, asistencia?.id)}
-                    />
-                  </>
+                {/* ASISTE (solo camps) */}
+                {esCamp && (
+                  <CeldaAsistencia
+                    asistencia={asistencia}
+                    puedeEditar={puedeEditar}
+                    bgFila={bgFila}
+                    onGuardar={(nuevoEstado) => onGuardarAsistencia(concepto, rama, b.id, nuevoEstado, undefined, asistencia?.id)}
+                  />
                 )}
 
                 {/* Observaciones */}
@@ -1115,7 +1286,8 @@ function TablaPlanilla({
                   maxWidth: '300px',
                   fontSize: '13px',
                   verticalAlign: 'middle',
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  ...(esCamp ? {} : { borderLeft: '2px solid #24352A' })
                 }}>
                   <CeldaObservacion
                     observacion={obs}
@@ -1125,7 +1297,7 @@ function TablaPlanilla({
                 </td>
 
                 {/* PAGÓ EL GRUPO (solo afiliación) */}
-                {!esCamp && (
+                {!esCamp && esAfiliacion && (
                   <CeldaPagoGrupo
                     movimiento={pagoGrupo}
                     puedeEditar={puedeEditar}
@@ -1159,7 +1331,6 @@ function CeldaAsistencia({
 
   const handleClick = () => {
     if (!puedeEditar) return
-    // Ciclo: no_se_sabe → si → no → no_se_sabe
     let nuevoEstado: 'si' | 'no' | 'no_se_sabe'
     if (estadoActual === 'no_se_sabe') nuevoEstado = 'si'
     else if (estadoActual === 'si') nuevoEstado = 'no'
@@ -1167,7 +1338,6 @@ function CeldaAsistencia({
     onGuardar(nuevoEstado)
   }
 
-  // Colores según estado
   const bgColor =
     estadoActual === 'si' ? '#D1FAE5'
     : estadoActual === 'no' ? '#FEE2E2'
@@ -1181,7 +1351,7 @@ function CeldaAsistencia({
   const label =
     estadoActual === 'si' ? 'SI'
     : estadoActual === 'no' ? 'NO'
-    : 'No se sabe'
+    : '?'
 
   return (
     <td
@@ -1193,12 +1363,14 @@ function CeldaAsistencia({
         backgroundColor: bgColor,
         color: textColor,
         fontWeight: '700',
-        minWidth: '100px',
-        padding: '6px 6px'
+        minWidth: '50px',
+        maxWidth: '60px',
+        padding: '6px 4px',
+        borderRight: '2px solid #24352A'
       }}
     >
       <div style={{
-        fontSize: 'clamp(12px, 2.4vw, 14px)',
+        fontSize: 'clamp(11px, 2.2vw, 13px)',
         whiteSpace: 'nowrap',
         textTransform: 'uppercase',
         letterSpacing: '0.5px'
@@ -1265,7 +1437,7 @@ function CeldaPagoGrupo({
 
   if (editando) {
     return (
-      <td style={{ ...tdNormal, padding: '4px', backgroundColor: bgFila, minWidth: '110px' }}>
+      <td style={{ ...tdNormal, padding: '4px', backgroundColor: bgFila, minWidth: '110px', borderLeft: '2px solid #24352A' }}>
         <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
           <input
             type="date"
@@ -1297,7 +1469,8 @@ function CeldaPagoGrupo({
           cursor: puedeEditar ? 'pointer' : 'default',
           backgroundColor: bgFila,
           color: '#D1C9B4',
-          fontSize: '14px'
+          fontSize: '14px',
+          borderLeft: '2px solid #24352A'
         }}
       >
         {puedeEditar ? '+' : '—'}
@@ -1313,32 +1486,18 @@ function CeldaPagoGrupo({
         textAlign: 'center',
         cursor: puedeEditar ? 'pointer' : 'default',
         backgroundColor: '#E8F5E9',
-        padding: '8px 6px'
+        padding: '8px 6px',
+        borderLeft: '2px solid #24352A'
       }}
     >
-      <div style={{
-        whiteSpace: 'nowrap',
-        lineHeight: 1.3
-      }}>
-        <span style={{
-          fontSize: '11px',
-          color: COLORES.textoSecundario,
-          fontWeight: '400'
-        }}>
+      <div style={{ whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+        <span style={{ fontSize: '11px', color: COLORES.textoSecundario, fontWeight: '400' }}>
           {formatFecha(movimiento.fecha_pago)}
         </span>
-        <span style={{
-          fontSize: '11px',
-          color: COLORES.textoSecundario,
-          fontWeight: '400'
-        }}>
+        <span style={{ fontSize: '11px', color: COLORES.textoSecundario, fontWeight: '400' }}>
           {' - '}
         </span>
-        <span style={{
-          fontSize: 'clamp(13px, 2.6vw, 16px)',
-          color: COLORES.textoPrincipal,
-          fontWeight: '700'
-        }}>
+        <span style={{ fontSize: 'clamp(13px, 2.6vw, 16px)', color: COLORES.textoPrincipal, fontWeight: '700' }}>
           {formatMonto(movimiento.monto)}
         </span>
       </div>
@@ -1478,29 +1637,14 @@ function CeldaPago({
         padding: '8px 6px'
       }}
     >
-      <div style={{
-        whiteSpace: 'nowrap',
-        lineHeight: 1.3
-      }}>
-        <span style={{
-          fontSize: '11px',
-          color: COLORES.textoSecundario,
-          fontWeight: '400'
-        }}>
+      <div style={{ whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+        <span style={{ fontSize: '11px', color: COLORES.textoSecundario, fontWeight: '400' }}>
           {formatFecha(movimiento.fecha_pago)}
         </span>
-        <span style={{
-          fontSize: '11px',
-          color: COLORES.textoSecundario,
-          fontWeight: '400'
-        }}>
+        <span style={{ fontSize: '11px', color: COLORES.textoSecundario, fontWeight: '400' }}>
           {' - '}
         </span>
-        <span style={{
-          fontSize: 'clamp(13px, 2.6vw, 16px)',
-          color: COLORES.textoPrincipal,
-          fontWeight: '700'
-        }}>
+        <span style={{ fontSize: 'clamp(13px, 2.6vw, 16px)', color: COLORES.textoPrincipal, fontWeight: '700' }}>
           {formatMonto(movimiento.monto)}
         </span>
       </div>
@@ -1606,7 +1750,8 @@ const thStickyLeft: React.CSSProperties = {
   zIndex: 4,
   minWidth: '180px',
   maxWidth: '180px',
-  textAlign: 'left'
+  textAlign: 'left',
+  borderRight: '2px solid #24352A'
 }
 
 const tdNormal: React.CSSProperties = {
@@ -1624,7 +1769,8 @@ const tdStickyLeft: React.CSSProperties = {
   zIndex: 2,
   minWidth: '180px',
   maxWidth: '180px',
-  boxShadow: '2px 0 4px rgba(0,0,0,0.06)'
+  boxShadow: '2px 0 4px rgba(0,0,0,0.06)',
+  borderRight: '2px solid #24352A'
 }
 
 const inputInlineStyle: React.CSSProperties = {
