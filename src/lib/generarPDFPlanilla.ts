@@ -155,18 +155,18 @@ export function generarPDFPlanilla({
       MESES_CUOTAS.forEach(mes => {
         const mov = movsFamilia.find(m => m.fecha_pago.startsWith(`2026-${mes.key}`))
         if (mov) {
-          fila.push(`${formatFecha(mov.fecha_pago)} - ${formatMonto(mov.monto)}`)
+          fila.push(' ') // placeholder, se dibuja en didDrawCell
         } else {
-          fila.push('')
+          fila.push('-')
         }
       })
     } else {
       for (let i = 0; i < maxPagos; i++) {
         const mov = movsFamilia[i]
         if (mov) {
-          fila.push(`${formatFecha(mov.fecha_pago)} - ${formatMonto(mov.monto)}`)
+          fila.push(' ') // placeholder
         } else {
-          fila.push('')
+          fila.push('-')
         }
       }
     }
@@ -182,7 +182,7 @@ export function generarPDFPlanilla({
     }
 
     fila.push(obs?.observacion || '')
-    fila.push(pagoGrupo ? `${formatFecha(pagoGrupo.fecha_pago)} - ${formatMonto(pagoGrupo.monto)}` : '')
+    fila.push(pagoGrupo ? ' ' : '-') // placeholder para pagó el grupo
 
     return fila
   })
@@ -249,14 +249,31 @@ export function generarPDFPlanilla({
       fontSize: 8,
       halign: 'center'
     },
-    columnStyles: {
-      0: {
-        cellWidth: 42,
-        halign: 'left',
-        fontStyle: 'bold',
-        fontSize: 7
+    columnStyles: (() => {
+      const styles: Record<number, any> = {
+        0: {
+          cellWidth: 80,
+          halign: 'left',
+          fontStyle: 'bold',
+          fontSize: 9
+        }
       }
-    },
+      // Columnas de pagos
+      for (let i = 1; i <= numColumnasPago; i++) {
+        styles[i] = {
+          cellWidth: 30
+        }
+      }
+      // Columna "Pagó el grupo"
+      styles[colGrupoIndex] = {
+        cellWidth: 30
+      }
+      // Columna Observaciones
+      styles[colObsIndex] = {
+        halign: 'center'
+      }
+      return styles
+    })(),
     alternateRowStyles: {
       fillColor: [250, 248, 244]
     },
@@ -264,7 +281,7 @@ export function generarPDFPlanilla({
       // Nombre ex miembro
       if (data.column.index === 0 && data.section === 'body') {
         const nombre = data.cell.raw as string
-        if (nombre.includes('(Ex miembro)')) {
+        if (nombre && nombre.includes('(Ex miembro)')) {
           data.cell.styles.textColor = [168, 158, 134]
           data.cell.styles.fontStyle = 'italic'
         }
@@ -272,8 +289,8 @@ export function generarPDFPlanilla({
 
       // Columna Observaciones
       if (data.column.index === colObsIndex && data.section === 'body') {
-        data.cell.styles.halign = 'left'
-        data.cell.styles.fontSize = 7
+        data.cell.styles.halign = 'center'
+        data.cell.styles.fontSize = 9
       }
 
       // Columna Falta pagar (camps)
@@ -307,16 +324,8 @@ export function generarPDFPlanilla({
           movAsignado = movsFamilia[data.column.index - 1]
         }
 
-        if (movAsignado) {
-          if (movAsignado.recibo_entregado === false) {
-            data.cell.styles.fillColor = [252, 211, 77]
-          }
-          // Formato: fecha chica + monto en negrita
-          const fecha = formatFecha(movAsignado.fecha_pago)
-          const monto = formatMonto(movAsignado.monto)
-          data.cell.text = [`${fecha} - ${monto}`]
-          data.cell.styles.fontStyle = 'bold'
-          data.cell.styles.fontSize = 8
+        if (movAsignado && movAsignado.recibo_entregado === false) {
+          data.cell.styles.fillColor = [252, 211, 77]
         }
       }
 
@@ -328,11 +337,73 @@ export function generarPDFPlanilla({
         )
         if (pagoGrupo) {
           data.cell.styles.fillColor = [232, 245, 233]
+        }
+      }
+    },
+    didDrawCell: (data) => {
+      if (data.section !== 'body') return
+
+      // Celdas de pagos de familia
+      if (data.column.index > 0 && data.column.index <= numColumnasPago) {
+        const beneficiario = ordenados[data.row.index]
+        const movsFamilia = movimientos
+          .filter(m => m.beneficiario_id === beneficiario.id && m.pagado_por !== 'grupo')
+          .sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
+
+        let movAsignado: Movimiento | undefined
+        if (esCuotas) {
+          const mes = MESES_CUOTAS[data.column.index - 1]
+          movAsignado = movsFamilia.find(m => m.fecha_pago.startsWith(`2026-${mes.key}`))
+        } else {
+          movAsignado = movsFamilia[data.column.index - 1]
+        }
+
+        if (movAsignado) {
+          const fecha = formatFecha(movAsignado.fecha_pago)
+          const monto = formatMonto(movAsignado.monto)
+          const cellY = data.cell.y + data.cell.height / 2 + 1 // +1 para centrar verticalmente
+          const cellLeft = data.cell.x + 1
+          const cellRight = data.cell.x + data.cell.width - 1
+
+          // Fecha chica y gris (alineada a la izquierda)
+          doc.setFontSize(7)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(122, 115, 100)
+          doc.text(fecha, cellLeft, cellY)
+
+          // Monto grande y negrita (alineado a la derecha)
+          doc.setFontSize(11)
+          doc.setFont('helvetica', 'bold')
+          doc.setTextColor(36, 53, 42)
+          doc.text(monto, cellRight, cellY, { align: 'right' })
+        }
+      }
+
+      // Columna Pagó el grupo
+      if (data.column.index === colGrupoIndex) {
+        const beneficiario = ordenados[data.row.index]
+        const pagoGrupo = movimientos.find(
+          m => m.beneficiario_id === beneficiario.id && m.pagado_por === 'grupo'
+        )
+
+        if (pagoGrupo) {
           const fecha = formatFecha(pagoGrupo.fecha_pago)
           const monto = formatMonto(pagoGrupo.monto)
-          data.cell.text = [`${fecha} - ${monto}`]
-          data.cell.styles.fontStyle = 'bold'
-          data.cell.styles.fontSize = 8
+          const cellY = data.cell.y + data.cell.height / 2 + 1
+          const cellLeft = data.cell.x + 1
+          const cellRight = data.cell.x + data.cell.width - 1
+
+          // Fecha chica y gris (izquierda)
+          doc.setFontSize(7)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(122, 115, 100)
+          doc.text(fecha, cellLeft, cellY)
+
+          // Monto grande y negrita (derecha)
+          doc.setFontSize(11)
+          doc.setFont('helvetica', 'bold')
+          doc.setTextColor(36, 53, 42)
+          doc.text(monto, cellRight, cellY, { align: 'right' })
         }
       }
     }

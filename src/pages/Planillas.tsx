@@ -41,6 +41,16 @@ interface Observacion {
   observacion: string
 }
 
+interface Asistencia {
+  id: string
+  anio: number
+  rama: string
+  concepto: string
+  beneficiario_id: string | null
+  nombre_libre: string | null
+  asiste: 'si' | 'no' | 'no_se_sabe'
+}
+
 type Rama = 'Manada' | 'Unidad Scout' | 'Caminantes' | 'Rovers' | 'Dirigentes y otros'
 type Concepto = 'afiliacion' | 'cuotas' | 'camp_corto' | 'camp_anual'
 
@@ -145,6 +155,7 @@ export default function Planillas() {
 
   const [movimientos, setMovimientos] = useState<Record<string, Movimiento[]>>({})
   const [observaciones, setObservaciones] = useState<Record<string, Observacion[]>>({})
+  const [asistencias, setAsistencias] = useState<Record<string, Asistencia[]>>({})
   const [beneficiarios, setBeneficiarios] = useState<Record<string, Beneficiario[]>>({})
   const [cargando, setCargando] = useState<Set<string>>(new Set())
 
@@ -219,9 +230,19 @@ export default function Planillas() {
 
       if (errObs) throw errObs
 
+      const { data: asis, error: errAsis } = await supabase
+        .from('planilla_asistencia')
+        .select('*')
+        .eq('anio', ANIO_ACTUAL)
+        .eq('rama', rama)
+        .eq('concepto', concepto)
+
+      if (errAsis) throw errAsis
+
       setBeneficiarios(prev => ({ ...prev, [key]: beneficiariosCargados }))
       setMovimientos(prev => ({ ...prev, [key]: mov || [] }))
       setObservaciones(prev => ({ ...prev, [key]: obs || [] }))
+      setAsistencias(prev => ({ ...prev, [key]: asis || [] }))
     } catch (error) {
       console.error('Error al cargar datos:', error)
     } finally {
@@ -283,7 +304,6 @@ export default function Planillas() {
 
       if (error) throw error
 
-      // ✅ Actualizar solo el estado local (sin recargar todo)
       const key = `${concepto}-${rama}`
       setMovimientos(prev => ({
         ...prev,
@@ -314,7 +334,6 @@ export default function Planillas() {
 
       if (error) throw error
 
-      // ✅ Actualizar solo el estado local
       const key = `${concepto}-${rama}`
       setMovimientos(prev => ({
         ...prev,
@@ -331,7 +350,6 @@ export default function Planillas() {
       const { error } = await supabase.from('planilla_movimientos').delete().eq('id', id)
       if (error) throw error
 
-      // ✅ Actualizar solo el estado local
       const key = `${concepto}-${rama}`
       setMovimientos(prev => ({
         ...prev,
@@ -403,6 +421,63 @@ export default function Planillas() {
     }
   }
 
+  const guardarAsistencia = async (
+    concepto: Concepto,
+    rama: Rama,
+    beneficiarioId: string | null,
+    nuevoEstado: 'si' | 'no' | 'no_se_sabe',
+    nombreLibre?: string,
+    asistenciaId?: string
+  ) => {
+    try {
+      const key = `${concepto}-${rama}`
+
+      if (asistenciaId) {
+        const { data: asistActualizada, error } = await supabase
+          .from('planilla_asistencia')
+          .update({
+            asiste: nuevoEstado,
+            actualizado_por: profile?.id,
+            actualizado_en: new Date().toISOString()
+          })
+          .eq('id', asistenciaId)
+          .select()
+          .single()
+
+        if (error) throw error
+
+        setAsistencias(prev => ({
+          ...prev,
+          [key]: (prev[key] || []).map(a => a.id === asistenciaId ? asistActualizada : a)
+        }))
+      } else {
+        const { data: nuevaAsist, error } = await supabase
+          .from('planilla_asistencia')
+          .insert({
+            anio: ANIO_ACTUAL,
+            rama,
+            concepto,
+            beneficiario_id: beneficiarioId,
+            nombre_libre: nombreLibre || null,
+            asiste: nuevoEstado,
+            actualizado_por: profile?.id
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+
+        setAsistencias(prev => ({
+          ...prev,
+          [key]: [...(prev[key] || []), nuevaAsist]
+        }))
+      }
+    } catch (error) {
+      console.error('Error al guardar asistencia:', error)
+      alert('Error al guardar asistencia')
+    }
+  }
+
   const getValorReferencia = (concepto: Concepto): string => {
     if (!config) return ''
     if (concepto === 'afiliacion') {
@@ -467,6 +542,8 @@ export default function Planillas() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {CONCEPTOS.map(({ key, label, emoji }) => {
           const abierto = conceptosAbiertos.has(key)
+          const esCamp = key === 'camp_corto' || key === 'camp_anual'
+
           return (
             <div
               key={key}
@@ -515,6 +592,30 @@ export default function Planillas() {
                       const ramaKey = `${key}-${rama}`
                       const ramaAbierta = ramasAbiertas.has(ramaKey)
                       const cargandoEsta = cargando.has(ramaKey)
+
+                      // Calcular datos para el banner
+                      const movsEstaRama = movimientos[ramaKey] || []
+                      const asistenciasEstaRama = asistencias[ramaKey] || []
+                      const bensEstaRama = beneficiarios[ramaKey] || []
+
+                      const totalPagos = movsEstaRama.reduce((sum, m) => sum + m.monto, 0)
+
+                      // Calcular total FALTAN según la lógica nueva
+                      const totalFaltan = bensEstaRama.reduce((sum, b) => {
+                        const asist = asistenciasEstaRama.find(a => a.beneficiario_id === b.id)
+                        const estadoAsiste = asist?.asiste || 'no_se_sabe'
+                        const esActivo = b.estado === 'activo'
+                        if (estadoAsiste !== 'si' || !esActivo) return sum
+                        const valorCamp = key === 'camp_corto'
+                          ? (b.tiene_hermanos ? config?.camp_corto_2026?.hermano : config?.camp_corto_2026?.unico) || 0
+                          : (b.tiene_hermanos ? config?.camp_anual_2027?.hermano : config?.camp_anual_2027?.unico) || 0
+                        const pagado = movsEstaRama
+                          .filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo')
+                          .reduce((s, m) => s + m.monto, 0)
+                        return sum + Math.max(0, valorCamp - pagado)
+                      }, 0)
+
+                      const cantAsisten = asistenciasEstaRama.filter(a => a.asiste === 'si').length
 
                       return (
                         <div
@@ -637,15 +738,32 @@ export default function Planillas() {
                                         }}>
                                           TOTAL {key === 'afiliacion' ? 'AFILIACIÓN' : key === 'cuotas' ? 'CUOTAS' : key === 'camp_corto' ? 'CAMPAMENTO CORTO' : 'CAMPAMENTO ANUAL'} {rama.toUpperCase()}
                                         </span>
-                                        <span style={{
-                                          fontSize: 'clamp(16px, 3.5vw, 20px)',
-                                          fontWeight: '700',
-                                          color: '#F3ECD8'
-                                        }}>
-                                          {formatMonto(
-                                            (movimientos[ramaKey] || []).reduce((sum, m) => sum + m.monto, 0)
-                                          )}
-                                        </span>
+                                        {esCamp ? (
+                                          <div style={{
+                                            display: 'flex',
+                                            gap: '20px',
+                                            flexWrap: 'wrap',
+                                            justifyContent: 'flex-end'
+                                          }}>
+                                            <span style={{ fontSize: 'clamp(11px, 2.2vw, 13px)' }}>
+                                              Pagos: <strong style={{ color: '#A5D6A7' }}>{formatMonto(totalPagos)}</strong>
+                                            </span>
+                                            <span style={{ fontSize: 'clamp(11px, 2.2vw, 13px)' }}>
+                                              Faltan: <strong style={{ color: '#F5B7B1' }}>{formatMonto(totalFaltan)}</strong>
+                                            </span>
+                                            <span style={{ fontSize: 'clamp(11px, 2.2vw, 13px)' }}>
+                                              Asisten: <strong>{cantAsisten}</strong>
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <span style={{
+                                            fontSize: 'clamp(16px, 3.5vw, 20px)',
+                                            fontWeight: '700',
+                                            color: '#F3ECD8'
+                                          }}>
+                                            {formatMonto(totalPagos)}
+                                          </span>
+                                        )}
                                       </div>
 
                                       {/* Tabla */}
@@ -655,12 +773,14 @@ export default function Planillas() {
                                         beneficiarios={beneficiarios[ramaKey] || []}
                                         movimientos={movimientos[ramaKey] || []}
                                         observaciones={observaciones[ramaKey] || []}
+                                        asistencias={asistencias[ramaKey] || []}
                                         config={config}
                                         puedeEditar={puedeEditar}
                                         onCrear={crearMovimiento}
                                         onActualizar={actualizarMovimiento}
                                         onEliminar={eliminarMovimiento}
                                         onGuardarObservacion={guardarObservacion}
+                                        onGuardarAsistencia={guardarAsistencia}
                                       />
 
                                       {/* Banner leyenda recibos */}
@@ -704,20 +824,22 @@ export default function Planillas() {
 // TABLA PLANILLA
 // ============================================
 function TablaPlanilla({
-  concepto, rama, beneficiarios, movimientos, observaciones, config, puedeEditar,
-  onCrear, onActualizar, onEliminar, onGuardarObservacion
+  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, puedeEditar,
+  onCrear, onActualizar, onEliminar, onGuardarObservacion, onGuardarAsistencia
 }: {
   concepto: Concepto
   rama: Rama
   beneficiarios: Beneficiario[]
   movimientos: Movimiento[]
   observaciones: Observacion[]
+  asistencias: Asistencia[]
   config: any
   puedeEditar: boolean
   onCrear: (concepto: Concepto, rama: Rama, benefId: string | null, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean, nombreLibre?: string, categoria?: string) => void
   onActualizar: (concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onEliminar: (concepto: Concepto, rama: Rama, id: string) => void
   onGuardarObservacion: (concepto: Concepto, rama: Rama, benefId: string | null, texto: string, obsId?: string, nombreLibre?: string) => void
+  onGuardarAsistencia: (concepto: Concepto, rama: Rama, benefId: string | null, nuevoEstado: 'si' | 'no' | 'no_se_sabe', nombreLibre?: string, asistenciaId?: string) => void
 }) {
   const esCuotas = concepto === 'cuotas'
   const esCamp = concepto === 'camp_corto' || concepto === 'camp_anual'
@@ -745,16 +867,11 @@ function TablaPlanilla({
     )
   }
 
-  const getTotalMes = (mesKey: string) =>
-    movimientos
-      .filter(m => m.fecha_pago.startsWith(`2026-${mesKey}`))
-      .reduce((sum, m) => sum + m.monto, 0)
-
   return (
     <div style={{
       overflowX: 'auto',
       WebkitOverflowScrolling: 'touch',
-      border: `2px solid ${COLORES.bordeSuave}`,
+      border: `2px solid ${COLORES.verdeScout}`,
       borderRadius: '10px'
     }}>
       <table style={{
@@ -791,14 +908,32 @@ function TablaPlanilla({
               ))
             )}
             {esCamp && (
-              <th style={{
-                ...thNormal,
-                backgroundColor: COLORES.terracota,
-                minWidth: '100px',
-                padding: '8px 6px'
-              }}>
-                FALTA PAGAR
-              </th>
+              <>
+                <th style={{
+                  ...thNormal,
+                  backgroundColor: COLORES.dorado,
+                  minWidth: '100px',
+                  padding: '8px 6px'
+                }}>
+                  PAGOS
+                </th>
+                <th style={{
+                  ...thNormal,
+                  backgroundColor: COLORES.terracota,
+                  minWidth: '100px',
+                  padding: '8px 6px'
+                }}>
+                  FALTAN
+                </th>
+                <th style={{
+                  ...thNormal,
+                  backgroundColor: COLORES.verdeClaro,
+                  minWidth: '100px',
+                  padding: '8px 6px'
+                }}>
+                  ASISTE
+                </th>
+              </>
             )}
             <th style={{
               ...thNormal,
@@ -809,13 +944,15 @@ function TablaPlanilla({
             }}>
               OBSERVACIONES
             </th>
-            <th style={{
-              ...thNormal,
-              minWidth: '110px',
-              padding: '8px 6px'
-            }}>
-              PAGÓ EL GRUPO
-            </th>
+            {!esCamp && (
+              <th style={{
+                ...thNormal,
+                minWidth: '110px',
+                padding: '8px 6px'
+              }}>
+                PAGÓ EL GRUPO
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -828,32 +965,39 @@ function TablaPlanilla({
             const pagoGrupo = movsBenef.find(m => m.pagado_por === 'grupo')
 
             const obs = observaciones.find(o => o.beneficiario_id === b.id)
-            const total = movsBenef.reduce((sum, m) => sum + m.monto, 0)
+            const asistencia = asistencias.find(a => a.beneficiario_id === b.id)
+            const asiste = asistencia?.asiste || 'no_se_sabe'
+
+            const totalFamilia = movsFamilia.reduce((sum, m) => sum + m.monto, 0)
             const esInactivo = b.estado === 'inactivo'
-            const bgFila = esInactivo ? '#F3F4F6' : (idx % 2 === 0 ? 'white' : '#FAF8F4')
+            const bgFila = idx % 2 === 0 ? 'white' : '#FAF8F4'
             const nombreFormateado = formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
 
+            // Valor del camp y cálculo del FALTAN
             const valorCamp = esCamp ? (
               concepto === 'camp_corto'
                 ? (b.tiene_hermanos ? config?.camp_corto_2026?.hermano : config?.camp_corto_2026?.unico) || 0
                 : (b.tiene_hermanos ? config?.camp_anual_2027?.hermano : config?.camp_anual_2027?.unico) || 0
             ) : 0
-            const faltaPagar = esCamp ? Math.max(0, valorCamp - total) : 0
+
+            // FALTAN: solo si asiste = SI y está activo
+            const debeComputarFaltan = asiste === 'si' && !esInactivo
+            const faltan = debeComputarFaltan ? Math.max(0, valorCamp - totalFamilia) : 0
 
             return (
               <tr key={b.id}>
                 <td style={{
                   ...tdStickyLeft,
                   backgroundColor: bgFila,
-                  opacity: esInactivo ? 0.65 : 1,
-                  textDecoration: esInactivo ? 'line-through' : 'none'
+                  opacity: esInactivo ? 0.75 : 1
                 }}>
                   <div style={{
                     fontSize: 'clamp(11px, 2.3vw, 13px)',
                     fontWeight: '600',
                     color: esInactivo ? COLORES.gris : COLORES.textoPrincipal,
                     lineHeight: 1.2,
-                    wordBreak: 'break-word'
+                    wordBreak: 'break-word',
+                    textDecoration: esInactivo ? 'line-through' : 'none'
                   }}>
                     {nombreFormateado}
                   </div>
@@ -902,40 +1046,76 @@ function TablaPlanilla({
                   })
                 )}
 
-                {/* FALTA PAGAR (solo camps) */}
+                {/* Columnas exclusivas de CAMPS */}
                 {esCamp && (
-                  <td style={{
-                    ...tdNormal,
-                    backgroundColor: faltaPagar === 0
-                      ? (esInactivo ? '#E8DEC4' : '#F0F7F0')
-                      : '#FEE2E2',
-                    color: faltaPagar === 0 ? COLORES.verdeClaro : COLORES.terracota,
-                    fontWeight: '700',
-                    textAlign: 'center',
-                    opacity: esInactivo ? 0.65 : 1,
-                    minWidth: '100px',
-                    padding: '6px 6px'
-                  }}>
-                    <div style={{
-                      fontSize: 'clamp(13px, 2.6vw, 16px)',
-                      whiteSpace: 'nowrap'
+                  <>
+                    {/* PAGOS (total pagado por el beneficiario) */}
+                    <td style={{
+                      ...tdNormal,
+                      backgroundColor: esInactivo ? '#E8DEC4' : '#FEF9EC',
+                      textAlign: 'center',
+                      fontWeight: '700',
+                      opacity: esInactivo ? 0.65 : 1,
+                      minWidth: '100px',
+                      padding: '6px 6px'
                     }}>
-                      {faltaPagar === 0 ? '✅' : formatMonto(faltaPagar)}
-                    </div>
-                  </td>
+                      <div style={{
+                        fontSize: 'clamp(13px, 2.6vw, 16px)',
+                        color: COLORES.textoPrincipal,
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {totalFamilia > 0 ? formatMonto(totalFamilia) : '—'}
+                      </div>
+                    </td>
+
+                    {/* FALTAN */}
+                    <td style={{
+                      ...tdNormal,
+                      backgroundColor:
+                        asiste !== 'si'
+                          ? (asiste === 'no' ? '#FEE2E2' : '#F3F4F6')
+                          : (faltan === 0 ? '#F0F7F0' : '#FEE2E2'),
+                      color:
+                        asiste !== 'si'
+                          ? (asiste === 'no' ? COLORES.terracota : COLORES.textoSecundario)
+                          : (faltan === 0 ? COLORES.verdeClaro : COLORES.terracota),
+                      textAlign: 'center',
+                      fontWeight: '700',
+                      opacity: esInactivo ? 0.65 : 1,
+                      minWidth: '100px',
+                      padding: '6px 6px'
+                    }}>
+                      <div style={{
+                        fontSize: 'clamp(13px, 2.6vw, 16px)',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {asiste === 'si'
+                          ? (faltan === 0 ? '✅' : formatMonto(faltan))
+                          : '—'}
+                      </div>
+                    </td>
+
+                    {/* ASISTE (editable) */}
+                    <CeldaAsistencia
+                      asistencia={asistencia}
+                      puedeEditar={puedeEditar}
+                      bgFila={bgFila}
+                      onGuardar={(nuevoEstado) => onGuardarAsistencia(concepto, rama, b.id, nuevoEstado, undefined, asistencia?.id)}
+                    />
+                  </>
                 )}
 
                 {/* Observaciones */}
                 <td style={{
                   ...tdNormal,
-                  backgroundColor: esInactivo ? '#E8DEC4' : bgFila,
+                  backgroundColor: bgFila,
                   padding: '8px',
-                  opacity: esInactivo ? 0.65 : 1,
+                  opacity: esInactivo ? 0.75 : 1,
                   minWidth: '180px',
                   maxWidth: '300px',
                   fontSize: '13px',
                   verticalAlign: 'middle',
-                  textAlign: 'left'
+                  textAlign: 'center'
                 }}>
                   <CeldaObservacion
                     observacion={obs}
@@ -944,15 +1124,17 @@ function TablaPlanilla({
                   />
                 </td>
 
-                {/* PAGÓ EL GRUPO */}
-                <CeldaPagoGrupo
-                  movimiento={pagoGrupo}
-                  puedeEditar={puedeEditar}
-                  bgFila={bgFila}
-                  onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
-                  onActualizar={(id, fecha, monto, pagadoPor, reciboEntregado) => onActualizar(concepto, rama, id, fecha, monto, pagadoPor, reciboEntregado)}
-                  onEliminar={(id) => onEliminar(concepto, rama, id)}
-                />
+                {/* PAGÓ EL GRUPO (solo afiliación) */}
+                {!esCamp && (
+                  <CeldaPagoGrupo
+                    movimiento={pagoGrupo}
+                    puedeEditar={puedeEditar}
+                    bgFila={bgFila}
+                    onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
+                    onActualizar={(id, fecha, monto, pagadoPor, reciboEntregado) => onActualizar(concepto, rama, id, fecha, monto, pagadoPor, reciboEntregado)}
+                    onEliminar={(id) => onEliminar(concepto, rama, id)}
+                  />
+                )}
               </tr>
             )
           })}
@@ -961,6 +1143,72 @@ function TablaPlanilla({
     </div>
   )
 }
+
+// ============================================
+// CELDA ASISTENCIA (editable, ciclo de 3 estados)
+// ============================================
+function CeldaAsistencia({
+  asistencia, puedeEditar, bgFila, onGuardar
+}: {
+  asistencia: Asistencia | undefined
+  puedeEditar: boolean
+  bgFila: string
+  onGuardar: (nuevoEstado: 'si' | 'no' | 'no_se_sabe') => void
+}) {
+  const estadoActual = asistencia?.asiste || 'no_se_sabe'
+
+  const handleClick = () => {
+    if (!puedeEditar) return
+    // Ciclo: no_se_sabe → si → no → no_se_sabe
+    let nuevoEstado: 'si' | 'no' | 'no_se_sabe'
+    if (estadoActual === 'no_se_sabe') nuevoEstado = 'si'
+    else if (estadoActual === 'si') nuevoEstado = 'no'
+    else nuevoEstado = 'no_se_sabe'
+    onGuardar(nuevoEstado)
+  }
+
+  // Colores según estado
+  const bgColor =
+    estadoActual === 'si' ? '#D1FAE5'
+    : estadoActual === 'no' ? '#FEE2E2'
+    : '#F3F4F6'
+
+  const textColor =
+    estadoActual === 'si' ? '#166534'
+    : estadoActual === 'no' ? '#9A3412'
+    : '#7A7364'
+
+  const label =
+    estadoActual === 'si' ? 'SI'
+    : estadoActual === 'no' ? 'NO'
+    : 'No se sabe'
+
+  return (
+    <td
+      onClick={handleClick}
+      style={{
+        ...tdNormal,
+        textAlign: 'center',
+        cursor: puedeEditar ? 'pointer' : 'default',
+        backgroundColor: bgColor,
+        color: textColor,
+        fontWeight: '700',
+        minWidth: '100px',
+        padding: '6px 6px'
+      }}
+    >
+      <div style={{
+        fontSize: 'clamp(12px, 2.4vw, 14px)',
+        whiteSpace: 'nowrap',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px'
+      }}>
+        {label}
+      </div>
+    </td>
+  )
+}
+
 // ============================================
 // CELDA PAGÓ EL GRUPO
 // ============================================
@@ -1325,7 +1573,8 @@ function CeldaObservacion({
         color: observacion ? COLORES.textoPrincipal : 'transparent',
         lineHeight: 1.35,
         wordBreak: 'break-word',
-        minHeight: '22px'
+        minHeight: '22px',
+        textAlign: 'center'
       }}
     >
       {observacion?.observacion || ''}
@@ -1345,7 +1594,7 @@ const thNormal: React.CSSProperties = {
   letterSpacing: '0.5px',
   textAlign: 'center',
   backgroundColor: '#24352A',
-  borderRight: '1px solid rgba(255,255,255,0.15)',
+  border: '1px solid #E8DEC4',
   position: 'sticky',
   top: 0,
   zIndex: 2
@@ -1355,7 +1604,8 @@ const thStickyLeft: React.CSSProperties = {
   ...thNormal,
   left: 0,
   zIndex: 4,
-  minWidth: '140px',
+  minWidth: '180px',
+  maxWidth: '180px',
   textAlign: 'left'
 }
 
@@ -1363,8 +1613,7 @@ const tdNormal: React.CSSProperties = {
   padding: '6px 6px',
   fontSize: 'clamp(11px, 2.3vw, 13px)',
   color: '#24352A',
-  borderBottom: '1px solid #E8DEC4',
-  borderRight: '1px solid #E8DEC4',
+  border: '1px solid #E8DEC4',
   verticalAlign: 'middle'
 }
 
@@ -1373,8 +1622,8 @@ const tdStickyLeft: React.CSSProperties = {
   position: 'sticky',
   left: 0,
   zIndex: 2,
-  minWidth: '140px',
-  maxWidth: '140px',
+  minWidth: '180px',
+  maxWidth: '180px',
   boxShadow: '2px 0 4px rgba(0,0,0,0.06)'
 }
 
