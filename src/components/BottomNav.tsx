@@ -5,7 +5,13 @@ import { supabase } from '../lib/supabase'
 
 export default function BottomNav() {
   const location = useLocation()
-  const { isSuperAdmin, isJefatura, isAdministrador, getRolData } = useAuth()
+  const {
+    isSuperAdmin,
+    isJefatura,
+    isAdministrador,
+    isTesorero,
+    getRolData
+  } = useAuth()
   const rolData = getRolData()
   const ramaUsuario = rolData.rama
 
@@ -15,11 +21,15 @@ export default function BottomNav() {
 
   const isActive = (path: string) => location.pathname === path
 
-  const puedeVerCampamentos = isSuperAdmin || isJefatura
+  // ============================================
+  // CLASIFICACIÓN DE ROLES
+  // ============================================
+  const esDirigente = rolData.tipo === 'jefe' || rolData.tipo === 'subjefe' || rolData.tipo === 'ayudante'
+  const esViewer = rolData.tipo === 'viewer'
 
   // ✅ Cargar novedades de auditoría
   React.useEffect(() => {
-    if (!isSuperAdmin && !isJefatura) return
+    if (!isSuperAdmin && !isJefatura && !isAdministrador) return
 
     supabase
       .rpc('contar_novedades_auditoria')
@@ -28,7 +38,7 @@ export default function BottomNav() {
           setNovedades(data)
         }
       })
-  }, [isSuperAdmin, isJefatura, location.pathname])
+  }, [isSuperAdmin, isJefatura, isAdministrador, location.pathname])
 
   // ✅ Notificaciones de permisos de mi rama
   const cargarNotifPermisos = React.useCallback(() => {
@@ -72,22 +82,47 @@ export default function BottomNav() {
       })
   }, [isSuperAdmin, isJefatura, location.pathname])
 
-  const navItems = [
-    { id: 'beneficiarios', label: 'Beneficiarios', icon: '👥', path: '/dashboard' },
-    { id: 'pagos', label: 'Pagos', icon: '💰', path: '/pagos' },
-    { id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' },
-  ]
+  // ============================================
+  // BOTONES SEGÚN ROL
+  // ============================================
+  const navItems: { id: string; label: string; icon: string; path: string }[] = []
 
-  if (puedeVerCampamentos) {
-    navItems.push({ id: 'campamentos', label: 'Campamentos', icon: '🏕️', path: '/campamentos' })
-  }
+  // Viewer: solo Perfil
+  if (esViewer) {
+    navItems.push({ id: 'perfil', label: 'Mi Perfil', icon: '👤', path: '/perfil' })
+  } else {
+    // Base para todos: Beneficiarios, Pagos
+    navItems.push({ id: 'beneficiarios', label: 'Beneficiarios', icon: '👥', path: '/dashboard' })
+    navItems.push({ id: 'pagos', label: 'Pagos', icon: '💰', path: '/pagos' })
 
-  if (puedeVerCampamentos) {
-    navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
-  }
-
-  if (isSuperAdmin || isJefatura || isAdministrador) {
-    navItems.push({ id: 'admin', label: 'Admin', icon: '⚙️', path: '/admin' })
+    // SuperAdmin: + Permisos, Campamentos, Historial, Planillas
+    if (isSuperAdmin) {
+      navItems.push({ id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' })
+      navItems.push({ id: 'campamentos', label: 'Campamentos', icon: '🏕️', path: '/campamentos' })
+      navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
+      navItems.push({ id: 'planillas', label: 'Planillas', icon: '📊', path: '/planillas' })
+    }
+    // Jefatura: + Permisos, Historial, Planillas (SIN Campamentos)
+    else if (isJefatura) {
+      navItems.push({ id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' })
+      navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
+      navItems.push({ id: 'planillas', label: 'Planillas', icon: '📊', path: '/planillas' })
+    }
+    // Administrador: + Permisos, Historial, Planillas
+    else if (isAdministrador) {
+      navItems.push({ id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' })
+      navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
+      navItems.push({ id: 'planillas', label: 'Planillas', icon: '📊', path: '/planillas' })
+    }
+    // Tesorero: + Planillas (SIN Permisos, SIN Campamentos)
+    else if (isTesorero) {
+      navItems.push({ id: 'planillas', label: 'Planillas', icon: '📊', path: '/planillas' })
+    }
+    // Jefe / SubJefe / Ayudante de rama: + Planillas, Permisos
+    else if (esDirigente) {
+      navItems.push({ id: 'planillas', label: 'Planillas', icon: '📊', path: '/planillas' })
+      navItems.push({ id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' })
+    }
   }
 
   return (

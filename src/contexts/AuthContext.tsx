@@ -188,7 +188,7 @@ email: email || '',
 
   // Función para obtener datos del rol
   const getRolData = () => {
-    if (isSuperAdmin || isJefatura || isAdministrador || isTesorero || rol === 'viewer') {
+    if (isSuperAdmin || isJefatura || isAdministrador || isTesorero) {
       return { tipo: 'admin' as const, rama: null }
     }
     if (esJefe) return { tipo: 'jefe' as const, rama: ramaAsignada }
@@ -198,7 +198,7 @@ email: email || '',
   }
 
   // Permisos generales
-  const canViewAll = isSuperAdmin || isJefatura || isAdministrador || isTesorero || rol === 'viewer'
+  const canViewAll = isSuperAdmin || isJefatura || isAdministrador || isTesorero
   const canEditAll = isSuperAdmin || isJefatura
 
   // Verificar si puede ver una rama específica

@@ -223,8 +223,30 @@ export default function Planillas() {
   const [config, setConfig] = useState<any>(null)
   const [loadingConfig, setLoadingConfig] = useState(true)
 
-  const [conceptosAbiertos, setConceptosAbiertos] = useState<Set<Concepto>>(new Set())
-  const [ramasAbiertas, setRamasAbiertas] = useState<Set<string>>(new Set())
+  // Para dirigentes de rama: abrir todo por default (conceptos + su rama)
+  const abrirPorDefecto = (): { conceptos: Set<Concepto>; ramas: Set<string> } => {
+    const rol = getRolData()
+    const esDirig = rol.tipo === 'jefe' || rol.tipo === 'subjefe' || rol.tipo === 'ayudante'
+    const ramaRol = rol.rama
+
+    if (esDirig && ramaRol) {
+      // Todos los conceptos abiertos
+      const conceptos = new Set<Concepto>(['afiliacion', 'cuotas', 'camp_corto', 'camp_anual'])
+      // Y su rama abierta en cada concepto (excepto cuotas si es dirigente... pero por las dudas, la incluimos)
+      const ramas = new Set<string>()
+      conceptos.forEach(c => {
+        ramas.add(`${c}-${ramaRol}`)
+      })
+      return { conceptos, ramas }
+    }
+
+    return { conceptos: new Set(), ramas: new Set() }
+  }
+
+  const inicial = abrirPorDefecto()
+
+  const [conceptosAbiertos, setConceptosAbiertos] = useState<Set<Concepto>>(inicial.conceptos)
+  const [ramasAbiertas, setRamasAbiertas] = useState<Set<string>>(inicial.ramas)
 
   const [movimientos, setMovimientos] = useState<Record<string, Movimiento[]>>({})
   const [observaciones, setObservaciones] = useState<Record<string, Observacion[]>>({})
@@ -264,6 +286,426 @@ export default function Planillas() {
       }
     }
     cargarConfig()
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Si un dirigente arranca con ramas abiertas, precargar sus datos
+  useEffect(() => {
+    if (ramasAbiertas.size === 0) return
+    ramasAbiertas.forEach(key => {
+      // key viene como "afiliacion-Manada"
+      const partes = key.split('-')
+      if (partes.length < 2) return
+      // Ojo: "Unidad Scout" tiene un guión y espacio, "camp_corto" también
+      // El formato es: `${concepto}-${rama}`
+      // concepto puede ser: afiliacion, cuotas, camp_corto, camp_anual
+      // rama puede ser: Manada, Unidad Scout, Caminantes, Rovers, Dirigentes y otros
+      let concepto: Concepto | null = null
+      let rama: Rama | null = null
+
+      if (key.startsWith('camp_corto-')) {
+        concepto = 'camp_corto'
+        rama = key.replace('camp_corto-', '') as Rama
+      } else if (key.startsWith('camp_anual-')) {
+        concepto = 'camp_anual'
+        rama = key.replace('camp_anual-', '') as Rama
+      } else if (key.startsWith('afiliacion-')) {
+        concepto = 'afiliacion'
+        rama = key.replace('afiliacion-', '') as Rama
+      } else if (key.startsWith('cuotas-')) {
+        concepto = 'cuotas'
+        rama = key.replace('cuotas-', '') as Rama
+      }
+
+      if (concepto && rama) {
+        cargarDatos(concepto, rama)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Carga de datos
