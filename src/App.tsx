@@ -11,6 +11,7 @@ const Admin = lazy(() => import('./pages/Admin'))
 const BeneficiarioDetalle = lazy(() => import('./pages/BeneficiarioDetalle'))
 const Pagos = lazy(() => import('./pages/Pagos'))
 const Planillas = lazy(() => import('./pages/Planillas'))
+const ConfiguracionFinanzas = lazy(() => import('./pages/ConfiguracionFinanzas'))
 const Campamentos = lazy(() => import('./pages/Campamentos'))
 const Auditoria = lazy(() => import('./pages/Auditoria'))
 const VidaScout = lazy(() => import('./pages/VidaScout'))
@@ -124,6 +125,13 @@ function AppRoutes() {
           <PrivateRoute>
             <Layout>
               <Planillas />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/configuracion-finanzas" element={
+          <PrivateRoute>
+            <Layout>
+              <ConfiguracionFinanzas />
             </Layout>
           </PrivateRoute>
         } />

@@ -138,6 +138,74 @@ const getNombreRama = (rama: Rama) => {
 }
 
 // ============================================
+// COLORES POR RAMA
+// ============================================
+interface ColorRama {
+  color: string        // color del header de la tabla
+  colorLinea: string   // color de las líneas de corte (más oscuro)
+  colorTitulo: string  // color del título del acordeón
+  colorTexto: string   // color del texto sobre el header
+}
+
+const getColorRama = (rama: Rama): ColorRama => {
+  const map: Record<Rama, ColorRama> = {
+    'Manada': {
+      color: '#F4C430',       // amarillo dorado
+      colorLinea: '#B8860B',  // dorado oscuro
+      colorTitulo: '#B8860B',
+      colorTexto: '#24352A'   // verde oscuro (para que se lea sobre amarillo)
+    },
+    'Unidad Scout': {
+      color: '#2E7D32',       // verde
+      colorLinea: '#1B5E20',  // verde oscuro
+      colorTitulo: '#2E7D32',
+      colorTexto: '#FFFFFF'
+    },
+    'Caminantes': {
+      color: '#4FA8D8',       // celeste
+      colorLinea: '#2C7BA8',  // celeste oscuro
+      colorTitulo: '#2C7BA8',
+      colorTexto: '#FFFFFF'
+    },
+    'Rovers': {
+      color: '#B71C1C',       // rojo oscuro
+      colorLinea: '#7F1010',  // rojo más oscuro
+      colorTitulo: '#B71C1C',
+      colorTexto: '#FFFFFF'
+    },
+    'Dirigentes y otros': {
+      color: '#E67E22',       // naranja
+      colorLinea: '#B35A0F',  // naranja oscuro
+      colorTitulo: '#E67E22',
+      colorTexto: '#FFFFFF'
+    }
+  }
+  return map[rama] || map['Manada']
+}
+
+// Obtener el valor del campamento según concepto, beneficiario y año
+const getValorCamp = (
+  concepto: Concepto,
+  beneficiario: { tiene_hermanos: boolean },
+  config: any,
+  anio: number
+): number => {
+  if (!config) return 0
+  if (concepto === 'camp_corto') {
+    const c = config.camp_corto?.[anio.toString()]
+    if (!c) return 0
+    return beneficiario.tiene_hermanos ? (c.hermano || 0) : (c.unico || 0)
+  }
+  if (concepto === 'camp_anual') {
+    const anioCamp = (anio + 1).toString()
+    const c = config.camp_anual?.[anioCamp]
+    if (!c) return 0
+    return beneficiario.tiene_hermanos ? (c.hermano || 0) : (c.unico || 0)
+  }
+  return 0
+}
+
+// ============================================
 // COMPONENTE PRINCIPAL
 // ============================================
 export default function Planillas() {
@@ -493,25 +561,47 @@ export default function Planillas() {
 
   const getValorReferencia = (concepto: Concepto): string => {
     if (!config) return ''
+    const anioStr = ANIO_ACTUAL.toString()
+
     if (concepto === 'afiliacion') {
-      const v = config.afiliacion_2026?.valor || 42000
-      return `Valor: ${formatMonto(v)}`
+      const afiliacionAnio = config.afiliacion?.[anioStr]
+      if (!afiliacionAnio) return ''
+      const valores = Object.values(afiliacionAnio).filter(v => typeof v === 'number') as number[]
+      if (valores.length === 0) return ''
+      const min = Math.min(...valores)
+      const max = Math.max(...valores)
+      if (min === max) return `Valor: ${formatMonto(min)}`
+      return `Valor: ${formatMonto(min)} – ${formatMonto(max)} según mes`
     }
+
     if (concepto === 'cuotas') {
-      const aj = config.cuotas_2026?.abril_julio
-      const ad = config.cuotas_2026?.agosto_diciembre
-      if (aj && ad) {
-        return `Abr-Jul: Único ${formatMonto(aj.unico)} / Hermano ${formatMonto(aj.hermano)} · Ago-Dic: Único ${formatMonto(ad.unico)} / Hermano ${formatMonto(ad.hermano)}`
-      }
+      const cuotasAnio = config.cuotas?.[anioStr]
+      if (!cuotasAnio) return ''
+      const unicos: number[] = []
+      const hermanos: number[] = []
+      Object.values(cuotasAnio).forEach((c: any) => {
+        if (typeof c?.unico === 'number') unicos.push(c.unico)
+        if (typeof c?.hermano === 'number') hermanos.push(c.hermano)
+      })
+      if (unicos.length === 0) return ''
+      const minU = Math.min(...unicos), maxU = Math.max(...unicos)
+      const minH = Math.min(...hermanos), maxH = Math.max(...hermanos)
+      const txtU = minU === maxU ? formatMonto(minU) : `${formatMonto(minU)} – ${formatMonto(maxU)}`
+      const txtH = minH === maxH ? formatMonto(minH) : `${formatMonto(minH)} – ${formatMonto(maxH)}`
+      return `Único ${txtU} / Hermano ${txtH} (según mes)`
     }
+
     if (concepto === 'camp_corto') {
-      const c = config.camp_corto_2026
+      const c = config.camp_corto?.[anioStr]
       if (c) return `Único ${formatMonto(c.unico)} / Hermano ${formatMonto(c.hermano)} / Dirigente ${formatMonto(c.dirigente)}`
     }
+
     if (concepto === 'camp_anual') {
-      const c = config.camp_anual_2027
+      const anioCampAnual = (ANIO_ACTUAL + 1).toString()
+      const c = config.camp_anual?.[anioCampAnual]
       if (c) return `Único ${formatMonto(c.unico)} / Hermano ${formatMonto(c.hermano)} / Dirigente ${formatMonto(c.dirigente)}`
     }
+
     return ''
   }
 
@@ -536,20 +626,48 @@ export default function Planillas() {
 
   return (
     <div style={{ fontFamily: 'Oswald, sans-serif' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{
-          fontWeight: '700', fontSize: 'clamp(18px, 4vw, 24px)',
-          color: COLORES.verdeScout, textTransform: 'uppercase',
-          letterSpacing: '1px', margin: 0
-        }}>
-          📊 Planillas {ANIO_ACTUAL}
-        </h1>
-        <p style={{
-          fontSize: 'clamp(11px, 2.5vw, 14px)', color: COLORES.textoSecundario,
-          textTransform: 'uppercase', letterSpacing: '0.5px', margin: '4px 0 0 0'
-        }}>
-          Reportes financieros por rama
-        </p>
+      <div style={{
+        marginBottom: '20px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        flexWrap: 'wrap',
+        gap: '10px'
+      }}>
+        <div>
+          <h1 style={{
+            fontWeight: '700', fontSize: 'clamp(18px, 4vw, 24px)',
+            color: COLORES.verdeScout, textTransform: 'uppercase',
+            letterSpacing: '1px', margin: 0
+          }}>
+            📊 Planillas {ANIO_ACTUAL}
+          </h1>
+          <p style={{
+            fontSize: 'clamp(11px, 2.5vw, 14px)', color: COLORES.textoSecundario,
+            textTransform: 'uppercase', letterSpacing: '0.5px', margin: '4px 0 0 0'
+          }}>
+            Reportes financieros por rama
+          </p>
+        </div>
+        {(isSuperAdmin || isTesorero) && (
+          <a
+            href="/configuracion-finanzas"
+            style={{
+              padding: '8px 14px',
+              backgroundColor: COLORES.verdeScout,
+              color: 'white',
+              textDecoration: 'none',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: '600',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontFamily: 'Oswald, sans-serif'
+            }}
+          >
+            ⚙️ Configuración
+          </a>
+        )}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -617,9 +735,7 @@ export default function Planillas() {
                         const estadoAsiste = asist?.asiste || 'no_se_sabe'
                         const esActivo = b.estado === 'activo'
                         if (estadoAsiste !== 'si' || !esActivo) return sum
-                        const valorCamp = key === 'camp_corto'
-                          ? (b.tiene_hermanos ? config?.camp_corto_2026?.hermano : config?.camp_corto_2026?.unico) || 0
-                          : (b.tiene_hermanos ? config?.camp_anual_2027?.hermano : config?.camp_anual_2027?.unico) || 0
+                        const valorCamp = getValorCamp(key, b, config, ANIO_ACTUAL)
                         const pagado = movsEstaRama
                           .filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo')
                           .reduce((s, m) => s + m.monto, 0)
@@ -649,7 +765,7 @@ export default function Planillas() {
                           >
                             <span style={{
                               fontSize: 'clamp(12px, 2.5vw, 14px)', fontWeight: '600',
-                              color: COLORES.verdeClaro, textTransform: 'uppercase',
+                              color: getColorRama(rama).colorTitulo, textTransform: 'uppercase',
                               letterSpacing: '0.5px'
                             }}>
                               {getNombreRama(rama)}
@@ -690,6 +806,7 @@ export default function Planillas() {
                                           beneficiarios: beneficiarios[ramaKey] || [],
                                           movimientos: movimientos[ramaKey] || [],
                                           observaciones: observaciones[ramaKey] || [],
+                                          asistencias: asistencias[ramaKey] || [],
                                           config
                                         })
                                       }}
@@ -787,6 +904,7 @@ export default function Planillas() {
                                         asistencias={asistencias[ramaKey] || []}
                                         config={config}
                                         puedeEditar={puedeEditar}
+                                        anioActual={ANIO_ACTUAL}
                                         onCrear={crearMovimiento}
                                         onActualizar={actualizarMovimiento}
                                         onEliminar={eliminarMovimiento}
@@ -835,7 +953,7 @@ export default function Planillas() {
 // TABLA PLANILLA
 // ============================================
 function TablaPlanilla({
-  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, puedeEditar,
+  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, puedeEditar, anioActual,
   onCrear, onActualizar, onEliminar, onGuardarObservacion, onGuardarAsistencia
 }: {
   concepto: Concepto
@@ -846,6 +964,7 @@ function TablaPlanilla({
   asistencias: Asistencia[]
   config: any
   puedeEditar: boolean
+  anioActual: number
   onCrear: (concepto: Concepto, rama: Rama, benefId: string | null, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean, nombreLibre?: string, categoria?: string, mesInicio?: string, mesFin?: string, noAplica?: boolean) => void
   onActualizar: (concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onEliminar: (concepto: Concepto, rama: Rama, id: string) => void
@@ -855,6 +974,7 @@ function TablaPlanilla({
   const esCuotas = concepto === 'cuotas'
   const esCamp = concepto === 'camp_corto' || concepto === 'camp_anual'
   const esAfiliacion = concepto === 'afiliacion'
+  const coloresRama = getColorRama(rama)
 
   // Estado local: columnas extra que el usuario quiere agregar manualmente
   const [columnasExtra, setColumnasExtra] = useState(0)
@@ -878,7 +998,11 @@ function TablaPlanilla({
   } | null>(null)
 
   // Máximo de pagos
-  const maxPagosBase = esCuotas ? 0 : Math.max(2, ...beneficiarios.map(b => {
+  // - Camp Anual: mínimo 5 columnas fijas
+  // - Camp Corto: mínimo 3 columnas fijas
+  // - Afiliación: mínimo 2 columnas
+  const minColumnasFijas = concepto === 'camp_anual' ? 5 : concepto === 'camp_corto' ? 3 : 2
+  const maxPagosBase = esCuotas ? 0 : Math.max(minColumnasFijas, ...beneficiarios.map(b => {
     return movimientos.filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo').length
   }))
   const maxPagos = esCuotas ? 0 : maxPagosBase + columnasExtra
@@ -908,7 +1032,6 @@ function TablaPlanilla({
 
   const handleMesMouseUp = () => {
     if (!drag) return
-    // Normalizar: inicio siempre <= fin
     const [inicio, fin] = drag.mesInicio <= drag.mesActual
       ? [drag.mesInicio, drag.mesActual]
       : [drag.mesActual, drag.mesInicio]
@@ -920,7 +1043,6 @@ function TablaPlanilla({
     setDrag(null)
   }
 
-  // Detectar si un mes está dentro del rango del drag
   const mesEnDrag = (beneficiarioId: string, mesKey: string) => {
     if (!drag || drag.beneficiarioId !== beneficiarioId) return false
     const [inicio, fin] = drag.mesInicio <= drag.mesActual
@@ -929,13 +1051,11 @@ function TablaPlanilla({
     return mesKey >= inicio && mesKey <= fin
   }
 
-  // Detectar si un mes está dentro del rango del editor abierto
   const mesEnEditor = (beneficiarioId: string, mesKey: string) => {
     if (!editorCuotas || editorCuotas.beneficiarioId !== beneficiarioId) return false
     return mesKey >= editorCuotas.mesInicio && mesKey <= editorCuotas.mesFin
   }
 
-  // Función para cambiar el orden
   const cambiarOrden = (columna: ColumnaOrdenable) => {
     if (ordenColumna === columna) {
       setOrdenDireccion(prev => prev === 'asc' ? 'desc' : 'asc')
@@ -945,7 +1065,6 @@ function TablaPlanilla({
     }
   }
 
-  // Función para obtener el ícono
   const getIcono = (columna: ColumnaOrdenable) => {
     if (ordenColumna !== columna) return ' ↕'
     return ordenDireccion === 'asc' ? ' ▲' : ' ▼'
@@ -971,10 +1090,10 @@ function TablaPlanilla({
 
     if (ordenColumna === 'total') {
       const totalA = movimientos
-        .filter(m => m.beneficiario_id === a.id)
+        .filter(m => m.beneficiario_id === a.id && !m.no_aplica)
         .reduce((sum, m) => sum + m.monto, 0)
       const totalB = movimientos
-        .filter(m => m.beneficiario_id === b.id)
+        .filter(m => m.beneficiario_id === b.id && !m.no_aplica)
         .reduce((sum, m) => sum + m.monto, 0)
       return ordenDireccion === 'asc' ? totalA - totalB : totalB - totalA
     }
@@ -984,9 +1103,7 @@ function TablaPlanilla({
         const asist = asistencias.find(x => x.beneficiario_id === benef.id)
         const estadoAsiste = asist?.asiste || 'no_se_sabe'
         if (estadoAsiste !== 'si' || benef.estado === 'inactivo') return 0
-        const valorCamp = concepto === 'camp_corto'
-          ? (benef.tiene_hermanos ? config?.camp_corto_2026?.hermano : config?.camp_corto_2026?.unico) || 0
-          : (benef.tiene_hermanos ? config?.camp_anual_2027?.hermano : config?.camp_anual_2027?.unico) || 0
+        const valorCamp = getValorCamp(concepto, benef, config, anioActual)
         const pagado = movimientos
           .filter(m => m.beneficiario_id === benef.id && m.pagado_por !== 'grupo')
           .reduce((s, m) => s + m.monto, 0)
@@ -1025,7 +1142,7 @@ function TablaPlanilla({
     <div style={{
       overflowX: 'auto',
       WebkitOverflowScrolling: 'touch',
-      border: `2px solid ${COLORES.verdeScout}`,
+      border: `2px solid ${coloresRama.colorLinea}`,
       borderRadius: '10px'
     }}>
       <table style={{
@@ -1042,6 +1159,9 @@ function TablaPlanilla({
               onClick={() => cambiarOrden('beneficiario')}
               style={{
                 ...thStickyLeft,
+                backgroundColor: coloresRama.color,
+                color: coloresRama.colorTexto,
+                borderRight: `2px solid ${coloresRama.colorLinea}`,
                 minWidth: '140px',
                 maxWidth: '140px',
                 cursor: 'pointer',
@@ -1056,6 +1176,8 @@ function TablaPlanilla({
               MESES_CUOTAS.map(m => (
                 <th key={m.key} style={{
                   ...thNormal,
+                  backgroundColor: coloresRama.color,
+                  color: coloresRama.colorTexto,
                   padding: '8px 6px',
                   minWidth: '90px'
                 }}>{m.label}</th>
@@ -1066,6 +1188,8 @@ function TablaPlanilla({
                 return (
                   <th key={i} style={{
                     ...thNormal,
+                    backgroundColor: coloresRama.color,
+                    color: coloresRama.colorTexto,
                     padding: '8px 6px',
                     minWidth: '110px',
                     position: 'relative'
@@ -1086,7 +1210,7 @@ function TablaPlanilla({
                           width: '18px',
                           height: '18px',
                           padding: 0,
-                          backgroundColor: '#5C7A5E',
+                          backgroundColor: coloresRama.colorLinea,
                           color: 'white',
                           border: 'none',
                           borderRadius: '3px',
@@ -1113,12 +1237,13 @@ function TablaPlanilla({
                 onClick={() => cambiarOrden('total')}
                 style={{
                   ...thNormal,
-                  backgroundColor: COLORES.dorado,
+                  backgroundColor: coloresRama.color,
+                  color: coloresRama.colorTexto,
                   minWidth: '110px',
                   padding: '8px 6px',
                   cursor: 'pointer',
                   userSelect: 'none',
-                  borderLeft: '2px solid #24352A'
+                  borderLeft: `2px solid ${coloresRama.colorLinea}`
                 }}
               >
                 TOTAL{getIcono('total')}
@@ -1131,12 +1256,13 @@ function TablaPlanilla({
                 onClick={() => cambiarOrden('faltan')}
                 style={{
                   ...thNormal,
-                  backgroundColor: COLORES.terracota,
+                  backgroundColor: coloresRama.color,
+                  color: coloresRama.colorTexto,
                   minWidth: '100px',
                   padding: '8px 6px',
                   cursor: 'pointer',
                   userSelect: 'none',
-                  borderRight: '2px solid #24352A'
+                  borderRight: `2px solid ${coloresRama.colorLinea}`
                 }}
               >
                 FALTAN{getIcono('faltan')}
@@ -1149,14 +1275,15 @@ function TablaPlanilla({
                 onClick={() => cambiarOrden('asiste')}
                 style={{
                   ...thNormal,
-                  backgroundColor: COLORES.verdeClaro,
+                  backgroundColor: coloresRama.color,
+                  color: coloresRama.colorTexto,
                   minWidth: '50px',
                   maxWidth: '60px',
                   padding: '8px 4px',
                   fontSize: 'clamp(9px, 1.9vw, 11px)',
                   cursor: 'pointer',
                   userSelect: 'none',
-                  borderRight: '2px solid #24352A'
+                  borderRight: `2px solid ${coloresRama.colorLinea}`
                 }}
               >
                 ASISTE{getIcono('asiste')}
@@ -1167,11 +1294,13 @@ function TablaPlanilla({
             {!esCuotas && (
               <th style={{
                 ...thNormal,
+                backgroundColor: coloresRama.color,
+                color: coloresRama.colorTexto,
                 minWidth: '180px',
                 maxWidth: '300px',
                 padding: '8px 8px',
                 textAlign: 'center',
-                ...(esCamp ? {} : { borderLeft: '2px solid #24352A' })
+                ...(esCamp ? {} : { borderLeft: `2px solid ${coloresRama.colorLinea}` })
               }}>
                 OBSERVACIONES
               </th>
@@ -1181,9 +1310,11 @@ function TablaPlanilla({
             {esAfiliacion && (
               <th style={{
                 ...thNormal,
+                backgroundColor: coloresRama.color,
+                color: coloresRama.colorTexto,
                 minWidth: '110px',
                 padding: '8px 6px',
-                borderLeft: '2px solid #24352A'
+                borderLeft: `2px solid ${coloresRama.colorLinea}`
               }}>
                 PAGÓ EL GRUPO
               </th>
@@ -1210,19 +1341,19 @@ function TablaPlanilla({
             const bgFila = idx % 2 === 0 ? 'white' : '#FAF8F4'
             const nombreFormateado = formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
 
-            const valorCamp = esCamp ? (
-              concepto === 'camp_corto'
-                ? (b.tiene_hermanos ? config?.camp_corto_2026?.hermano : config?.camp_corto_2026?.unico) || 0
-                : (b.tiene_hermanos ? config?.camp_anual_2027?.hermano : config?.camp_anual_2027?.unico) || 0
-            ) : 0
+            const valorCamp = esCamp ? getValorCamp(concepto, b, config, anioActual) : 0
 
             const debeComputarFaltan = asiste === 'si' && !esInactivo
             const faltan = debeComputarFaltan ? Math.max(0, valorCamp - totalFamilia) : 0
+
+            // Beneficiario completamente abonado: asiste SÍ, activo, y faltan <= 0
+            const estaCompleto = esCamp && asiste === 'si' && !esInactivo && faltan <= 0 && valorCamp > 0
 
             return (
               <tr key={b.id}>
                 <td style={{
                   ...tdStickyLeft,
+                  borderRight: `2px solid ${coloresRama.colorLinea}`,
                   backgroundColor: bgFila,
                   opacity: esInactivo ? 0.75 : 1
                 }}>
@@ -1251,7 +1382,6 @@ function TablaPlanilla({
 
                 {esCuotas ? (
                   MESES_CUOTAS.map(mes => {
-                    // Buscar si algún movimiento cubre este mes (pago o no_aplica)
                     const movQueCubre = movsFamilia.find(m =>
                       m.mes_inicio && m.mes_fin &&
                       mes.key >= m.mes_inicio && mes.key <= m.mes_fin
@@ -1306,12 +1436,15 @@ function TablaPlanilla({
                 ) : (
                   Array.from({ length: maxPagos }, (_, i) => {
                     const mov = movsFamilia[i]
+                    // Si el beneficiario está completo Y esta celda no tiene pago, se bloquea (negra)
+                    const celdaBloqueada = estaCompleto && !mov
                     return (
                       <CeldaPago
                         key={i}
                         movimiento={mov}
                         puedeEditar={puedeEditar}
                         bgFila={bgFila}
+                        bloqueada={celdaBloqueada}
                         onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
                         onActualizar={(id, fecha, monto, pagadoPor, reciboEntregado) => onActualizar(concepto, rama, id, fecha, monto, pagadoPor, reciboEntregado)}
                         onEliminar={(id) => onEliminar(concepto, rama, id)}
@@ -1330,7 +1463,7 @@ function TablaPlanilla({
                     opacity: esInactivo ? 0.65 : 1,
                     minWidth: '110px',
                     padding: '6px 6px',
-                    borderLeft: '2px solid #24352A'
+                    borderLeft: `2px solid ${coloresRama.colorLinea}`
                   }}>
                     <div style={{
                       fontSize: 'clamp(15px, 3vw, 18px)',
@@ -1359,7 +1492,7 @@ function TablaPlanilla({
                     opacity: esInactivo ? 0.65 : 1,
                     minWidth: '100px',
                     padding: '6px 6px',
-                    borderRight: '2px solid #24352A'
+                    borderRight: `2px solid ${coloresRama.colorLinea}`
                   }}>
                     <div style={{
                       fontSize: 'clamp(13px, 2.6vw, 16px)',
@@ -1378,6 +1511,7 @@ function TablaPlanilla({
                     asistencia={asistencia}
                     puedeEditar={puedeEditar}
                     bgFila={bgFila}
+                    colorLinea={coloresRama.colorLinea}
                     onGuardar={(nuevoEstado) => onGuardarAsistencia(concepto, rama, b.id, nuevoEstado, undefined, asistencia?.id)}
                   />
                 )}
@@ -1394,7 +1528,7 @@ function TablaPlanilla({
                     fontSize: '13px',
                     verticalAlign: 'middle',
                     textAlign: 'center',
-                    ...(esCamp ? {} : { borderLeft: '2px solid #24352A' })
+                    ...(esCamp ? {} : { borderLeft: `2px solid ${coloresRama.colorLinea}` })
                   }}>
                     <CeldaObservacion
                       observacion={obs}
@@ -1410,6 +1544,7 @@ function TablaPlanilla({
                     movimiento={pagoGrupo}
                     puedeEditar={puedeEditar}
                     bgFila={bgFila}
+                    colorLinea={coloresRama.colorLinea}
                     onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
                     onActualizar={(id, fecha, monto, pagadoPor, reciboEntregado) => onActualizar(concepto, rama, id, fecha, monto, pagadoPor, reciboEntregado)}
                     onEliminar={(id) => onEliminar(concepto, rama, id)}
@@ -1459,10 +1594,8 @@ function CeldaMesCuota({
   const [reciboEntregado, setReciboEntregado] = useState(true)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
-  // ¿Este movimiento es un "no aplica"?
   const esNoAplica = movimiento?.no_aplica === true
 
-  // Cuando se abre el editor, precargar valores
   useEffect(() => {
     if (editorAbierto && movimiento && !movimiento.no_aplica) {
       setFecha(movimiento.fecha_pago)
@@ -1475,7 +1608,6 @@ function CeldaMesCuota({
     }
   }, [editorAbierto, movimiento])
 
-  // Cerrar al click afuera
   useEffect(() => {
     if (!editorAbierto) return
     const handleClickFuera = (e: MouseEvent) => {
@@ -1497,22 +1629,16 @@ function CeldaMesCuota({
     }
   }
 
-  // Determinar si esta celda es el inicio visual de la barra (donde va el texto)
   const esInicioBarra = esPrimerMesDelPago
 
-  // ============================================
-  // RENDER: EDITOR ABIERTO
-  // ============================================
   if (editorAbierto && editorRango) {
     const cantMeses = MESES_CUOTAS.filter(m =>
       m.key >= editorRango.mesInicio && m.key <= editorRango.mesFin
     ).length
 
-    // Este es el mes donde se renderiza el editor (el primero del rango)
     const esElMesDelEditor = editorRango.mesInicio === mesKey
 
     if (!esElMesDelEditor) {
-      // Los demás meses del rango solo se pintan de verde
       return (
         <td style={{
           ...tdNormal,
@@ -1547,7 +1673,6 @@ function CeldaMesCuota({
           </div>
 
           {esNoAplica ? (
-            // Si ya está marcado como "no aplica", no mostramos inputs de pago
             <div style={{
               textAlign: 'center',
               fontSize: '12px',
@@ -1619,7 +1744,7 @@ function CeldaMesCuota({
             {!movimiento && (
               <button
                 onClick={onGuardarNoAplica}
-                title="Marcar este mes como 'no aplica' (el beneficiario todavía no estaba en el grupo)"
+                title="Marcar este mes como 'no aplica'"
                 style={{
                   padding: '2px 8px',
                   fontSize: '11px',
@@ -1676,9 +1801,6 @@ function CeldaMesCuota({
     )
   }
 
-  // ============================================
-  // RENDER: CELDA NORMAL (con drag)
-  // ============================================
   const sinRecibo = movimiento?.recibo_entregado === false
   const dentroDeBarra = movimiento !== undefined
 
@@ -1694,7 +1816,6 @@ function CeldaMesCuota({
 
   const bordeDrag = enDrag ? `2px solid ${COLORES.verdeScout}` : `1px solid ${COLORES.bordeSuave}`
 
-  // Calcular cuántos meses cubre la barra (para el colSpan)
   let cantMesesBarra = 1
   if (movimiento && esInicioBarra) {
     const ini = movimiento.mes_inicio || mesKey
@@ -1702,7 +1823,6 @@ function CeldaMesCuota({
     cantMesesBarra = MESES_CUOTAS.filter(m => m.key >= ini && m.key <= fin).length
   }
 
-  // Si este mes NO es el inicio del pago, no renderizamos <td>
   if (movimiento && !esInicioBarra) {
     return null
   }
@@ -1765,11 +1885,12 @@ function CeldaMesCuota({
 // CELDA PAGO
 // ============================================
 function CeldaPago({
-  movimiento, puedeEditar, bgFila, onCrear, onActualizar, onEliminar
+  movimiento, puedeEditar, bgFila, bloqueada, onCrear, onActualizar, onEliminar
 }: {
   movimiento: Movimiento | undefined
   puedeEditar: boolean
   bgFila: string
+  bloqueada?: boolean
   onCrear: (fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onActualizar: (id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onEliminar: (id: string) => void
@@ -1862,6 +1983,24 @@ function CeldaPago({
   }
 
   if (!movimiento) {
+    // Si está bloqueada (beneficiario ya pagó todo), pintar negro y no permitir click
+    if (bloqueada) {
+      return (
+        <td style={{
+          ...tdNormal,
+          textAlign: 'center',
+          backgroundColor: '#000000',
+          color: '#FFFFFF',
+          fontWeight: '700',
+          fontSize: '12px',
+          cursor: 'default',
+          userSelect: 'none'
+        }}>
+          —
+        </td>
+      )
+    }
+
     return (
       <td
         onClick={abrirEdicion}
@@ -1911,11 +2050,12 @@ function CeldaPago({
 // CELDA ASISTENCIA (editable, ciclo de 3 estados)
 // ============================================
 function CeldaAsistencia({
-  asistencia, puedeEditar, bgFila, onGuardar
+  asistencia, puedeEditar, bgFila, colorLinea, onGuardar
 }: {
   asistencia: Asistencia | undefined
   puedeEditar: boolean
   bgFila: string
+  colorLinea: string
   onGuardar: (nuevoEstado: 'si' | 'no' | 'no_se_sabe') => void
 }) {
   const estadoActual = asistencia?.asiste || 'no_se_sabe'
@@ -1957,7 +2097,7 @@ function CeldaAsistencia({
         minWidth: '50px',
         maxWidth: '60px',
         padding: '6px 4px',
-        borderRight: '2px solid #24352A'
+        borderRight: `2px solid ${colorLinea}`
       }}
     >
       <div style={{
@@ -1976,11 +2116,12 @@ function CeldaAsistencia({
 // CELDA PAGÓ EL GRUPO
 // ============================================
 function CeldaPagoGrupo({
-  movimiento, puedeEditar, bgFila, onCrear, onActualizar, onEliminar
+  movimiento, puedeEditar, bgFila, colorLinea, onCrear, onActualizar, onEliminar
 }: {
   movimiento: Movimiento | undefined
   puedeEditar: boolean
   bgFila: string
+  colorLinea: string
   onCrear: (fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onActualizar: (id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onEliminar: (id: string) => void
@@ -2028,7 +2169,7 @@ function CeldaPagoGrupo({
 
   if (editando) {
     return (
-      <td style={{ ...tdNormal, padding: '4px', backgroundColor: bgFila, minWidth: '110px', borderLeft: '2px solid #24352A' }}>
+      <td style={{ ...tdNormal, padding: '4px', backgroundColor: bgFila, minWidth: '110px', borderLeft: `2px solid ${colorLinea}` }}>
         <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
           <input
             type="date"
@@ -2061,7 +2202,7 @@ function CeldaPagoGrupo({
           backgroundColor: bgFila,
           color: '#D1C9B4',
           fontSize: '14px',
-          borderLeft: '2px solid #24352A'
+          borderLeft: `2px solid ${colorLinea}`
         }}
       >
         {puedeEditar ? '+' : '—'}
@@ -2078,7 +2219,7 @@ function CeldaPagoGrupo({
         cursor: puedeEditar ? 'pointer' : 'default',
         backgroundColor: '#7FB77E',
         padding: '8px 6px',
-        borderLeft: '2px solid #24352A'
+        borderLeft: `2px solid ${colorLinea}`
       }}
     >
       <div style={{ whiteSpace: 'nowrap', lineHeight: 1.3 }}>
