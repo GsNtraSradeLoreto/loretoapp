@@ -120,6 +120,8 @@ interface Legajo {
   declaracion_jurada_salud_obs: string
   autorizacion_retirarse: boolean
   autorizacion_retirarse_obs: string
+  partida_nacimiento: boolean
+  partida_nacimiento_obs: string
   fotocopia_dni_beneficiario: boolean
   fotocopia_dni_beneficiario_obs: string
   fotocopia_dni_padre: boolean
@@ -830,6 +832,8 @@ setPagos(pagosOrdenados)
           declaracion_jurada_salud_obs: legajoForm.declaracion_jurada_salud_obs || null,
           autorizacion_retirarse: legajoForm.autorizacion_retirarse,
           autorizacion_retirarse_obs: legajoForm.autorizacion_retirarse_obs || null,
+          partida_nacimiento: legajoForm.partida_nacimiento,
+          partida_nacimiento_obs: legajoForm.partida_nacimiento_obs || null,
           fotocopia_dni_beneficiario: legajoForm.fotocopia_dni_beneficiario,
           fotocopia_dni_beneficiario_obs: legajoForm.fotocopia_dni_beneficiario_obs || null,
           fotocopia_dni_padre: legajoForm.fotocopia_dni_padre,
@@ -883,20 +887,151 @@ setPagos(pagosOrdenados)
 
     const puedeEditarLegajo = puedeEditar()
 
-    const campos = [
-      { key: 'ficha_datos_personales', label: '📋 Ficha de Datos Personales', obsKey: 'ficha_datos_personales_obs' },
-      { key: 'ficha_seguimiento', label: '📈 Ficha de Seguimiento', obsKey: 'ficha_seguimiento_obs' },
-      { key: 'autorizacion_ingreso', label: '📄 Autorización Ingreso', obsKey: 'autorizacion_ingreso_obs' },
-      { key: 'salidas_cercanas', label: '🚶 Salidas Cercanas', obsKey: 'salidas_cercanas_obs', fechaKey: 'salidas_cercanas_fecha' },
-      { key: 'uso_imagen', label: '📸 Uso de Imagen', obsKey: 'uso_imagen_obs', fechaKey: 'uso_imagen_fecha' },
-      { key: 'declaracion_jurada_salud', label: '🏥 Declaración Jurada de Salud', obsKey: 'declaracion_jurada_salud_obs' },
-      { key: 'autorizacion_retirarse', label: '🚪 Autorización retirarse solos', obsKey: 'autorizacion_retirarse_obs' },
-      { key: 'fotocopia_dni_beneficiario', label: '🪪 Fotocopia DNI Beneficiario', obsKey: 'fotocopia_dni_beneficiario_obs' },
-      { key: 'fotocopia_dni_padre', label: '👨 Fotocopia DNI Padre', obsKey: 'fotocopia_dni_padre_obs' },
-      { key: 'fotocopia_dni_madre', label: '👩 Fotocopia DNI Madre', obsKey: 'fotocopia_dni_madre_obs' },
-      { key: 'fotocopia_vacunas', label: '💉 Fotocopia Vacunas', obsKey: 'fotocopia_vacunas_obs' },
-      { key: 'otros', label: '📎 Otros', obsKey: 'otros_obs' }
+    // Secciones del legajo (con subtítulo informativo en cursiva)
+    const seccionesLegajo: {
+      subtitulo: string
+      campos: Array<{ key: string; label: string; obsKey: string; fechaKey?: string }>
+    }[] = [
+      {
+        subtitulo: 'Papeles de nuestro Grupo',
+        campos: [
+          { key: 'ficha_datos_personales', label: '📋 Ficha de Datos Personales', obsKey: 'ficha_datos_personales_obs' },
+          { key: 'ficha_seguimiento', label: '📈 Ficha de Seguimiento', obsKey: 'ficha_seguimiento_obs' },
+        ]
+      },
+      {
+        subtitulo: 'Papeles de SAAC (formularios)',
+        campos: [
+          { key: 'autorizacion_ingreso', label: '📄 Autorización Ingreso', obsKey: 'autorizacion_ingreso_obs' },
+          { key: 'salidas_cercanas', label: '🚶 Salidas Cercanas', obsKey: 'salidas_cercanas_obs', fechaKey: 'salidas_cercanas_fecha' },
+          { key: 'uso_imagen', label: '📸 Uso de Imagen', obsKey: 'uso_imagen_obs', fechaKey: 'uso_imagen_fecha' },
+          { key: 'declaracion_jurada_salud', label: '🏥 Declaración Jurada de Salud', obsKey: 'declaracion_jurada_salud_obs' },
+          { key: 'autorizacion_retirarse', label: '🚪 Autorización retirarse solos', obsKey: 'autorizacion_retirarse_obs' },
+        ]
+      },
+      {
+        subtitulo: 'Papeles personales (fotocopias)',
+        campos: [
+          { key: 'partida_nacimiento', label: '📜 Partida de Nacimiento', obsKey: 'partida_nacimiento_obs' },
+          { key: 'fotocopia_dni_beneficiario', label: '🪪 Fotocopia DNI Beneficiario', obsKey: 'fotocopia_dni_beneficiario_obs' },
+          { key: 'fotocopia_dni_padre', label: '👨 Fotocopia DNI Padre', obsKey: 'fotocopia_dni_padre_obs' },
+          { key: 'fotocopia_dni_madre', label: '👩 Fotocopia DNI Madre', obsKey: 'fotocopia_dni_madre_obs' },
+          { key: 'fotocopia_vacunas', label: '💉 Fotocopia Vacunas', obsKey: 'fotocopia_vacunas_obs' },
+        ]
+      },
+      {
+        subtitulo: 'Otros',
+        campos: [
+          { key: 'otros', label: '📎 Otros', obsKey: 'otros_obs' },
+        ]
+      }
     ]
+
+    // Campo individual reutilizable (para no duplicar el JSX adentro del map de secciones)
+    const renderCampo = (campo: { key: string; label: string; obsKey: string; fechaKey?: string }) => {
+      const valor = data[campo.key as keyof typeof data] as boolean || false
+      const obs = data[campo.obsKey as keyof typeof data] as string || ''
+      const fecha = campo.fechaKey ? (data[campo.fechaKey as keyof typeof data] as string || '') : ''
+      const esEditable = editandoLegajo && puedeEditarLegajo
+
+      return (
+        <div
+          key={campo.key}
+          style={{
+            backgroundColor: valor ? '#F0F7F0' : '#FFFFFF',
+            border: `2px solid ${valor ? '#B8D4B8' : '#E8DEC4'}`,
+            borderRadius: '10px',
+            padding: '10px 12px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {esEditable ? (
+              <input
+                type="checkbox"
+                checked={valor}
+                onChange={(e) => handleCheckChange(campo.key, e.target.checked)}
+                disabled={saving}
+                style={{ width: '22px', height: '22px', cursor: 'pointer', accentColor: COL.verdeScout, flexShrink: 0 }}
+              />
+            ) : (
+              <span style={{ fontSize: '20px', flexShrink: 0 }}>
+                {valor ? '✅' : '❌'}
+              </span>
+            )}
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: 'clamp(12px, 3vw, 14px)',
+                fontWeight: '600',
+                color: COL.textoPrincipal,
+                textTransform: 'uppercase',
+                letterSpacing: '0.3px'
+              }}>
+                {campo.label}
+              </div>
+              {campo.fechaKey && fecha && (
+                <div style={{
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: 'clamp(10px, 2.5vw, 12px)',
+                  color: COL.textoSecundario,
+                  marginTop: '2px'
+                }}>
+                  📅 {formatFecha(fecha)}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {campo.fechaKey && esEditable && (
+            <div style={{ marginTop: '8px' }}>
+              <input
+                type="date"
+                value={fecha}
+                onChange={(e) => handleFechaChange(campo.fechaKey!, e.target.value)}
+                style={{
+                  width: '100%', padding: '6px 10px', fontSize: '13px',
+                  border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
+                  boxSizing: 'border-box'
+                }}
+                disabled={saving}
+              />
+            </div>
+          )}
+
+          {!esEditable && obs && obs.trim() !== '' && (
+            <div style={{
+              marginTop: '6px',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              color: COL.textoSecundario,
+              fontFamily: 'Oswald, sans-serif',
+              fontStyle: 'italic'
+            }}>
+              {obs}
+            </div>
+          )}
+
+          {esEditable && (
+            <div style={{ marginTop: '8px' }}>
+              <input
+                type="text"
+                value={obs}
+                onChange={(e) => handleObsChange(campo.obsKey, e.target.value)}
+                placeholder="Observaciones..."
+                style={{
+                  width: '100%', padding: '6px 10px', fontSize: '13px',
+                  border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
+                  boxSizing: 'border-box'
+                }}
+                disabled={saving}
+              />
+            </div>
+          )}
+        </div>
+      )
+    }
 
     const handleCheckChange = (key: string, checked: boolean) => {
       if (!editandoLegajo || !legajoForm || !puedeEditarLegajo) return
@@ -970,107 +1105,43 @@ setPagos(pagosOrdenados)
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {campos.map((campo) => {
-            const valor = data[campo.key as keyof typeof data] as boolean || false
-            const obs = data[campo.obsKey as keyof typeof data] as string || ''
-            const fecha = campo.fechaKey ? (data[campo.fechaKey as keyof typeof data] as string || '') : ''
-            const esEditable = editandoLegajo && puedeEditarLegajo
+          {seccionesLegajo.map((seccion, idxSeccion) => {
+            // ✅ Lógica especial para la sección "Otros":
+            // - En modo lectura: solo se muestra si tiene checkbox tildado O texto cargado
+            // - En modo edición: siempre se muestra
+            const esSeccionOtros = seccion.subtitulo === 'Otros'
+
+            if (esSeccionOtros && !editandoLegajo) {
+              const campoOtros = seccion.campos[0]
+              const valorOtros = (data[campoOtros.key as keyof typeof data] as boolean) || false
+              const obsOtros = (data[campoOtros.obsKey as keyof typeof data] as string) || ''
+              const tieneContenido = valorOtros || (obsOtros && obsOtros.trim() !== '')
+
+              if (!tieneContenido) {
+                return null // No renderizar la sección "Otros" si está vacía
+              }
+            }
 
             return (
-              <div
-                key={campo.key}
-                style={{
-                  backgroundColor: valor ? '#F0F7F0' : '#FFFFFF',
-                  border: `2px solid ${valor ? '#B8D4B8' : '#E8DEC4'}`,
-                  borderRadius: '10px',
-                  padding: '10px 12px'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {esEditable ? (
-                    <input
-                      type="checkbox"
-                      checked={valor}
-                      onChange={(e) => handleCheckChange(campo.key, e.target.checked)}
-                      disabled={saving}
-                      style={{ width: '22px', height: '22px', cursor: 'pointer', accentColor: COL.verdeScout, flexShrink: 0 }}
-                    />
-                  ) : (
-                    <span style={{ fontSize: '20px', flexShrink: 0 }}>
-                      {valor ? '✅' : '❌'}
-                    </span>
-                  )}
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontFamily: 'Oswald, sans-serif',
-                      fontSize: 'clamp(12px, 3vw, 14px)',
-                      fontWeight: '600',
-                      color: COL.textoPrincipal,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.3px'
-                    }}>
-                      {campo.label}
-                    </div>
-                    {campo.fechaKey && fecha && (
-                      <div style={{
-                        fontFamily: 'Oswald, sans-serif',
-                        fontSize: 'clamp(10px, 2.5vw, 12px)',
-                        color: COL.textoSecundario,
-                        marginTop: '2px'
-                      }}>
-                        📅 {formatFecha(fecha)}
-                      </div>
-                    )}
-                  </div>
+              <div key={idxSeccion}>
+                {/* Subtítulo de la sección */}
+                <div style={{
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: 'clamp(10px, 2.2vw, 11px)',
+                  color: COL.textoSecundario,
+                  fontStyle: 'italic',
+                  letterSpacing: '0.5px',
+                  marginTop: idxSeccion === 0 ? '0' : '14px',
+                  marginBottom: '8px',
+                  paddingLeft: '2px'
+                }}>
+                  {seccion.subtitulo}
                 </div>
 
-                {campo.fechaKey && esEditable && (
-                  <div style={{ marginTop: '8px' }}>
-                    <input
-                      type="date"
-                      value={fecha}
-                      onChange={(e) => handleFechaChange(campo.fechaKey!, e.target.value)}
-                      style={{
-                        width: '100%', padding: '6px 10px', fontSize: '13px',
-                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
-                        boxSizing: 'border-box'
-                      }}
-                      disabled={saving}
-                    />
-                  </div>
-                )}
-
-                {!esEditable && obs && obs.trim() !== '' && (
-                  <div style={{
-                    marginTop: '6px',
-                    fontSize: 'clamp(11px, 2.5vw, 13px)',
-                    color: COL.textoSecundario,
-                    fontFamily: 'Oswald, sans-serif',
-                    fontStyle: 'italic'
-                  }}>
-                    {obs}
-                  </div>
-                )}
-
-                {esEditable && (
-                  <div style={{ marginTop: '8px' }}>
-                    <input
-                      type="text"
-                      value={obs}
-                      onChange={(e) => handleObsChange(campo.obsKey, e.target.value)}
-                      placeholder="Observaciones..."
-                      style={{
-                        width: '100%', padding: '6px 10px', fontSize: '13px',
-                        border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                        fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
-                        boxSizing: 'border-box'
-                      }}
-                      disabled={saving}
-                    />
-                  </div>
-                )}
+                {/* Campos de la sección */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {seccion.campos.map(campo => renderCampo(campo))}
+                </div>
               </div>
             )
           })}
