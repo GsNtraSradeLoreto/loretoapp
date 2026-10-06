@@ -12,6 +12,7 @@ const BeneficiarioDetalle = lazy(() => import('./pages/BeneficiarioDetalle'))
 const Pagos = lazy(() => import('./pages/Pagos'))
 const Planillas = lazy(() => import('./pages/Planillas'))
 const Inscripcion = lazy(() => import('./pages/Inscripcion'))
+const Solicitudes = lazy(() => import('./pages/Solicitudes'))
 const ConfiguracionFinanzas = lazy(() => import('./pages/ConfiguracionFinanzas'))
 const Campamentos = lazy(() => import('./pages/Campamentos'))
 const Auditoria = lazy(() => import('./pages/Auditoria'))
@@ -45,7 +46,6 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return children
 }
 
-// ✅ Loader que se muestra mientras carga cada página
 function PageLoader() {
   return (
     <div style={{
@@ -127,6 +127,13 @@ function AppRoutes() {
           <PrivateRoute>
             <Layout>
               <Planillas />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/solicitudes" element={
+          <PrivateRoute>
+            <Layout>
+              <Solicitudes />
             </Layout>
           </PrivateRoute>
         } />

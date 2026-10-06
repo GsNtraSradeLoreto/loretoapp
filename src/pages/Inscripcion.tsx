@@ -101,7 +101,8 @@ export default function Inscripcion() {
     email_contacto: '',
 
     // Menor
-    menor_apellido_nombre: '',
+    menor_apellido: '',
+    menor_nombre: '',
     menor_dni: '',
     menor_sexo: '',
     menor_fecha_nacimiento: '',
@@ -292,7 +293,8 @@ export default function Inscripcion() {
       const datos = {
         email_contacto: form.email_contacto.trim(),
 
-        menor_apellido_nombre: form.menor_apellido_nombre.trim(),
+        menor_apellido: form.menor_apellido.trim(),
+        menor_nombre: form.menor_nombre.trim(),
         menor_dni: form.menor_dni.trim(),
         menor_sexo: form.menor_sexo,
         menor_fecha_nacimiento: form.menor_fecha_nacimiento || null,
@@ -348,7 +350,7 @@ export default function Inscripcion() {
 
       // Enviar mails de aviso a admins (no bloquea si falla)
       enviarMailsAviso({
-        menor_nombre: datos.menor_apellido_nombre,
+        menor_nombre: `${datos.menor_apellido}, ${datos.menor_nombre}`,
         menor_fecha_nacimiento: datos.menor_fecha_nacimiento || '',
         adulto_email: datos.email_contacto,
         adulto_telefono: datos.menor_telefono_emergencia
@@ -525,16 +527,29 @@ export default function Inscripcion() {
           <div style={seccionStyle}>
             <div style={tituloSeccionStyle}>👦 Datos del menor</div>
 
-            <div style={gridFullStyle}>
+            <div style={gridStyle}>
               <div>
                 <label style={labelStyle}>
-                  Apellido y Nombre del menor *
+                  Apellidos *
                   <span style={aclaracionStyle}>(como figura en el DNI)</span>
                 </label>
                 <input
                   type="text"
-                  value={form.menor_apellido_nombre}
-                  onChange={(e) => setCampo('menor_apellido_nombre', e.target.value)}
+                  value={form.menor_apellido}
+                  onChange={(e) => setCampo('menor_apellido', e.target.value)}
+                  style={inputStyle}
+                  required
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>
+                  Nombres *
+                  <span style={aclaracionStyle}>(como figura en el DNI)</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.menor_nombre}
+                  onChange={(e) => setCampo('menor_nombre', e.target.value)}
                   style={inputStyle}
                   required
                 />

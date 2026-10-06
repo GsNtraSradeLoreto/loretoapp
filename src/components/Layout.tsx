@@ -30,6 +30,7 @@ export default function Layout({ children }: LayoutProps) {
   const [novedades, setNovedades] = React.useState(0)
   const [notifPermisos, setNotifPermisos] = React.useState(0)
   const [permisosPendientes, setPermisosPendientes] = React.useState(0)
+  const [solicitudesPendientes, setSolicitudesPendientes] = React.useState(0)
   const [dragOffset, setDragOffset] = React.useState(0)
 
   const menuPerfilRef = useRef<HTMLDivElement>(null)
@@ -125,6 +126,23 @@ export default function Layout({ children }: LayoutProps) {
         }
       })
   }, [isSuperAdmin, isJefatura])
+
+  // ============================================
+  // CONTADOR DE SOLICITUDES DE INSCRIPCIÓN PENDIENTES
+  // ============================================
+  React.useEffect(() => {
+    if (!isSuperAdmin && !isJefatura && !isAdministrador) return
+
+    supabase
+      .from('solicitudes_inscripcion')
+      .select('id', { count: 'exact', head: true })
+      .eq('estado', 'pendiente')
+      .then(({ count, error }) => {
+        if (!error && typeof count === 'number') {
+          setSolicitudesPendientes(count)
+        }
+      })
+  }, [isSuperAdmin, isJefatura, isAdministrador])
 
   // ============================================
   // NAVEGACIÓN POR SWIPE
@@ -415,7 +433,7 @@ export default function Layout({ children }: LayoutProps) {
                       <span style={{ marginRight: '8px' }}>💰</span>
                       Pagos
                     </Link>
-                    
+
                     <Link
                       to="/cumpleanos"
                       style={{
@@ -540,6 +558,49 @@ export default function Layout({ children }: LayoutProps) {
                       <span style={{ marginRight: '8px' }}>📊</span>
                       Planillas
                     </Link>
+
+                    {(isSuperAdmin || isJefatura || isAdministrador) && (
+                      <Link
+                        to="/solicitudes"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '8px 16px',
+                          color: '#24352A',
+                          textDecoration: 'none',
+                          fontSize: '14px',
+                          fontFamily: 'Oswald, sans-serif',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        onClick={() => setShowMenu(false)}
+                      >
+                        <span style={{ marginRight: '8px' }}>📋</span>
+                        Solicitudes
+                        {(isSuperAdmin || isJefatura) && solicitudesPendientes > 0 && (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minWidth: '20px',
+                            height: '20px',
+                            padding: '0 6px',
+                            backgroundColor: '#B71C1C',
+                            color: 'white',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            fontFamily: 'Oswald, sans-serif',
+                            marginLeft: '8px',
+                            lineHeight: 1
+                          }}>
+                            {solicitudesPendientes > 99 ? '99+' : solicitudesPendientes}
+                          </span>
+                        )}
+                      </Link>
+                    )}
 
                     {(isSuperAdmin || isJefatura) && (
                       <Link
