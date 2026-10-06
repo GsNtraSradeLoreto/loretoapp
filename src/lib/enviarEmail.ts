@@ -1,26 +1,32 @@
 import { supabase } from './supabase'
 
 interface EnviarEmailParams {
-  tipo: 'nuevo_permiso' | 'devolucion' | 'cargado'
+  tipo: 'nuevo_permiso' | 'devolucion' | 'cargado' | 'nueva_inscripcion'
   destinatarios: string[]
   datos: {
-    permiso_id: string
+    permiso_id?: string
     jefe_nombre?: string
     jefatura_nombre?: string
     fecha_salida?: string
     fecha_llegada?: string
     ubicacion?: string
     comentario?: string
+    // Datos de nueva inscripción
+    solicitud_id?: string
+    menor_nombre?: string
+    menor_fecha_nacimiento?: string
+    menor_edad?: number
+    adulto_email?: string
+    adulto_telefono?: string
   }
 }
 
 /**
- * Llama a la Edge Function "enviar-email" que envía mails vía Brevo.
+ * Llama a la Edge Function "enviar-email" que envía mails vía Gmail SMTP.
  * NO bloquea si falla — devuelve true/false y loguea el error.
  */
 export async function enviarEmail(params: EnviarEmailParams): Promise<boolean> {
   try {
-    // Filtramos emails vacíos o inválidos
     const destinatariosLimpios = params.destinatarios
       .filter((e): e is string => !!e && e.includes('@'))
 
@@ -44,7 +50,6 @@ export async function enviarEmail(params: EnviarEmailParams): Promise<boolean> {
     console.log('✅ Email enviado:', data)
     return true
   } catch (error) {
-    // No rompemos el flujo de la app si falla el mail
     console.error('❌ Error inesperado al enviar email:', error)
     return false
   }
@@ -52,7 +57,6 @@ export async function enviarEmail(params: EnviarEmailParams): Promise<boolean> {
 
 /**
  * Formatea una fecha ISO a formato argentino corto (DD/MM/YYYY).
- * Usado para los mails.
  */
 export function formatFechaCorta(fecha: string | null | undefined): string {
   if (!fecha) return '-'

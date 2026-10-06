@@ -11,6 +11,7 @@ const Admin = lazy(() => import('./pages/Admin'))
 const BeneficiarioDetalle = lazy(() => import('./pages/BeneficiarioDetalle'))
 const Pagos = lazy(() => import('./pages/Pagos'))
 const Planillas = lazy(() => import('./pages/Planillas'))
+const Inscripcion = lazy(() => import('./pages/Inscripcion'))
 const ConfiguracionFinanzas = lazy(() => import('./pages/ConfiguracionFinanzas'))
 const Campamentos = lazy(() => import('./pages/Campamentos'))
 const Auditoria = lazy(() => import('./pages/Auditoria'))
@@ -72,6 +73,7 @@ function AppRoutes() {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/inscripcion" element={<Inscripcion />} />
         <Route path="/dashboard" element={
           <PrivateRoute>
             <Layout>
