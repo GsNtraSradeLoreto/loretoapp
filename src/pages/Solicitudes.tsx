@@ -226,7 +226,11 @@ export default function Solicitudes() {
 
     try {
       const hoy = new Date().toISOString().split('T')[0]
+      const errores: string[] = []
 
+      // ============================================
+      // 1. Crear beneficiario
+      // ============================================
       const { data: nuevoBenef, error: errBenef } = await supabase
         .from('beneficiarios')
         .insert({
@@ -237,6 +241,7 @@ export default function Solicitudes() {
           fecha_ingreso_grupo: hoy,
           fecha_ingreso_rama: hoy,
           estado: 'activo',
+          foto_url: solicitud.menor_foto_url, // ✅ NUEVO: copiamos la foto
           tiene_uniforme: false,
           tiene_hermanos: false,
           hizo_tada: false,
@@ -246,8 +251,11 @@ export default function Solicitudes() {
         .select()
         .single()
 
-      if (errBenef) throw errBenef
+      if (errBenef) throw new Error(`Error al crear beneficiario: ${errBenef.message}`)
 
+      // ============================================
+      // 2. Guardar datos personales extendidos
+      // ============================================
       const { error: errDatos } = await supabase
         .from('datos_personales_beneficiario')
         .insert({
@@ -294,34 +302,92 @@ export default function Solicitudes() {
           info_importancia_menor: solicitud.info_importancia_menor
         })
 
-      if (errDatos) console.error('Error al guardar datos personales:', errDatos)
+      if (errDatos) {
+        console.error('Error al guardar datos personales:', errDatos)
+        errores.push(`datos personales: ${errDatos.message}`)
+      }
 
-      const tablaProgresion = form.rama === 'Manada'
-        ? 'progresion_manada'
-        : form.rama === 'Unidad Scout'
-          ? 'progresion_unidad'
-          : form.rama === 'Caminantes'
-            ? 'progresion_caminantes'
-            : 'progresion_rovers'
+      // ============================================
+      // 3. Crear las 4 filas de progresión (una con datos, 3 vacías)
+      // ============================================
+      const ramasData = [
+        {
+          tabla: 'progresion_manada',
+          campoFecha: 'fecha_ingreso_manada',
+          rama: 'Manada'
+        },
+        {
+          tabla: 'progresion_unidad',
+          campoFecha: 'fecha_ingreso_unidad',
+          rama: 'Unidad Scout'
+        },
+        {
+          tabla: 'progresion_caminantes',
+          campoFecha: 'fecha_ingreso_caminantes',
+          rama: 'Caminantes'
+        },
+        {
+          tabla: 'progresion_rovers',
+          campoFecha: 'fecha_ingreso_rovers',
+          rama: 'Rovers'
+        }
+      ]
 
-      const campoFecha = form.rama === 'Manada'
-        ? 'fecha_ingreso_manada'
-        : form.rama === 'Unidad Scout'
-          ? 'fecha_ingreso_unidad'
-          : form.rama === 'Caminantes'
-            ? 'fecha_ingreso_caminantes'
-            : 'fecha_ingreso_rovers'
+      for (const r of ramasData) {
+        const esRamaElegida = r.rama === form.rama
 
-      const { error: errProg } = await supabase
-        .from(tablaProgresion)
+        const insertData: any = {
+          beneficiario_id: nuevoBenef.id,
+          oculto: false
+        }
+
+        // Si es la rama elegida, llenar con fecha de ingreso y período introductorio
+        if (esRamaElegida) {
+          insertData[r.campoFecha] = hoy
+          insertData.fecha_periodo_introductorio = hoy
+          insertData.progresion_actual = 'Periodo Introductorio'
+        }
+
+        const { error: errProg } = await supabase
+          .from(r.tabla)
+          .insert(insertData)
+
+        if (errProg) {
+          console.error(`Error al crear progresión de ${r.rama}:`, errProg)
+          errores.push(`progresión ${r.rama}: ${errProg.message}`)
+        }
+      }
+
+      // ============================================
+      // 4. Crear el legajo vacío
+      // ============================================
+      const { error: errLegajo } = await supabase
+        .from('legajos')
         .insert({
           beneficiario_id: nuevoBenef.id,
-          [campoFecha]: hoy,
-          progresion_actual: 'Período Introductorio'
+          ficha_datos_personales: false,
+          ficha_seguimiento: false,
+          autorizacion_ingreso: false,
+          salidas_cercanas: false,
+          uso_imagen: false,
+          declaracion_jurada_salud: false,
+          autorizacion_retirarse: false,
+          partida_nacimiento: false,
+          fotocopia_dni_beneficiario: false,
+          fotocopia_dni_padre: false,
+          fotocopia_dni_madre: false,
+          fotocopia_vacunas: false,
+          otros: false
         })
 
-      if (errProg) console.error('Error al crear progresión:', errProg)
+      if (errLegajo) {
+        console.error('Error al crear legajo:', errLegajo)
+        errores.push(`legajo: ${errLegajo.message}`)
+      }
 
+      // ============================================
+      // 5. Actualizar la solicitud
+      // ============================================
       const { error: errUpdate } = await supabase
         .from('solicitudes_inscripcion')
         .update({
@@ -333,13 +399,24 @@ export default function Solicitudes() {
         })
         .eq('id', solicitud.id)
 
-      if (errUpdate) throw errUpdate
+      if (errUpdate) throw new Error(`Error al actualizar solicitud: ${errUpdate.message}`)
 
-      setMensaje({ tipo: 'ok', texto: `✅ ${form.apellido}, ${form.nombre} aprobado en ${form.rama}` })
+      // ============================================
+      // Mensaje final
+      // ============================================
+      if (errores.length > 0) {
+        setMensaje({
+          tipo: 'error',
+          texto: `⚠️ Beneficiario creado pero hubo errores: ${errores.join(' | ')}`
+        })
+      } else {
+        setMensaje({ tipo: 'ok', texto: `✅ ${form.apellido}, ${form.nombre} aprobado en ${form.rama}` })
+      }
+
       setExpandida(null)
       await cargarSolicitudes()
 
-      setTimeout(() => setMensaje(null), 4000)
+      setTimeout(() => setMensaje(null), 8000)
     } catch (err: any) {
       console.error('Error al aprobar:', err)
       setMensaje({ tipo: 'error', texto: `❌ Error: ${err.message}` })

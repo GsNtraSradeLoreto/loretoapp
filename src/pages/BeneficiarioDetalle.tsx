@@ -1561,6 +1561,11 @@ setPagos(pagosOrdenados)
     setMessage({ text: '', type: '' })
 
     try {
+      // Detectar si cambió de rama
+      const ramaAnterior = beneficiario?.rama
+      const ramaNueva = editForm.rama
+      const cambioDeRama = ramaAnterior && ramaNueva && ramaAnterior !== ramaNueva
+
       const { error } = await supabase
         .from('beneficiarios')
         .update({
@@ -1574,6 +1579,52 @@ setPagos(pagosOrdenados)
         .eq('id', id)
 
       if (error) throw error
+
+      // Si cambió de rama, actualizar la fila de progresión de la nueva rama
+      if (cambioDeRama && id) {
+        const hoy = new Date().toISOString().split('T')[0]
+
+        const ramasData = [
+          { tabla: 'progresion_manada', campoFecha: 'fecha_ingreso_manada', rama: 'Manada' },
+          { tabla: 'progresion_unidad', campoFecha: 'fecha_ingreso_unidad', rama: 'Unidad Scout' },
+          { tabla: 'progresion_caminantes', campoFecha: 'fecha_ingreso_caminantes', rama: 'Caminantes' },
+          { tabla: 'progresion_rovers', campoFecha: 'fecha_ingreso_rovers', rama: 'Rovers' }
+        ]
+
+        const datosRamaNueva = ramasData.find(r => r.rama === ramaNueva)
+
+        if (datosRamaNueva) {
+          // Verificar si ya existe la fila
+          const { data: existente } = await supabase
+            .from(datosRamaNueva.tabla)
+            .select('id')
+            .eq('beneficiario_id', id)
+            .maybeSingle()
+
+          if (existente) {
+            // Actualizar la fila existente con fecha de ingreso y período introductorio
+            await supabase
+              .from(datosRamaNueva.tabla)
+              .update({
+                [datosRamaNueva.campoFecha]: hoy,
+                fecha_periodo_introductorio: hoy,
+                progresion_actual: 'Periodo Introductorio'
+              })
+              .eq('beneficiario_id', id)
+          } else {
+            // Crear la fila nueva
+            await supabase
+              .from(datosRamaNueva.tabla)
+              .insert({
+                beneficiario_id: id,
+                [datosRamaNueva.campoFecha]: hoy,
+                fecha_periodo_introductorio: hoy,
+                progresion_actual: 'Periodo Introductorio',
+                oculto: false
+              })
+          }
+        }
+      }
 
       setMessage({ text: '✅ Beneficiario actualizado correctamente', type: 'success' })
 
