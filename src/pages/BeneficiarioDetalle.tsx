@@ -1640,6 +1640,61 @@ setPagos(pagosOrdenados)
     }
   }
 
+  // ============================================
+  // ELIMINAR BENEFICIARIO (solo SuperAdmin)
+  // ============================================
+  const handleEliminarBeneficiario = async () => {
+    if (!beneficiario) return
+
+    // Solo SuperAdmin
+    if (!isSuperAdmin) {
+      alert('⚠️ Solo el SuperAdmin puede eliminar beneficiarios')
+      return
+    }
+
+    // Primera confirmación
+    const confirmacion1 = window.confirm(
+      `⚠️ ¿Eliminar a ${beneficiario.apellido}, ${beneficiario.nombre}?\n\n` +
+      `Esta acción es DEFINITIVA y no se puede deshacer.`
+    )
+    if (!confirmacion1) return
+
+    // Segunda confirmación
+    const confirmacion2 = window.confirm(
+      `🚨 CONFIRMACIÓN FINAL\n\n` +
+      `Se va a borrar PERMANENTEMENTE:\n` +
+      `• El beneficiario\n` +
+      `• Su foto\n` +
+      `• Todos sus pagos\n` +
+      `• Su legajo completo\n` +
+      `• Sus progresiones\n` +
+      `• Sus datos personales\n` +
+      `• Su asistencia a campamentos\n` +
+      `• Sus participaciones en permisos\n\n` +
+      `¿Estás TOTALMENTE seguro?`
+    )
+    if (!confirmacion2) return
+
+    setSaving(true)
+    setMessage({ text: '', type: '' })
+
+    try {
+      const { error } = await supabase
+        .from('beneficiarios')
+        .delete()
+        .eq('id', beneficiario.id)
+
+      if (error) throw error
+
+      // Redirigir al dashboard después de eliminar
+      navigate('/dashboard')
+    } catch (error: any) {
+      console.error('Error al eliminar:', error)
+      setMessage({ text: `❌ Error al eliminar: ${error.message}`, type: 'error' })
+      setSaving(false)
+    }
+  }
+
   const handleSaveHistorialEdit = async (e: React.FormEvent) => {
     e.preventDefault()
     setEditHistorialLoading(true)
@@ -2272,34 +2327,66 @@ setPagos(pagosOrdenados)
         boxShadow: '0 0 0 2px #111111',
         position: 'relative'
       }}>
-        {/* Botón Editar arriba a la derecha - SOLO superadmin y jefatura */}
+        {/* Botones arriba a la derecha - SOLO superadmin y jefatura */}
         {puedeEditarDatosFijos() && (
-          <button
-            onClick={openEditModal}
-            style={{
-              position: 'absolute',
-              top: '12px',
-              right: '12px',
-              backgroundColor: '#BF4E30',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              cursor: 'pointer',
-              fontFamily: 'Oswald, sans-serif',
-              fontSize: '12px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              zIndex: 2
-            }}
-            title="Editar datos principales"
-          >
-            ✏️ <span className="btn-text-editar">Editar</span>
-          </button>
+          <div style={{
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            display: 'flex',
+            gap: '6px',
+            zIndex: 2
+          }}>
+            <button
+              onClick={openEditModal}
+              style={{
+                backgroundColor: '#BF4E30',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: '12px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              title="Editar datos principales"
+            >
+              ✏️ <span className="btn-text-editar">Editar</span>
+            </button>
+
+            {isSuperAdmin && (
+              <button
+                onClick={handleEliminarBeneficiario}
+                disabled={saving}
+                style={{
+                  backgroundColor: '#111111',
+                  color: '#FF6B6B',
+                  border: '2px solid #FF6B6B',
+                  borderRadius: '8px',
+                  padding: '6px 12px',
+                  cursor: saving ? 'wait' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: '12px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: saving ? 0.5 : 1
+                }}
+                title="ELIMINAR DEFINITIVAMENTE (Solo SuperAdmin)"
+              >
+                🗑️ <span className="btn-text-editar">Eliminar</span>
+              </button>
+            )}
+          </div>
         )}
 
         {/* Título PERFIL */}
