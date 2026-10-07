@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import BottomNav from './BottomNav'
 import CartelFechaNacimiento from './CartelFechaNacimiento'
+import CartelSolicitudesPendientes from './CartelSolicitudesPendientes'
 import { supabase } from '../lib/supabase'
 import { useSwipe } from '../hooks/useSwipe'
 
@@ -14,6 +15,9 @@ export default function Layout({ children }: LayoutProps) {
   const { profile, signOut, isSuperAdmin, isJefatura, isAdministrador, getRolData } = useAuth()
   const rolData = getRolData()
   const ramaUsuario = rolData.rama
+
+  // ¿Es jefe de alguna de las 4 ramas? (no subjefe, no ayudante)
+  const esJefeDeRama = rolData.tipo === 'jefe'
 
   const navigate = useNavigate()
   const [esCelular, setEsCelular] = React.useState(window.innerWidth < 640)
@@ -30,7 +34,7 @@ export default function Layout({ children }: LayoutProps) {
   const [novedades, setNovedades] = React.useState(0)
   const [notifPermisos, setNotifPermisos] = React.useState(0)
   const [permisosPendientes, setPermisosPendientes] = React.useState(0)
-  const [solicitudesPendientes, setSolicitudesPendientes] = React.useState(0)
+  const [solicitudesPendientesParaBadge, setSolicitudesPendientesParaBadge] = React.useState(0)
   const [dragOffset, setDragOffset] = React.useState(0)
 
   const menuPerfilRef = useRef<HTMLDivElement>(null)
@@ -128,10 +132,10 @@ export default function Layout({ children }: LayoutProps) {
   }, [isSuperAdmin, isJefatura])
 
   // ============================================
-  // CONTADOR DE SOLICITUDES DE INSCRIPCIÓN PENDIENTES
+  // CONTADOR DE SOLICITUDES DE INSCRIPCIÓN PENDIENTES (para el badge "!")
   // ============================================
   React.useEffect(() => {
-    if (!isSuperAdmin && !isJefatura && !isAdministrador) return
+    if (!isSuperAdmin && !isJefatura && !esJefeDeRama) return
 
     supabase
       .from('solicitudes_inscripcion')
@@ -139,10 +143,10 @@ export default function Layout({ children }: LayoutProps) {
       .eq('estado', 'pendiente')
       .then(({ count, error }) => {
         if (!error && typeof count === 'number') {
-          setSolicitudesPendientes(count)
+          setSolicitudesPendientesParaBadge(count)
         }
       })
-  }, [isSuperAdmin, isJefatura, isAdministrador])
+  }, [isSuperAdmin, isJefatura, esJefeDeRama])
 
   // ============================================
   // NAVEGACIÓN POR SWIPE
@@ -347,20 +351,48 @@ export default function Layout({ children }: LayoutProps) {
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#3D4F3F'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
-                  <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    backgroundColor: '#BF4E30',
-                    color: 'white',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '14px',
-                    fontWeight: '700',
-                    fontFamily: 'Oswald, sans-serif'
-                  }}>
-                    {nombreCompleto.charAt(0).toUpperCase()}
+                  <div style={{ position: 'relative' }}>
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      backgroundColor: '#BF4E30',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      fontFamily: 'Oswald, sans-serif'
+                    }}>
+                      {nombreCompleto.charAt(0).toUpperCase()}
+                    </div>
+
+                    {/* Badge de solicitudes pendientes */}
+                    {(isSuperAdmin || isJefatura || esJefeDeRama) && solicitudesPendientesParaBadge > 0 && (
+                      <span style={{
+                        position: 'absolute',
+                        top: '-4px',
+                        right: '-4px',
+                        minWidth: '16px',
+                        height: '16px',
+                        padding: '0 4px',
+                        backgroundColor: '#B71C1C',
+                        color: 'white',
+                        borderRadius: '8px',
+                        fontSize: '10px',
+                        fontWeight: '700',
+                        fontFamily: 'Oswald, sans-serif',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        lineHeight: 1,
+                        boxShadow: '0 0 0 2px #24352A',
+                        zIndex: 2
+                      }}>
+                        !
+                      </span>
+                    )}
                   </div>
                   {!esCelular && (
                     <span style={{
@@ -559,7 +591,7 @@ export default function Layout({ children }: LayoutProps) {
                       Planillas
                     </Link>
 
-                    {(isSuperAdmin || isJefatura || isAdministrador) && (
+                    {(isSuperAdmin || isJefatura || isAdministrador || esJefeDeRama) && (
                       <Link
                         to="/solicitudes"
                         style={{
@@ -579,7 +611,7 @@ export default function Layout({ children }: LayoutProps) {
                       >
                         <span style={{ marginRight: '8px' }}>📋</span>
                         Solicitudes
-                        {(isSuperAdmin || isJefatura) && solicitudesPendientes > 0 && (
+                        {(isSuperAdmin || isJefatura || esJefeDeRama) && solicitudesPendientesParaBadge > 0 && (
                           <span style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -596,7 +628,7 @@ export default function Layout({ children }: LayoutProps) {
                             marginLeft: '8px',
                             lineHeight: 1
                           }}>
-                            {solicitudesPendientes > 99 ? '99+' : solicitudesPendientes}
+                            {solicitudesPendientesParaBadge > 99 ? '99+' : solicitudesPendientesParaBadge}
                           </span>
                         )}
                       </Link>
@@ -749,6 +781,9 @@ export default function Layout({ children }: LayoutProps) {
       >
         {/* 🆕 Cartel de fecha de nacimiento */}
         <CartelFechaNacimiento />
+
+        {/* 🆕 Cartel de solicitudes pendientes */}
+        <CartelSolicitudesPendientes />
 
         {children}
       </main>

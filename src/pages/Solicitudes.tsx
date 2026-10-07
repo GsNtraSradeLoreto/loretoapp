@@ -179,6 +179,7 @@ export default function Solicitudes() {
         .order('creado_en', { ascending: false })
 
       if (error) throw error
+      
       setSolicitudes((data || []) as Solicitud[])
     } catch (err: any) {
       console.error('Error al cargar solicitudes:', err)
