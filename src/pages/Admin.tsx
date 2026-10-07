@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { formatFechaHora } from '../utils/formatFecha'
 
 interface Usuario {
   id: string
@@ -26,20 +27,7 @@ const getRamaDesdeRol = (rol: string): string | null => {
 
 const formatUltimoAcceso = (fecha: string | null) => {
   if (!fecha) return 'Nunca'
-  // Si el string no tiene zona horaria, asumimos que es UTC
-  const fechaUTC = fecha.includes('Z') || fecha.includes('+') 
-    ? fecha 
-    : fecha + 'Z'
-  const d = new Date(fechaUTC)
-  if (isNaN(d.getTime())) return 'Nunca'
-  return d.toLocaleString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Argentina/Buenos_Aires'
-  })
+  return formatFechaHora(fecha)
 }
 export default function Admin() {
   const { isSuperAdmin } = useAuth()

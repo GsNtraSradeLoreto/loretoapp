@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { formatFechaHora } from '../utils/formatFecha'
 
 interface AuditRow {
   id: number
@@ -161,17 +162,8 @@ useEffect(() => {
   }, [filtroEntidad, filtroAccion, filtroUsuario, busqueda, fechaDesde, fechaHasta])
 
   const formatearFecha = (iso: string | null | undefined) => {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '-'
-  return d.toLocaleString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
+    return formatFechaHora(iso)
+  }
 
   const colorAccion = (accion: string) => {
     if (accion === 'INSERT') return '#2E7D32'

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { formatFechaHora } from '../utils/formatFecha'
 import { formatearNombreConH } from '../utils/formatNombre'
 import { enviarEmail, formatFechaCorta } from '../lib/enviarEmail'
 import { crearNotificacion } from '../lib/notificaciones'
@@ -123,16 +124,6 @@ const formatFecha = (fecha: string | null) => {
   const d = new Date(fecha)
   if (isNaN(d.getTime())) return '-'
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
-
-const formatFechaHora = (fecha: string | null) => {
-  if (!fecha) return '-'
-  const d = new Date(fecha)
-  if (isNaN(d.getTime())) return '-'
-  return d.toLocaleString('es-AR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  })
 }
 
 // ============================================
