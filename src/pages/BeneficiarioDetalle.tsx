@@ -489,6 +489,11 @@ export default function BeneficiarioDetalle() {
   const [showHistorialEditModal, setShowHistorialEditModal] = useState(false)
   const [editHistorialLoading, setEditHistorialLoading] = useState(false)
 
+  // ✅ PASAR DE RAMA
+  const [showPaseRama, setShowPaseRama] = useState(false)
+  const [fechaPase, setFechaPase] = useState(new Date().toISOString().split('T')[0])
+  const [savingPase, setSavingPase] = useState(false)
+
   // NUEVO: controles de UI
   const [verTodosPagos, setVerTodosPagos] = useState(false)
   const [legajoAbierto, setLegajoAbierto] = useState(false)
@@ -1641,6 +1646,128 @@ setPagos(pagosOrdenados)
   }
 
   // ============================================
+  // PASAR DE RAMA (solo Jefatura y SUPER_ADMIN)
+  // ============================================
+  const handlePasarDeRama = async () => {
+    if (!beneficiario) return
+    if (!isJefatura) return
+    if (!fechaPase) {
+      setMessage({ text: '⚠️ Elegí una fecha', type: 'warning' })
+      return
+    }
+
+    setSavingPase(true)
+    setMessage({ text: '', type: '' })
+
+    try {
+      const ramaActual = beneficiario.rama
+
+      // 🎯 CASO ROVER → ROVER PARTIDA
+      if (ramaActual === 'Rovers') {
+        // 1) Actualizar fecha_partida en progresion_rovers
+        if (progresionRovers) {
+          const { error: errProg } = await supabase
+            .from('progresion_rovers')
+            .update({ fecha_partida: fechaPase })
+            .eq('id', progresionRovers.id)
+          if (errProg) throw errProg
+        } else {
+          // No existe la fila de progresión → la creamos con la fecha de partida
+          const { error: errInsert } = await supabase
+            .from('progresion_rovers')
+            .insert({
+              beneficiario_id: beneficiario.id,
+              fecha_partida: fechaPase,
+              oculto: false
+            })
+          if (errInsert) throw errInsert
+        }
+
+        // 2) Cambiar rama y estado del beneficiario
+        const { error: errBen } = await supabase
+          .from('beneficiarios')
+          .update({
+            rama: 'RoverPartida',
+            estado: 'egresado'
+          })
+          .eq('id', beneficiario.id)
+        if (errBen) throw errBen
+
+        setMessage({ text: '🎖️ ¡Partida registrada! El Rover ahora aparece en "Rovers de Partida"', type: 'success' })
+      }
+      // 🎯 CASO MANADA / UNIDAD / CAMINANTES → SIGUIENTE RAMA
+      else {
+        const mapaSiguiente: Record<string, { rama: string; tabla: string; campoFecha: string }> = {
+          'Manada':        { rama: 'Unidad Scout', tabla: 'progresion_unidad',      campoFecha: 'fecha_ingreso_unidad' },
+          'Unidad Scout':  { rama: 'Caminantes',   tabla: 'progresion_caminantes',  campoFecha: 'fecha_ingreso_caminantes' },
+          'Caminantes':    { rama: 'Rovers',       tabla: 'progresion_rovers',      campoFecha: 'fecha_ingreso_rovers' }
+        }
+
+        const destino = mapaSiguiente[ramaActual]
+        if (!destino) {
+          setMessage({ text: `⚠️ No hay rama siguiente para "${ramaActual}"`, type: 'warning' })
+          setSavingPase(false)
+          return
+        }
+
+        // 1) Actualizar rama del beneficiario
+        const { error: errBen } = await supabase
+          .from('beneficiarios')
+          .update({ rama: destino.rama })
+          .eq('id', beneficiario.id)
+        if (errBen) throw errBen
+
+        // 2) Ver si ya existe la fila de progresión de la nueva rama
+        const { data: existente } = await supabase
+          .from(destino.tabla)
+          .select('id')
+          .eq('beneficiario_id', beneficiario.id)
+          .maybeSingle()
+
+        if (existente) {
+          // Actualizar la fila existente
+          const { error: errProg } = await supabase
+            .from(destino.tabla)
+            .update({
+              [destino.campoFecha]: fechaPase,
+              fecha_periodo_introductorio: fechaPase,
+              progresion_actual: 'Periodo Introductorio'
+            })
+            .eq('beneficiario_id', beneficiario.id)
+          if (errProg) throw errProg
+        } else {
+          // Crear la fila nueva
+          const { error: errProg } = await supabase
+            .from(destino.tabla)
+            .insert({
+              beneficiario_id: beneficiario.id,
+              [destino.campoFecha]: fechaPase,
+              fecha_periodo_introductorio: fechaPase,
+              progresion_actual: 'Periodo Introductorio',
+              oculto: false
+            })
+          if (errProg) throw errProg
+        }
+
+        setMessage({ text: `⬆️ ¡Pase registrado! Ahora está en ${destino.rama}`, type: 'success' })
+      }
+
+      // Cerrar cuadrito, limpiar fecha y recargar
+      setShowPaseRama(false)
+      setFechaPase(new Date().toISOString().split('T')[0])
+      await loadData()
+      await cargarListaIds()
+
+      setTimeout(() => setMessage({ text: '', type: '' }), 4000)
+    } catch (error: any) {
+      console.error('Error al pasar de rama:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+    } finally {
+      setSavingPase(false)
+    }
+  }
+
+  // ============================================
   // ELIMINAR BENEFICIARIO (solo SuperAdmin)
   // ============================================
   const handleEliminarBeneficiario = async () => {
@@ -2317,6 +2444,125 @@ setPagos(pagosOrdenados)
         </div>
       </div>
 
+      {/* ✅ CUADRITO INLINE: PASAR DE RAMA */}
+      {showPaseRama && isJefatura && beneficiario.rama !== 'RoverPartida' && (
+        <div style={{
+          backgroundColor: '#FFF8E7',
+          border: '2px solid #C48A2A',
+          borderRadius: '12px',
+          padding: '14px 16px',
+          marginBottom: '16px',
+          fontFamily: 'Oswald, sans-serif'
+        }}>
+          <div style={{
+            fontSize: '14px',
+            fontWeight: '700',
+            color: '#24352A',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            marginBottom: '4px'
+          }}>
+            {beneficiario.rama === 'Rovers'
+              ? '🎖️ Registrar Partida'
+              : `⬆️ Pasar de ${beneficiario.rama} a la siguiente rama`}
+          </div>
+          <div style={{
+            fontSize: '12px',
+            color: '#7A7364',
+            marginBottom: '12px'
+          }}>
+            {beneficiario.rama === 'Rovers'
+              ? 'Esta acción marca el fin de la etapa scout. El Rover pasará a ser "Rover de Partida".'
+              : `Nueva rama: ${
+                  beneficiario.rama === 'Manada' ? 'Unidad Scout'
+                  : beneficiario.rama === 'Unidad Scout' ? 'Caminantes'
+                  : beneficiario.rama === 'Caminantes' ? 'Rovers'
+                  : '-'
+                }`}
+          </div>
+
+          <label style={{
+            display: 'block',
+            fontSize: '11px',
+            color: '#7A7364',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            marginBottom: '4px'
+          }}>
+            {beneficiario.rama === 'Rovers' ? 'Fecha de la Partida *' : 'Fecha de ingreso a la nueva rama *'}
+          </label>
+          <input
+            type="date"
+            value={fechaPase}
+            onChange={(e) => setFechaPase(e.target.value)}
+            disabled={savingPase}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              fontSize: '14px',
+              border: '2px solid #D1C9B4',
+              borderRadius: '6px',
+              outline: 'none',
+              fontFamily: 'Oswald, sans-serif',
+              backgroundColor: 'white',
+              boxSizing: 'border-box',
+              marginBottom: '12px'
+            }}
+          />
+
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                setShowPaseRama(false)
+                setFechaPase(new Date().toISOString().split('T')[0])
+                setMessage({ text: '', type: '' })
+              }}
+              disabled={savingPase}
+              style={{
+                backgroundColor: '#E8DEC4',
+                color: '#24352A',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: 'none',
+                cursor: savingPase ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                fontFamily: 'Oswald, sans-serif',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600,
+                opacity: savingPase ? 0.5 : 1
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handlePasarDeRama}
+              disabled={savingPase || !fechaPase}
+              style={{
+                backgroundColor: '#C48A2A',
+                color: 'white',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: 'none',
+                cursor: (savingPase || !fechaPase) ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                fontFamily: 'Oswald, sans-serif',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600,
+                opacity: (savingPase || !fechaPase) ? 0.5 : 1
+              }}
+            >
+              {savingPase
+                ? 'Guardando...'
+                : beneficiario.rama === 'Rovers'
+                  ? '🎖️ Confirmar Partida'
+                  : '⬆️ Confirmar Pase'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ENCABEZADO */}
       <div style={{
         backgroundColor: '#24352A',
@@ -2335,8 +2581,48 @@ setPagos(pagosOrdenados)
             right: '12px',
             display: 'flex',
             gap: '6px',
-            zIndex: 2
+            zIndex: 2,
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end'
           }}>
+            {/* ✅ BOTÓN PASAR DE RAMA (solo Jefatura/SUPER_ADMIN, no para RoverPartida) */}
+            {isJefatura && beneficiario.rama !== 'RoverPartida' && (
+              <button
+                onClick={() => {
+                  setShowPaseRama(!showPaseRama)
+                  setMessage({ text: '', type: '' })
+                }}
+                disabled={savingPase}
+                style={{
+                  backgroundColor: '#C48A2A',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '6px 12px',
+                  cursor: savingPase ? 'wait' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: '12px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: savingPase ? 0.5 : 1
+                }}
+                title={
+                  beneficiario.rama === 'Rovers'
+                    ? 'Registrar la partida del Rover'
+                    : 'Pasar a la siguiente rama'
+                }
+              >
+                {beneficiario.rama === 'Rovers' ? '🎖️' : '⬆️'}
+                <span className="btn-text-editar">
+                  {beneficiario.rama === 'Rovers' ? 'Realizó Partida' : 'Pasar de Rama'}
+                </span>
+              </button>
+            )}
+
             <button
               onClick={openEditModal}
               style={{
