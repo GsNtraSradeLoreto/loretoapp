@@ -1693,7 +1693,7 @@ setPagos(pagosOrdenados)
           .eq('id', beneficiario.id)
         if (errBen) throw errBen
 
-        setMessage({ text: '🎖️ ¡Partida registrada! El Rover ahora aparece en "Rovers de Partida"', type: 'success' })
+        setMessage({ text: ' ¡Partida registrada! El Rover ahora aparece en "Rovers de Partida"', type: 'success' })
       }
       // 🎯 CASO MANADA / UNIDAD / CAMINANTES → SIGUIENTE RAMA
       else {
@@ -2149,7 +2149,7 @@ setPagos(pagosOrdenados)
       'Unidad Scout': '⚜️ Unidad Scout',
       'Caminantes': '🏔️ Caminantes',
       'Rovers': '🔥 Rovers',
-      'RoverPartida': '🎖️ Rovers de Partida'
+      'RoverPartida': 'Rovers de Partida'
     }
     return labels[rama] || rama
   }
@@ -2464,7 +2464,7 @@ setPagos(pagosOrdenados)
             marginBottom: '4px'
           }}>
             {beneficiario.rama === 'Rovers'
-              ? '🎖️ Registrar Partida'
+              ? 'Registrar Partida'
               : `⬆️ Pasar de ${beneficiario.rama} a la siguiente rama`}
           </div>
           <div style={{
@@ -2557,7 +2557,7 @@ setPagos(pagosOrdenados)
               {savingPase
                 ? 'Guardando...'
                 : beneficiario.rama === 'Rovers'
-                  ? '🎖️ Confirmar Partida'
+                  ? 'Confirmar Partida'
                   : '⬆️ Confirmar Pase'}
             </button>
           </div>
@@ -2617,7 +2617,14 @@ setPagos(pagosOrdenados)
                     : 'Pasar a la siguiente rama'
                 }
               >
-                {beneficiario.rama === 'Rovers' ? '🎖️' : '⬆️'}
+                {beneficiario.rama === 'Rovers' ? (
+                  <svg width="16" height="16" viewBox="0 0 16 16" style={{ flexShrink: 0 }}>
+                    <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                    <circle cx="8" cy="8" r="2" fill="currentColor" />
+                  </svg>
+                ) : (
+                  '⬆️'
+                )}
                 <span className="btn-text-editar">
                   {beneficiario.rama === 'Rovers' ? 'Realizó Partida' : 'Pasar de Rama'}
                 </span>

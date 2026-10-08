@@ -99,6 +99,7 @@ interface EventoHistorial {
   titulo: string
   detalle: string
   color: string
+  esPartida?: boolean
 }
 
 // Colores
@@ -445,6 +446,37 @@ const HistorialScout = ({ eventos }: { eventos: EventoHistorial[] }) => {
                   }}>
                     {evento.detalle}
                   </div>
+
+                  {/* ✅ FIN DE PISTA grande (solo en el evento Partida Scout) */}
+                  {evento.esPartida && (
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      padding: '16px 0 8px 0'
+                    }}>
+                      <svg
+                        width="100"
+                        height="100"
+                        viewBox="0 0 120 120"
+                        aria-label="Fin de Pista"
+                      >
+                        <circle
+                          cx="60"
+                          cy="60"
+                          r="52"
+                          fill="none"
+                          stroke={COL.verdeScout}
+                          strokeWidth="6"
+                        />
+                        <circle
+                          cx="60"
+                          cy="60"
+                          r="16"
+                          fill={COL.verdeScout}
+                        />
+                      </svg>
+                    </div>
+                  )}
                 </div>
                 <div style={{
                   fontFamily: 'Oswald, sans-serif',
@@ -2049,7 +2081,8 @@ export default function VidaScout() {
         fecha: progresionRovers.fecha_partida,
         titulo: '🎖️ Partida Scout',
         detalle: 'Realiza su Partida y cierra su etapa scout',
-        color: '#C48A2A'
+        color: '#C48A2A',
+        esPartida: true
       })
     }
 
