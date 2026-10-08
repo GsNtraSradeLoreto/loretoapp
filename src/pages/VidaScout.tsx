@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -94,6 +94,13 @@ interface Campamento {
   rama_principal: string
 }
 
+interface EventoHistorial {
+  fecha: string
+  titulo: string
+  detalle: string
+  color: string
+}
+
 // Colores
 const COL = {
   fondo: '#F5F1E8',
@@ -130,7 +137,8 @@ const getRamaLabel = (rama: string) => {
     'Manada': '🐺 Manada',
     'Unidad Scout': '⚜️ Unidad Scout',
     'Caminantes': '🏔️ Caminantes',
-    'Rovers': '🔥 Rovers'
+    'Rovers': '🔥 Rovers',
+    'RoverPartida': '🎖️ Rovers de Partida'
   }
   return labels[rama] || rama
 }
@@ -317,6 +325,146 @@ const BloqueOculto = ({
     </div>
   </div>
 )
+
+// ============================================
+// HISTORIAL SCOUT (componente separado con hooks propios)
+// ============================================
+const HistorialScout = ({ eventos }: { eventos: EventoHistorial[] }) => {
+  // Refs para medir altura real de cada evento
+  const refsEventos = useRef<(HTMLDivElement | null)[]>([])
+  const [alturas, setAlturas] = useState<number[]>([])
+
+  // Medir después de renderizar
+  useLayoutEffect(() => {
+    const nuevasAlturas = refsEventos.current.map(el => el?.offsetHeight || 0)
+    setAlturas(nuevasAlturas)
+  }, [eventos.length])
+
+  if (eventos.length === 0) {
+    return (
+      <div style={{
+        textAlign: 'center',
+        padding: '32px 0',
+        fontFamily: 'Oswald, sans-serif',
+        color: COL.textoSecundario
+      }}>
+        Todavía no hay eventos en el historial
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ position: 'relative', paddingLeft: '28px' }}>
+      {eventos.map((evento, idx) => {
+        const esUltimo = idx === eventos.length - 1
+
+        // Altura real de esta tarjeta (o aproximada si todavía no se midió)
+        const alturaActual = alturas[idx] || 60
+        // Distancia entre este círculo y el próximo = altura de esta tarjeta + marginBottom (16px)
+        const distanciaAlProximo = alturaActual + 16
+
+        return (
+          <div
+            key={idx}
+            ref={(el) => { refsEventos.current[idx] = el }}
+            style={{ position: 'relative', marginBottom: '16px' }}
+          >
+            {/* ✅ Segmento curvo hacia el siguiente evento (no se dibuja en el último) */}
+            {!esUltimo && (
+              <svg
+                style={{
+                  position: 'absolute',
+                  left: '-28px',
+                  top: '14px',
+                  width: '28px',
+                  height: `${distanciaAlProximo}px`,
+                  overflow: 'visible',
+                  pointerEvents: 'none',
+                  zIndex: 0
+                }}
+              >
+                <path
+                  d={(() => {
+                    // La curva arranca en el círculo actual (x=8) y termina en el siguiente (x=8)
+                    // con una ondulación hacia izquierda/derecha alternando
+                    const xInicio = 8
+                    const xFin = 8
+                    const xOnda = idx % 2 === 0 ? 35 : -15
+                    const yInicio = 0
+                    const yFin = distanciaAlProximo
+                    const yControl = distanciaAlProximo / 2
+                    return `M ${xInicio} ${yInicio} Q ${xOnda} ${yControl} ${xFin} ${yFin}`
+                  })()}
+                  fill="none"
+                  stroke={COL.bordeSuave}
+                  strokeWidth="3"
+                  strokeDasharray="6 6"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+
+            {/* Círculo del evento */}
+            <div style={{
+              position: 'absolute',
+              left: '-28px',
+              top: '6px',
+              width: '16px',
+              height: '16px',
+              borderRadius: '50%',
+              backgroundColor: evento.color,
+              border: `3px solid #FFFFFF`,
+              boxShadow: `0 0 0 2px ${evento.color}`,
+              zIndex: 2
+            }} />
+
+            {/* Tarjeta del evento */}
+            <div style={{
+              backgroundColor: '#FFFFFF',
+              border: `2px solid ${COL.bordeSuave}`,
+              borderRadius: '10px',
+              padding: '10px 12px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: 'Oswald, sans-serif',
+                    fontSize: 'clamp(13px, 3vw, 15px)',
+                    fontWeight: '600',
+                    color: COL.textoPrincipal,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {evento.titulo}
+                  </div>
+                  <div style={{
+                    fontFamily: 'Oswald, sans-serif',
+                    fontSize: 'clamp(11px, 2.5vw, 13px)',
+                    color: COL.textoSecundario,
+                    marginTop: '2px'
+                  }}>
+                    {evento.detalle}
+                  </div>
+                </div>
+                <div style={{
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: 'clamp(10px, 2vw, 12px)',
+                  color: COL.textoSecundario,
+                  backgroundColor: COL.fondo,
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {formatFecha(evento.fecha)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function VidaScout() {
   const { id } = useParams<{ id: string }>()
@@ -1801,17 +1949,15 @@ export default function VidaScout() {
   }
 
   // ============================================
-  // HISTORIAL
+  // HISTORIAL — construye el array de eventos
   // ============================================
-  const renderHistorial = () => {
-    if (!beneficiario) return null
+  const construirEventos = (): EventoHistorial[] => {
+    if (!beneficiario) return []
 
-    const eventos: { fecha: string, titulo: string, detalle: string, color: string }[] = []
-
-    const fechasBeneficiario: { fecha: string, titulo: string, detalle: string, color: string }[] = []
+    const eventos: EventoHistorial[] = []
 
     if (beneficiario.fecha_ingreso_grupo) {
-      fechasBeneficiario.push({
+      eventos.push({
         fecha: beneficiario.fecha_ingreso_grupo,
         titulo: '📋 Ingreso al Grupo',
         detalle: 'Se suma al grupo scout',
@@ -1819,21 +1965,20 @@ export default function VidaScout() {
       })
     }
     if (beneficiario.fecha_entrega_uniforme) {
-      fechasBeneficiario.push({
+      eventos.push({
         fecha: beneficiario.fecha_entrega_uniforme,
         titulo: '👕 Entrega de Uniforme',
         detalle: 'Recibe su uniforme scout',
         color: COL.terracota
       })
     }
-    fechasBeneficiario.forEach(e => eventos.push(e))
 
     if (progresionManada?.tiene_promesa_manada && progresionManada.fecha_promesa_manada) {
       eventos.push({
         fecha: progresionManada.fecha_promesa_manada,
         titulo: '🤝 Promesa de Manada',
         detalle: 'Realiza su promesa de Manada',
-        color: COL.verdeClaro
+        color: '#C48A2A'
       })
     }
 
@@ -1871,7 +2016,7 @@ export default function VidaScout() {
         fecha: progresionManada.fecha_ingreso_manada,
         titulo: '🐺 Ingreso a Manada',
         detalle: 'Ingresa a la Manada',
-        color: COL.verdeClaro
+        color: '#C48A2A'
       })
     }
     if (progresionUnidad?.fecha_ingreso_unidad) {
@@ -1879,7 +2024,7 @@ export default function VidaScout() {
         fecha: progresionUnidad.fecha_ingreso_unidad,
         titulo: '⚜️ Ingreso a Unidad Scout',
         detalle: 'Ingresa a la Unidad Scout',
-        color: COL.dorado
+        color: '#2E7D32'
       })
     }
     if (progresionCaminantes?.fecha_ingreso_caminantes) {
@@ -1887,7 +2032,7 @@ export default function VidaScout() {
         fecha: progresionCaminantes.fecha_ingreso_caminantes,
         titulo: '🏔️ Ingreso a Caminantes',
         detalle: 'Ingresa a Caminantes',
-        color: COL.terracota
+        color: '#4FA8D8'
       })
     }
     if (progresionRovers?.fecha_ingreso_rovers) {
@@ -1895,95 +2040,22 @@ export default function VidaScout() {
         fecha: progresionRovers.fecha_ingreso_rovers,
         titulo: '🔥 Ingreso a Rovers',
         detalle: 'Ingresa a Rovers',
-        color: COL.terracota
+        color: '#B71C1C'
+      })
+    }
+
+    if (progresionRovers?.fecha_partida) {
+      eventos.push({
+        fecha: progresionRovers.fecha_partida,
+        titulo: '🎖️ Partida Scout',
+        detalle: 'Realiza su Partida y cierra su etapa scout',
+        color: '#C48A2A'
       })
     }
 
     eventos.sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
 
-    if (eventos.length === 0) {
-      return (
-        <div style={{
-          textAlign: 'center',
-          padding: '32px 0',
-          fontFamily: 'Oswald, sans-serif',
-          color: COL.textoSecundario
-        }}>
-          Todavía no hay eventos en el historial
-        </div>
-      )
-    }
-
-    return (
-      <div style={{ position: 'relative', paddingLeft: '28px' }}>
-        <div style={{
-          position: 'absolute',
-          left: '6px',
-          top: '8px',
-          bottom: '8px',
-          width: '3px',
-          backgroundColor: COL.bordeSuave,
-          borderRadius: '2px'
-        }} />
-
-        {eventos.map((evento, idx) => (
-          <div key={idx} style={{ position: 'relative', marginBottom: '16px' }}>
-            <div style={{
-              position: 'absolute',
-              left: '-28px',
-              top: '6px',
-              width: '16px',
-              height: '16px',
-              borderRadius: '50%',
-              backgroundColor: evento.color,
-              border: `3px solid #FFFFFF`,
-              boxShadow: `0 0 0 2px ${evento.color}`
-            }} />
-
-            <div style={{
-              backgroundColor: '#FFFFFF',
-              border: `2px solid ${COL.bordeSuave}`,
-              borderRadius: '10px',
-              padding: '10px 12px'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: 'Oswald, sans-serif',
-                    fontSize: 'clamp(13px, 3vw, 15px)',
-                    fontWeight: '600',
-                    color: COL.textoPrincipal,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {evento.titulo}
-                  </div>
-                  <div style={{
-                    fontFamily: 'Oswald, sans-serif',
-                    fontSize: 'clamp(11px, 2.5vw, 13px)',
-                    color: COL.textoSecundario,
-                    marginTop: '2px'
-                  }}>
-                    {evento.detalle}
-                  </div>
-                </div>
-                <div style={{
-                  fontFamily: 'Oswald, sans-serif',
-                  fontSize: 'clamp(10px, 2vw, 12px)',
-                  color: COL.textoSecundario,
-                  backgroundColor: COL.fondo,
-                  padding: '2px 8px',
-                  borderRadius: '10px',
-                  whiteSpace: 'nowrap'
-                }}>
-                  {formatFecha(evento.fecha)}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    )
+    return eventos
   }
 
   // ============================================
@@ -2350,7 +2422,7 @@ export default function VidaScout() {
         titulo="Historial Scout"
         color={COL.dorado}
       >
-        {renderHistorial()}
+        <HistorialScout eventos={construirEventos()} />
       </Seccion>
     </div>
   )

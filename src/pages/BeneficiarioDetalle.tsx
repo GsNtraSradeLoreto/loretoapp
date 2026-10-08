@@ -2148,7 +2148,8 @@ setPagos(pagosOrdenados)
       'Manada': '🐺 Manada',
       'Unidad Scout': '⚜️ Unidad Scout',
       'Caminantes': '🏔️ Caminantes',
-      'Rovers': '🔥 Rovers'
+      'Rovers': '🔥 Rovers',
+      'RoverPartida': '🎖️ Rovers de Partida'
     }
     return labels[rama] || rama
   }

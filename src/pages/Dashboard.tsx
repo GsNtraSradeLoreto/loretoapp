@@ -44,6 +44,7 @@ export default function Dashboard() {
   } = useAuth()
   const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([])
   const [filtered, setFiltered] = useState<Beneficiario[]>([])
+  const [roversPartida, setRoversPartida] = useState<Beneficiario[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -129,10 +130,16 @@ export default function Dashboard() {
       })
 
       setProgresiones(progresionesObj)
-      setBeneficiarios(ordenados)
-      setFiltered(ordenados)
 
-      const activos = ordenados.filter(b => b.estado === 'activo')
+      // ✅ Separar Rovers de Partida del resto
+      const sinRoverPartida = ordenados.filter(b => b.rama !== 'RoverPartida')
+      const soloRoverPartida = ordenados.filter(b => b.rama === 'RoverPartida')
+
+      setBeneficiarios(sinRoverPartida)
+      setFiltered(sinRoverPartida)
+      setRoversPartida(soloRoverPartida)
+
+      const activos = sinRoverPartida.filter(b => b.estado === 'activo')
 
       setStats({
         total: activos.length,
@@ -226,6 +233,106 @@ export default function Dashboard() {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
         <span style={{ fontFamily: 'Oswald, sans-serif', color: '#7A7364' }}>Cargando...</span>
+      </div>
+    )
+  }
+
+  // ✅ Render de una tarjeta de beneficiario (reutilizable)
+  const renderTarjetaBeneficiario = (beneficiario: Beneficiario, esRoverPartida: boolean = false) => {
+    const nombreCompleto = formatearNombreConH(
+      beneficiario.nombre,
+      beneficiario.apellido,
+      beneficiario.tiene_hermanos
+    )
+
+    const fotoUrl = getFotoUrl(
+      beneficiario.foto_url,
+      beneficiario.nombre,
+      beneficiario.apellido
+    )
+
+    const progresion = esRoverPartida
+      ? '🎖️ Rovers de Partida'
+      : getProgresionDeBeneficiario(beneficiario.id, beneficiario.rama)
+
+    return (
+      <div
+        key={beneficiario.id}
+        style={{
+          backgroundColor: esRoverPartida ? '#FAF8F4' : 'white',
+          borderRadius: '8px',
+          padding: '8px 12px',
+          border: esRoverPartida ? '2px dashed #7A736480' : '2px solid #D1C9B4',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          cursor: 'pointer',
+          transition: 'all 0.2s'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.borderColor = esRoverPartida ? '#C48A2A' : '#24352A'}
+        onMouseLeave={(e) => e.currentTarget.style.borderColor = esRoverPartida ? '#7A736480' : '#D1C9B4'}
+        onClick={() => navigate(`/beneficiario/${beneficiario.id}`)}
+      >
+        <div style={{
+          width: '48px',
+          height: '48px',
+          borderRadius: '8px',
+          overflow: 'hidden',
+          flexShrink: 0,
+          backgroundColor: '#F3ECD8',
+          border: '1px solid #D1C9B4',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: esRoverPartida ? 0.85 : 1
+        }}>
+          <img
+            src={fotoUrl}
+            alt={nombreCompleto}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
+          />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: 'Oswald, sans-serif',
+            fontWeight: '600',
+            fontSize: 'clamp(12px, 2.5vw, 15px)',
+            color: '#24352A',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}>
+            {nombreCompleto}
+          </div>
+          <div style={{
+            fontFamily: 'Oswald, sans-serif',
+            fontWeight: '400',
+            fontSize: 'clamp(9px, 1.8vw, 11px)',
+            color: '#7A7364',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            {progresion}
+            {beneficiario.estado === 'inactivo' && ' · Ex miembro'}
+          </div>
+        </div>
+
+        <div style={{
+          fontFamily: 'Oswald, sans-serif',
+          fontWeight: '400',
+          fontSize: '12px',
+          color: '#7A7364',
+          flexShrink: 0
+        }}>
+          ▶
+        </div>
       </div>
     )
   }
@@ -467,120 +574,70 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {filtered.map((beneficiario) => {
-            const nombreCompleto = formatearNombreConH(
-              beneficiario.nombre,
-              beneficiario.apellido,
-              beneficiario.tiene_hermanos
+          {(() => {
+            // ✅ Agrupar filtered por rama / ex miembros
+            const ramas = ['Manada', 'Unidad Scout', 'Caminantes', 'Rovers']
+            const grupos: { titulo: string; items: Beneficiario[]; color: string }[] = []
+
+            ramas.forEach(rama => {
+              const items = filtered.filter(b => b.rama === rama && b.estado === 'activo')
+              if (items.length > 0) {
+                const colorRama =
+                  rama === 'Manada' ? '#C48A2A'
+                  : rama === 'Unidad Scout' ? '#2E7D32'
+                  : rama === 'Caminantes' ? '#4FA8D8'
+                  : '#B71C1C'
+                grupos.push({ titulo: rama.toUpperCase(), items, color: colorRama })
+              }
+            })
+
+            // Ex miembros (inactivos, sin importar la rama)
+            const inactivos = filtered.filter(b => b.estado === 'inactivo')
+            if (inactivos.length > 0) {
+              grupos.push({ titulo: 'EX MIEMBROS', items: inactivos, color: '#7A7364' })
+            }
+
+            // Caso borde: beneficiarios activos con rama no estándar
+            const otros = filtered.filter(b =>
+              b.estado === 'activo' && !ramas.includes(b.rama)
             )
+            if (otros.length > 0) {
+              grupos.push({ titulo: 'OTROS', items: otros, color: '#7A7364' })
+            }
 
-            const fotoUrl = getFotoUrl(
-              beneficiario.foto_url,
-              beneficiario.nombre,
-              beneficiario.apellido
-            )
-
-            const progresion = getProgresionDeBeneficiario(beneficiario.id, beneficiario.rama)
-
-            return (
-              <div
-                key={beneficiario.id}
-                style={{
-                  backgroundColor: 'white',
-                  borderRadius: '8px',
-                  padding: '8px 12px',
-                  border: '2px solid #D1C9B4',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#24352A'}
-                onMouseLeave={(e) => e.currentTarget.style.borderColor = '#D1C9B4'}
-                onClick={() => navigate(`/beneficiario/${beneficiario.id}`)}
-              >
-                <div style={{
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  flexShrink: 0,
-                  backgroundColor: '#F3ECD8',
-                  border: '1px solid #D1C9B4',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <img
-                    src={fotoUrl}
-                    alt={nombreCompleto}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover'
-                    }}
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement
-                      const iniciales = `${beneficiario.nombre.charAt(0)}${beneficiario.apellido.charAt(0)}`.toUpperCase()
-                      target.style.display = 'none'
-                      const parent = target.parentElement
-                      if (parent) {
-                        const fallback = document.createElement('div')
-                        fallback.style.cssText = `
-                          width: 100%; height: 100%;
-                          display: flex; align-items: center; justify-content: center;
-                          background-color: #24352A; color: white;
-                          font-family: Oswald, sans-serif; font-size: 18px;
-                          font-weight: 700;
-                        `
-                        fallback.textContent = iniciales || 'U'
-                        parent.appendChild(fallback)
-                      }
-                    }}
-                  />
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: 'Oswald, sans-serif',
-                    fontWeight: '600',
-                    fontSize: 'clamp(12px, 2.5vw, 15px)',
-                    color: '#24352A',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {nombreCompleto}
-                  </div>
-                  <div style={{
-                    fontFamily: 'Oswald, sans-serif',
-                    fontWeight: '400',
-                    fontSize: 'clamp(9px, 1.8vw, 11px)',
-                    color: '#7A7364',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {/* ✅ Mostramos la progresión + "· Ex miembro" si aplica */}
-                    {progresion}
-                    {beneficiario.estado === 'inactivo' && ' · Ex miembro'}
-                  </div>
-                </div>
-
+            return grupos.map((grupo, idxGrupo) => (
+              <div key={grupo.titulo} style={{ marginTop: idxGrupo === 0 ? 0 : '14px' }}>
+                {/* Subtítulo de grupo */}
                 <div style={{
                   fontFamily: 'Oswald, sans-serif',
-                  fontWeight: '400',
-                  fontSize: '12px',
-                  color: '#7A7364',
-                  flexShrink: 0
+                  fontSize: 'clamp(11px, 2.2vw, 13px)',
+                  color: grupo.color,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1.5px',
+                  paddingBottom: '6px',
+                  marginBottom: '8px',
+                  borderBottom: `2px solid ${grupo.color}40`
                 }}>
-                  ▶
+                  {grupo.titulo}
+                  <span style={{
+                    fontSize: 'clamp(9px, 1.8vw, 11px)',
+                    color: '#7A7364',
+                    fontWeight: 400,
+                    marginLeft: '8px',
+                    letterSpacing: '0.5px'
+                  }}>
+                    ({grupo.items.length})
+                  </span>
+                </div>
+
+                {/* Lista de beneficiarios del grupo */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {grupo.items.map(b => renderTarjetaBeneficiario(b))}
                 </div>
               </div>
-            )
-          })}
+            ))
+          })()}
         </div>
 
         {filtered.length === 0 && (
@@ -594,6 +651,38 @@ export default function Dashboard() {
             letterSpacing: '1px'
           }}>
             No se encontraron beneficiarios
+          </div>
+        )}
+
+        {/* ✅ SECCIÓN ROVERS DE PARTIDA (solo Jefatura y SUPER_ADMIN) */}
+        {(isJefatura || isSuperAdmin) && roversPartida.length > 0 && (
+          <div style={{ marginTop: '32px' }}>
+            <div style={{
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: 'clamp(12px, 2.5vw, 15px)',
+              color: '#7A7364',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '1.5px',
+              paddingBottom: '6px',
+              marginBottom: '10px',
+              borderBottom: `2px solid #7A736440`
+            }}>
+              🕊️ ROVERS DE PARTIDA
+              <span style={{
+                fontSize: 'clamp(9px, 1.8vw, 11px)',
+                color: '#7A7364',
+                fontWeight: 400,
+                marginLeft: '8px',
+                letterSpacing: '0.5px'
+              }}>
+                ({roversPartida.length})
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {roversPartida.map(b => renderTarjetaBeneficiario(b, true))}
+            </div>
           </div>
         )}
       </div>
