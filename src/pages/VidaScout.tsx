@@ -582,12 +582,12 @@ export default function VidaScout() {
     progresion_actual: ''
   })
 
+  // ✅ fecha_partida YA NO ESTÁ ACÁ (se carga desde el botón "Realizó Partida")
   const [formRovers, setFormRovers] = useState({
     fecha_ingreso_rovers: '',
     fecha_encuentro: '',
     fecha_compromiso: '',
     fecha_proyeccion: '',
-    fecha_partida: '',
     nombre_totem: '',
     campamento_totem: '',
     tiene_promesa_scout: false,
@@ -977,6 +977,7 @@ export default function VidaScout() {
     }
   }
 
+  // ✅ guardarRovers YA NO TOCA fecha_partida
   const guardarRovers = async () => {
     if (!progresionRovers) return
     setSaving(true)
@@ -990,7 +991,6 @@ export default function VidaScout() {
           fecha_encuentro: formRovers.fecha_encuentro || null,
           fecha_compromiso: formRovers.fecha_compromiso || null,
           fecha_proyeccion: formRovers.fecha_proyeccion || null,
-          fecha_partida: formRovers.fecha_partida || null,
           nombre_totem: formRovers.nombre_totem || null,
           campamento_totem: formRovers.campamento_totem || null,
           tiene_promesa_scout: formRovers.tiene_promesa_scout,
@@ -1076,6 +1076,7 @@ export default function VidaScout() {
     setCaminantesAbierto(true)
   }
 
+  // ✅ abrirEditarRovers YA NO TOCA fecha_partida
   const abrirEditarRovers = () => {
     if (!progresionRovers) return
     setFormRovers({
@@ -1083,7 +1084,6 @@ export default function VidaScout() {
       fecha_encuentro: progresionRovers.fecha_encuentro || '',
       fecha_compromiso: progresionRovers.fecha_compromiso || '',
       fecha_proyeccion: progresionRovers.fecha_proyeccion || '',
-      fecha_partida: progresionRovers.fecha_partida || '',
       nombre_totem: progresionRovers.nombre_totem || '',
       campamento_totem: progresionRovers.campamento_totem || '',
       tiene_promesa_scout: progresionRovers.tiene_promesa_scout || false,
@@ -1896,8 +1896,7 @@ export default function VidaScout() {
                 onChange={v => setFormRovers({ ...formRovers, fecha_compromiso: v })} />
               <CampoFecha label="Proyección" value={formRovers.fecha_proyeccion}
                 onChange={v => setFormRovers({ ...formRovers, fecha_proyeccion: v })} />
-              <CampoFecha label="Partida" value={formRovers.fecha_partida}
-                onChange={v => setFormRovers({ ...formRovers, fecha_partida: v })} />
+              {/* ✅ Campo "Partida" ELIMINADO — se carga desde el botón "Realizó Partida" en el perfil */}
               <CampoTexto label="Nombre de Tótem" value={formRovers.nombre_totem}
                 onChange={v => setFormRovers({ ...formRovers, nombre_totem: v })} />
               <CampoTexto label="Campamento de Tótem" value={formRovers.campamento_totem}
