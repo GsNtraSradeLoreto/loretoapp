@@ -595,7 +595,6 @@ export default function VidaScout() {
     padrino_promesa_scout: '',
     progresion_actual: ''
   })
-
   const rolData = getRolData()
   const esJefe = rolData.tipo === 'jefe'
   const esSubJefe = rolData.tipo === 'subjefe'
@@ -760,14 +759,48 @@ export default function VidaScout() {
   }
 
   // ============================================
-  // PROMESA SCOUT UNIFICADA
+  // PROMESA SCOUT UNIFICADA (en cascada)
   // ============================================
-  const tienePromesaScout = (): boolean => {
-    if (progresionUnidad?.tiene_promesa_scout) return true
-    if (progresionCaminantes?.tiene_promesa_scout) return true
-    if (progresionRovers?.tiene_promesa_scout) return true
-    return false
+  const getPromesaScoutInfo = (): {
+    tiene: boolean
+    fecha: string | null
+    padrino: string | null
+    rama: string | null
+  } => {
+    // 1) ¿La hizo en Unidad?
+    if (progresionUnidad?.tiene_promesa_scout && progresionUnidad.fecha_promesa_scout) {
+      return {
+        tiene: true,
+        fecha: progresionUnidad.fecha_promesa_scout,
+        padrino: progresionUnidad.padrino_promesa_scout || null,
+        rama: 'Unidad Scout'
+      }
+    }
+    // 2) ¿La hizo en Caminantes?
+    if (progresionCaminantes?.tiene_promesa_scout && progresionCaminantes.fecha_promesa_scout) {
+      return {
+        tiene: true,
+        fecha: progresionCaminantes.fecha_promesa_scout,
+        padrino: progresionCaminantes.padrino_promesa_scout || null,
+        rama: 'Caminantes'
+      }
+    }
+    // 3) ¿La hizo en Rovers?
+    if (progresionRovers?.tiene_promesa_scout && progresionRovers.fecha_promesa_scout) {
+      return {
+        tiene: true,
+        fecha: progresionRovers.fecha_promesa_scout,
+        padrino: progresionRovers.padrino_promesa_scout || null,
+        rama: 'Rovers'
+      }
+    }
+    // 4) No la hizo
+    return { tiene: false, fecha: null, padrino: null, rama: null }
   }
+
+  const tienePromesaScout = (): boolean => getPromesaScoutInfo().tiene
+
+  const promesaScoutInfo = getPromesaScoutInfo()
 
   // ============================================
   // CALCULAR PROGRESIÓN ACTUAL (usa util compartido)
@@ -863,6 +896,100 @@ export default function VidaScout() {
   // ============================================
   // GUARDAR CAMBIOS DE PROGRESIÓN
   // ============================================
+    // ✅ Actualizar promesa de Manada (checkbox + fecha)
+  const actualizarPromesaManada = async (tiene: boolean, fecha: string) => {
+    if (!progresionManada) return
+
+    try {
+      const { error } = await supabase
+        .from('progresion_manada')
+        .update({
+          tiene_promesa_manada: tiene,
+          fecha_promesa_manada: fecha || null
+        })
+        .eq('id', progresionManada.id)
+
+      if (error) throw error
+
+      // ✅ Actualizar estado local (sin recargar todo)
+      setProgresionManada({
+        ...progresionManada,
+        tiene_promesa_manada: tiene,
+        fecha_promesa_manada: fecha || null
+      })
+
+      setMessage({
+        text: tiene ? '✅ Promesa registrada' : '✅ Promesa quitada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
+  // ✅ Actualizar nombre de caza
+  const actualizarNombreCaza = async (nombre: string) => {
+    if (!progresionManada) return
+
+    try {
+      const valorFinal = nombre.trim() || null
+
+      const { error } = await supabase
+        .from('progresion_manada')
+        .update({ nombre_caza: valorFinal })
+        .eq('id', progresionManada.id)
+
+      if (error) throw error
+
+      // ✅ Actualizar estado local (sin recargar todo)
+      setProgresionManada({
+        ...progresionManada,
+        nombre_caza: valorFinal
+      } as any)
+
+      setMessage({ text: '✅ Nombre de caza actualizado', type: 'success' })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
+    // ✅ Actualizar UNA sola fecha de Manada (inline)
+  const actualizarFechaManada = async (campo: string, nuevaFecha: string) => {
+    if (!progresionManada) return
+
+    try {
+      const { error } = await supabase
+        .from('progresion_manada')
+        .update({ [campo]: nuevaFecha || null })
+        .eq('id', progresionManada.id)
+
+      if (error) throw error
+
+      // ✅ Actualizar estado local (sin recargar todo)
+      setProgresionManada({
+        ...progresionManada,
+        [campo]: nuevaFecha || null
+      } as any)
+
+      setMessage({
+        text: nuevaFecha ? '✅ Fecha actualizada' : '✅ Fecha borrada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
+
   const guardarManada = async () => {
     if (!progresionManada) return
     setSaving(true)
@@ -895,6 +1022,71 @@ export default function VidaScout() {
       setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
     } finally {
       setSaving(false)
+    }
+  }
+  // ✅ Actualizar UNA sola fecha de Unidad (inline)
+  const actualizarFechaUnidad = async (campo: string, nuevaFecha: string) => {
+    if (!progresionUnidad) return
+
+    try {
+      const { error } = await supabase
+        .from('progresion_unidad')
+        .update({ [campo]: nuevaFecha || null })
+        .eq('id', progresionUnidad.id)
+
+      if (error) throw error
+
+      setProgresionUnidad({
+        ...progresionUnidad,
+        [campo]: nuevaFecha || null
+      } as any)
+
+      setMessage({
+        text: nuevaFecha ? '✅ Fecha actualizada' : '✅ Fecha borrada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
+  // ✅ Actualizar promesa Scout de Unidad (checkbox + fecha + padrino)
+  const actualizarPromesaUnidad = async (tiene: boolean, fecha: string, padrino: string) => {
+    if (!progresionUnidad) return
+
+    try {
+      const padrinoFinal = padrino.trim() || null
+
+      const { error } = await supabase
+        .from('progresion_unidad')
+        .update({
+          tiene_promesa_scout: tiene,
+          fecha_promesa_scout: fecha || null,
+          padrino_promesa_scout: padrinoFinal
+        })
+        .eq('id', progresionUnidad.id)
+
+      if (error) throw error
+
+      setProgresionUnidad({
+        ...progresionUnidad,
+        tiene_promesa_scout: tiene,
+        fecha_promesa_scout: fecha || null,
+        padrino_promesa_scout: padrinoFinal
+      } as any)
+
+      setMessage({
+        text: tiene ? '✅ Promesa Scout registrada' : '✅ Promesa Scout quitada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
     }
   }
 
@@ -930,6 +1122,116 @@ export default function VidaScout() {
       setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
     } finally {
       setSaving(false)
+    }
+  }
+  // ✅ Actualizar ceremonia de bienvenida de Caminantes
+  const actualizarCeremoniaCaminantes = async (nuevaFecha: string) => {
+    if (!progresionCaminantes) return
+
+    try {
+      const { error } = await supabase
+        .from('progresion_caminantes')
+        .update({ fecha_ceremonia_bienvenida: nuevaFecha || null })
+        .eq('id', progresionCaminantes.id)
+
+      if (error) throw error
+
+      setProgresionCaminantes({
+        ...progresionCaminantes,
+        fecha_ceremonia_bienvenida: nuevaFecha || null
+      })
+
+      setMessage({
+        text: nuevaFecha ? '✅ Fecha actualizada' : '✅ Fecha borrada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
+  // ✅ Actualizar etapa de Caminantes (fecha + elemento)
+  const actualizarEtapaCaminante = async (numeroEtapa: 1 | 2 | 3 | 4, fecha: string, elemento: string) => {
+    if (!progresionCaminantes) return
+
+    try {
+      const fechaKey = `fecha_etapa${numeroEtapa}` as
+        | 'fecha_etapa1' | 'fecha_etapa2' | 'fecha_etapa3' | 'fecha_etapa4'
+
+      const actuales: (string | null)[] = Array.isArray(progresionCaminantes.elemento_elegido)
+        ? [...progresionCaminantes.elemento_elegido]
+        : [null, null, null, null]
+
+      while (actuales.length < 4) actuales.push(null)
+
+      const nuevos: (string | null)[] = [...actuales]
+      nuevos[numeroEtapa - 1] = elemento || null
+
+      const { error } = await supabase
+        .from('progresion_caminantes')
+        .update({
+          [fechaKey]: fecha || null,
+          elemento_elegido: nuevos
+        })
+        .eq('id', progresionCaminantes.id)
+
+      if (error) throw error
+
+      setProgresionCaminantes({
+        ...progresionCaminantes,
+        [fechaKey]: fecha || null,
+        elemento_elegido: nuevos as string[]
+      } as any)
+
+      setMessage({
+        text: fecha ? '✅ Etapa actualizada' : '✅ Etapa borrada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
+  // ✅ Actualizar promesa Scout de Caminantes (checkbox + fecha + padrino)
+  const actualizarPromesaCaminantes = async (tiene: boolean, fecha: string, padrino: string) => {
+    if (!progresionCaminantes) return
+
+    try {
+      const padrinoFinal = padrino.trim() || null
+
+      const { error } = await supabase
+        .from('progresion_caminantes')
+        .update({
+          tiene_promesa_scout: tiene,
+          fecha_promesa_scout: fecha || null,
+          padrino_promesa_scout: padrinoFinal
+        })
+        .eq('id', progresionCaminantes.id)
+
+      if (error) throw error
+
+      setProgresionCaminantes({
+        ...progresionCaminantes,
+        tiene_promesa_scout: tiene,
+        fecha_promesa_scout: fecha || null,
+        padrino_promesa_scout: padrinoFinal
+      } as any)
+
+      setMessage({
+        text: tiene ? '✅ Promesa Scout registrada' : '✅ Promesa Scout quitada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
     }
   }
 
@@ -978,6 +1280,109 @@ export default function VidaScout() {
   }
 
   // ✅ guardarRovers YA NO TOCA fecha_partida
+    // ✅ Actualizar UNA sola fecha de Rovers (inline)
+  const actualizarFechaRovers = async (campo: string, nuevaFecha: string) => {
+    if (!progresionRovers) return
+
+    try {
+      const { error } = await supabase
+        .from('progresion_rovers')
+        .update({ [campo]: nuevaFecha || null })
+        .eq('id', progresionRovers.id)
+
+      if (error) throw error
+
+      setProgresionRovers({
+        ...progresionRovers,
+        [campo]: nuevaFecha || null
+      } as any)
+
+      setMessage({
+        text: nuevaFecha ? '✅ Fecha actualizada' : '✅ Fecha borrada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
+  // ✅ Actualizar Tótem (nombre + campamento juntos)
+  const actualizarTotemRovers = async (nombre: string, campamento: string) => {
+    if (!progresionRovers) return
+
+    try {
+      const nombreFinal = nombre.trim() || null
+      const campamentoFinal = campamento.trim() || null
+
+      const { error } = await supabase
+        .from('progresion_rovers')
+        .update({
+          nombre_totem: nombreFinal,
+          campamento_totem: campamentoFinal
+        })
+        .eq('id', progresionRovers.id)
+
+      if (error) throw error
+
+      setProgresionRovers({
+        ...progresionRovers,
+        nombre_totem: nombreFinal,
+        campamento_totem: campamentoFinal
+      } as any)
+
+      setMessage({
+        text: (nombreFinal && campamentoFinal) ? '✅ Tótem actualizado' : '✅ Tótem borrado',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
+
+  // ✅ Actualizar promesa Scout de Rovers (checkbox + fecha + padrino)
+  const actualizarPromesaRovers = async (tiene: boolean, fecha: string, padrino: string) => {
+    if (!progresionRovers) return
+
+    try {
+      const padrinoFinal = padrino.trim() || null
+
+      const { error } = await supabase
+        .from('progresion_rovers')
+        .update({
+          tiene_promesa_scout: tiene,
+          fecha_promesa_scout: fecha || null,
+          padrino_promesa_scout: padrinoFinal
+        })
+        .eq('id', progresionRovers.id)
+
+      if (error) throw error
+
+      setProgresionRovers({
+        ...progresionRovers,
+        tiene_promesa_scout: tiene,
+        fecha_promesa_scout: fecha || null,
+        padrino_promesa_scout: padrinoFinal
+      } as any)
+
+      setMessage({
+        text: tiene ? '✅ Promesa Scout registrada' : '✅ Promesa Scout quitada',
+        type: 'success'
+      })
+      setTimeout(() => setMessage({ text: '', type: '' }), 2000)
+    } catch (error: any) {
+      console.error('Error:', error)
+      setMessage({ text: `❌ Error: ${error.message}`, type: 'error' })
+      throw error
+    }
+  }
+
   const guardarRovers = async () => {
     if (!progresionRovers) return
     setSaving(true)
@@ -1212,7 +1617,8 @@ export default function VidaScout() {
     promesa,
     fechaPromesa,
     padrino,
-    nombreCaza
+    nombreCaza,
+    elementos
   }: {
     rama: string
     ingreso: string | null | undefined
@@ -1220,6 +1626,7 @@ export default function VidaScout() {
     fechaPromesa: string | null | undefined
     padrino: string | null | undefined
     nombreCaza?: string | null
+    elementos?: (string | null)[]
   }) => (
     <div style={{
       backgroundColor: '#F0F7F0',
@@ -1254,6 +1661,21 @@ export default function VidaScout() {
         </span>
       </div>
 
+      {/* ✅ Elementos elegidos (solo Caminantes) */}
+      {rama === 'Caminantes' && elementos && elementos.filter(Boolean).length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: COL.textoSecundario }}>
+            🧭 Elementos elegidos
+          </span>
+          <span style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: COL.textoPrincipal, fontWeight: '600' }}>
+            {elementos
+              .filter((e): e is string => !!e)
+              .map(e => `${ELEMENTOS_EMOJIS[e] || ''} ${e}`)
+              .join(' · ')}
+          </span>
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: COL.textoSecundario }}>
           🗓️ Ingreso a la rama
@@ -1266,8 +1688,8 @@ export default function VidaScout() {
       {promesa && (
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: COL.textoSecundario }}>
-            🤝 Promesa
-          </span>
+                      {rama === 'Manada' ? '🐺 Promesa' : '⚜️ Promesa'}  
+                      </span>
           <span style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: COL.textoPrincipal, fontWeight: '600' }}>
             {formatFecha(fechaPromesa)}
             {padrino && ` · ${padrino}`}
@@ -1523,13 +1945,55 @@ export default function VidaScout() {
               padrino={null}
               nombreCaza={progresionManada.nombre_caza}
             />
+            <Subtitulo texto="🐺 Promesa de Manada" />
+            <HitoPromesa
+              label="Promesa de Manada"
+              tiene={progresionManada.tiene_promesa_manada}
+              fecha={progresionManada.fecha_promesa_manada}
+              onSave={actualizarPromesaManada}
+              puedeEditar={editable}
+            />
+
             <div style={{ marginTop: '16px' }}>
               <Subtitulo texto="Hitos de la rama" />
-              {renderHito('Pata tierna', progresionManada.fecha_pata_tierna)}
-              {renderHito('Saltador', progresionManada.fecha_saltador)}
-              {renderHito('Rastreador', progresionManada.fecha_rastreador)}
-              {renderHito('Cazador', progresionManada.fecha_cazador)}
+
+              <HitoFecha
+                label="Pata tierna"
+                fecha={progresionManada.fecha_pata_tierna}
+                onSave={(nuevaFecha) => actualizarFechaManada('fecha_pata_tierna', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              <HitoFecha
+                label="Saltador"
+                fecha={progresionManada.fecha_saltador}
+                onSave={(nuevaFecha) => actualizarFechaManada('fecha_saltador', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              <HitoFecha
+                label="Rastreador"
+                fecha={progresionManada.fecha_rastreador}
+                onSave={(nuevaFecha) => actualizarFechaManada('fecha_rastreador', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              <HitoFecha
+                label="Cazador"
+                fecha={progresionManada.fecha_cazador}
+                onSave={(nuevaFecha) => actualizarFechaManada('fecha_cazador', nuevaFecha)}
+                puedeEditar={editable}
+              />
             </div>
+
+            <Subtitulo texto="Nombre de Caza" />
+            <HitoTexto
+              label="Nombre de Caza"
+              valor={progresionManada.nombre_caza}
+              onSave={actualizarNombreCaza}
+              puedeEditar={editable}
+              placeholder="Ej: Águila Veloz"
+            />
           </>
         )}
       </Seccion>
@@ -1648,12 +2112,49 @@ export default function VidaScout() {
               fechaPromesa={progresionUnidad.fecha_promesa_scout}
               padrino={progresionUnidad.padrino_promesa_scout}
             />
+
+            <Subtitulo texto="⚜️ Promesa Scout" />
+            <HitoPromesaScout
+              label="Promesa Scout"
+              tiene={promesaScoutInfo.tiene}
+              fecha={promesaScoutInfo.fecha}
+              padrino={promesaScoutInfo.padrino}
+              onSave={actualizarPromesaUnidad}
+              puedeEditar={editable}
+              bloqueado={promesaScoutInfo.tiene && promesaScoutInfo.rama !== 'Unidad Scout'}
+              ramaOriginal={promesaScoutInfo.rama}
+            />
+
             <div style={{ marginTop: '16px' }}>
               <Subtitulo texto="Hitos de la rama" />
-              {renderHito('Pista', progresionUnidad.fecha_pista)}
-              {renderHito('Senda', progresionUnidad.fecha_senda)}
-              {renderHito('Rumbo', progresionUnidad.fecha_rumbo)}
-              {renderHito('Travesía', progresionUnidad.fecha_travesia)}
+
+              <HitoFecha
+                label="Pista"
+                fecha={progresionUnidad.fecha_pista}
+                onSave={(nuevaFecha) => actualizarFechaUnidad('fecha_pista', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              <HitoFecha
+                label="Senda"
+                fecha={progresionUnidad.fecha_senda}
+                onSave={(nuevaFecha) => actualizarFechaUnidad('fecha_senda', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              <HitoFecha
+                label="Rumbo"
+                fecha={progresionUnidad.fecha_rumbo}
+                onSave={(nuevaFecha) => actualizarFechaUnidad('fecha_rumbo', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              <HitoFecha
+                label="Travesía"
+                fecha={progresionUnidad.fecha_travesia}
+                onSave={(nuevaFecha) => actualizarFechaUnidad('fecha_travesia', nuevaFecha)}
+                puedeEditar={editable}
+              />
             </div>
           </>
         )}
@@ -1798,19 +2299,69 @@ export default function VidaScout() {
             <InfoGeneral
               rama="Caminantes"
               ingreso={progresionCaminantes.fecha_ingreso_caminantes}
-              promesa={progresionCaminantes.tiene_promesa_scout}
-              fechaPromesa={progresionCaminantes.fecha_promesa_scout}
-              padrino={progresionCaminantes.padrino_promesa_scout}
+              promesa={promesaScoutInfo.tiene}
+              fechaPromesa={promesaScoutInfo.fecha}
+              padrino={promesaScoutInfo.padrino}
+              elementos={elementos}
             />
 
             <Subtitulo texto="Ceremonia de Bienvenida" />
-            {renderHito('Ceremonia de Bienvenida', progresionCaminantes.fecha_ceremonia_bienvenida)}
+            <HitoFecha
+              label="Ceremonia de Bienvenida"
+              fecha={progresionCaminantes.fecha_ceremonia_bienvenida}
+              onSave={actualizarCeremoniaCaminantes}
+              puedeEditar={editable}
+            />
 
             <Subtitulo texto="Hitos de la rama" />
-            {renderHito('Etapa 1', progresionCaminantes.fecha_etapa1, elementos[0])}
-            {renderHito('Etapa 2', progresionCaminantes.fecha_etapa2, elementos[1])}
-            {renderHito('Etapa 3', progresionCaminantes.fecha_etapa3, elementos[2])}
-            {renderHito('Etapa 4', progresionCaminantes.fecha_etapa4, elementos[3])}
+
+            <HitoEtapaCaminante
+              label="Etapa 1"
+              fecha={progresionCaminantes.fecha_etapa1}
+              elemento={elementos[0]}
+              elementosUsados={elementos.filter(Boolean) as string[]}
+              onSave={(fecha, elem) => actualizarEtapaCaminante(1, fecha, elem)}
+              puedeEditar={editable}
+            />
+
+            <HitoEtapaCaminante
+              label="Etapa 2"
+              fecha={progresionCaminantes.fecha_etapa2}
+              elemento={elementos[1]}
+              elementosUsados={elementos.filter(Boolean) as string[]}
+              onSave={(fecha, elem) => actualizarEtapaCaminante(2, fecha, elem)}
+              puedeEditar={editable}
+            />
+
+            <HitoEtapaCaminante
+              label="Etapa 3"
+              fecha={progresionCaminantes.fecha_etapa3}
+              elemento={elementos[2]}
+              elementosUsados={elementos.filter(Boolean) as string[]}
+              onSave={(fecha, elem) => actualizarEtapaCaminante(3, fecha, elem)}
+              puedeEditar={editable}
+            />
+
+            <HitoEtapaCaminante
+              label="Etapa 4"
+              fecha={progresionCaminantes.fecha_etapa4}
+              elemento={elementos[3]}
+              elementosUsados={elementos.filter(Boolean) as string[]}
+              onSave={(fecha, elem) => actualizarEtapaCaminante(4, fecha, elem)}
+              puedeEditar={editable}
+            />
+
+            <Subtitulo texto="⚜️ Promesa Scout" />
+            <HitoPromesaScout
+              label="Promesa Scout"
+              tiene={promesaScoutInfo.tiene}
+              fecha={promesaScoutInfo.fecha}
+              padrino={promesaScoutInfo.padrino}
+              onSave={actualizarPromesaCaminantes}
+              puedeEditar={editable}
+              bloqueado={promesaScoutInfo.tiene && promesaScoutInfo.rama !== 'Caminantes'}
+              ramaOriginal={promesaScoutInfo.rama}
+            />
 
           </>
         )}
@@ -1929,50 +2480,92 @@ export default function VidaScout() {
             <InfoGeneral
               rama="Rovers"
               ingreso={progresionRovers.fecha_ingreso_rovers}
-              promesa={progresionRovers.tiene_promesa_scout}
-              fechaPromesa={progresionRovers.fecha_promesa_scout}
-              padrino={progresionRovers.padrino_promesa_scout}
+              promesa={promesaScoutInfo.tiene}
+              fechaPromesa={promesaScoutInfo.fecha}
+              padrino={promesaScoutInfo.padrino}
             />
+
+            <Subtitulo texto="⚜️ Promesa Scout" />
+            <HitoPromesaScout
+              label="Promesa Scout"
+              tiene={promesaScoutInfo.tiene}
+              fecha={promesaScoutInfo.fecha}
+              padrino={promesaScoutInfo.padrino}
+              onSave={actualizarPromesaRovers}
+              puedeEditar={editable}
+              bloqueado={promesaScoutInfo.tiene && promesaScoutInfo.rama !== 'Rovers'}
+              ramaOriginal={promesaScoutInfo.rama}
+            />
+
             <div style={{ marginTop: '16px' }}>
               <Subtitulo texto="Hitos de la rama" />
-              {renderHito('Encuentro', progresionRovers.fecha_encuentro)}
-              {renderHito('Compromiso', progresionRovers.fecha_compromiso)}
-              {renderHito('Proyección', progresionRovers.fecha_proyeccion)}
-              {renderHito('Partida', progresionRovers.fecha_partida)}
-            </div>
 
-            {(progresionRovers.nombre_totem || progresionRovers.campamento_totem) && (
-              <div style={{ marginTop: '16px' }}>
-                <Subtitulo texto="Tótem" />
-                <div style={{
-                  backgroundColor: '#FFF8E7',
-                  border: '2px solid #F5C842',
-                  borderRadius: '10px',
-                  padding: '12px'
-                }}>
-                  {progresionRovers.nombre_totem && (
-                    <div style={{
-                      fontFamily: 'Oswald, sans-serif',
-                      fontSize: 'clamp(13px, 3vw, 15px)',
-                      color: COL.textoPrincipal,
-                      fontWeight: '600'
-                    }}>
-                      🦅 {progresionRovers.nombre_totem}
-                    </div>
-                  )}
-                  {progresionRovers.campamento_totem && (
-                    <div style={{
-                      fontFamily: 'Oswald, sans-serif',
-                      fontSize: 'clamp(11px, 2.5vw, 13px)',
-                      color: COL.textoSecundario,
-                      marginTop: '4px'
-                    }}>
-                      🏕️ {progresionRovers.campamento_totem}
-                    </div>
-                  )}
+              <HitoFecha
+                label="Encuentro"
+                fecha={progresionRovers.fecha_encuentro}
+                onSave={(nuevaFecha) => actualizarFechaRovers('fecha_encuentro', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              <HitoFecha
+                label="Compromiso"
+                fecha={progresionRovers.fecha_compromiso}
+                onSave={(nuevaFecha) => actualizarFechaRovers('fecha_compromiso', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              <HitoFecha
+                label="Proyección"
+                fecha={progresionRovers.fecha_proyeccion}
+                onSave={(nuevaFecha) => actualizarFechaRovers('fecha_proyeccion', nuevaFecha)}
+                puedeEditar={editable}
+              />
+
+              {/* Partida se carga desde el botón "Realizó Partida" en el perfil */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '10px 12px',
+                backgroundColor: progresionRovers.fecha_partida ? '#F0F7F0' : '#FFFFFF',
+                border: `2px solid ${progresionRovers.fecha_partida ? '#B8D4B8' : COL.bordeSuave}`,
+                borderRadius: '10px',
+                marginBottom: '8px'
+              }}>
+                <span style={{ fontSize: '20px', flexShrink: 0 }}>
+                  {progresionRovers.fecha_partida ? '✅' : '⬜'}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: 'Oswald, sans-serif',
+                    fontSize: 'clamp(12px, 3vw, 14px)',
+                    fontWeight: '600',
+                    color: COL.textoPrincipal,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Partida
+                  </div>
+                  <div style={{
+                    fontFamily: 'Oswald, sans-serif',
+                    fontSize: 'clamp(11px, 2.5vw, 13px)',
+                    color: progresionRovers.fecha_partida ? COL.verdeClaro : COL.textoSecundario,
+                    marginTop: '2px'
+                  }}>
+                    {progresionRovers.fecha_partida ? formatFecha(progresionRovers.fecha_partida) : 'Se carga desde el perfil del beneficiario'}
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
+
+            <Subtitulo texto="🦅 Tótem" />
+            <HitoTotem
+              label="Tótem"
+              nombre={progresionRovers.nombre_totem}
+              campamento={progresionRovers.campamento_totem}
+              onSave={actualizarTotemRovers}
+              puedeEditar={editable}
+            />
           </>
         )}
       </Seccion>
@@ -2007,7 +2600,7 @@ export default function VidaScout() {
     if (progresionManada?.tiene_promesa_manada && progresionManada.fecha_promesa_manada) {
       eventos.push({
         fecha: progresionManada.fecha_promesa_manada,
-        titulo: '🤝 Promesa de Manada',
+        titulo: '🐺 Promesa de Manada',
         detalle: 'Realiza su promesa de Manada',
         color: '#C48A2A'
       })
@@ -2621,6 +3214,1428 @@ const CampoSelect = ({
     </select>
   </div>
 )
+// ============================================
+// COMPONENTES: HITOS EDITABLES INLINE
+// ============================================
+
+// --- Tipo FECHA ---
+const HitoFecha = ({
+  label,
+  fecha,
+  onSave,
+  puedeEditar
+}: {
+  label: string
+  fecha: string | null | undefined
+  onSave: (nuevaFecha: string) => Promise<void>
+  puedeEditar: boolean
+}) => {
+  const [editando, setEditando] = useState(false)
+  const [nuevaFecha, setNuevaFecha] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const tieneFecha = !!fecha
+
+  const abrirEditor = () => {
+    setNuevaFecha(fecha || '')
+    setEditando(true)
+  }
+
+  const cancelar = () => {
+    setEditando(false)
+    setNuevaFecha('')
+  }
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      await onSave(nuevaFecha)
+      setEditando(false)
+      setNuevaFecha('')
+    } catch (err) {
+      console.error('Error al guardar hito:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const borrarFecha = async () => {
+    setGuardando(true)
+    try {
+      await onSave('')
+      setEditando(false)
+      setNuevaFecha('')
+    } catch (err) {
+      console.error('Error al borrar hito:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 12px',
+        backgroundColor: tieneFecha ? '#F0F7F0' : '#FFFFFF',
+        border: `2px solid ${tieneFecha ? '#B8D4B8' : COL.bordeSuave}`,
+        borderRadius: '10px',
+        marginBottom: '8px'
+      }}
+    >
+      <span
+        onClick={puedeEditar ? abrirEditor : undefined}
+        title={puedeEditar ? 'Click para editar' : ''}
+        style={{
+          fontSize: '20px',
+          flexShrink: 0,
+          cursor: puedeEditar ? 'pointer' : 'default',
+          userSelect: 'none',
+          padding: '2px',
+          borderRadius: '6px',
+          transition: 'background-color 0.15s'
+        }}
+        onMouseEnter={(e) => {
+          if (puedeEditar) e.currentTarget.style.backgroundColor = '#F3ECD8'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent'
+        }}
+      >
+        {tieneFecha ? '✅' : '⬜'}
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'Oswald, sans-serif',
+          fontSize: 'clamp(12px, 3vw, 14px)',
+          fontWeight: '600',
+          color: COL.textoPrincipal,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          {label}
+        </div>
+
+        {editando ? (
+          <div style={{
+            display: 'flex',
+            gap: '6px',
+            marginTop: '6px',
+            alignItems: 'center',
+            flexWrap: 'wrap'
+          }}>
+            <input
+              type="date"
+              value={nuevaFecha}
+              onChange={(e) => setNuevaFecha(e.target.value)}
+              disabled={guardando}
+              autoFocus
+              style={{
+                flex: 1,
+                minWidth: '130px',
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box'
+              }}
+            />
+            <button
+              onClick={guardar}
+              disabled={guardando || !nuevaFecha}
+              title="Guardar"
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: COL.verdeScout,
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: (guardando || !nuevaFecha) ? 'not-allowed' : 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: 600,
+                opacity: (guardando || !nuevaFecha) ? 0.5 : 1
+              }}
+            >
+              {guardando ? '...' : '✓'}
+            </button>
+            {tieneFecha && (
+              <button
+                onClick={borrarFecha}
+                disabled={guardando}
+                title="Borrar fecha"
+                style={{
+                  padding: '6px 10px',
+                  fontSize: '12px',
+                  backgroundColor: '#FEE2E2',
+                  color: COL.terracota,
+                  border: '1.5px solid #FECACA',
+                  borderRadius: '6px',
+                  cursor: guardando ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: 600,
+                  opacity: guardando ? 0.5 : 1
+                }}
+              >
+                🗑️
+              </button>
+            )}
+            <button
+              onClick={cancelar}
+              disabled={guardando}
+              title="Cancelar"
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: '#E8DEC4',
+                color: COL.textoPrincipal,
+                border: 'none',
+                borderRadius: '6px',
+                cursor: guardando ? 'not-allowed' : 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: 600,
+                opacity: guardando ? 0.5 : 1
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '2px'
+          }}>
+            <span style={{
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              color: tieneFecha ? COL.verdeClaro : COL.textoSecundario
+            }}>
+              {tieneFecha ? formatFecha(fecha) : 'Sin cargar'}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// --- Tipo TEXTO ---
+const HitoTexto = ({
+  label,
+  valor,
+  onSave,
+  puedeEditar,
+  placeholder
+}: {
+  label: string
+  valor: string | null | undefined
+  onSave: (nuevoValor: string) => Promise<void>
+  puedeEditar: boolean
+  placeholder?: string
+}) => {
+  const [editando, setEditando] = useState(false)
+  const [nuevoValor, setNuevoValor] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const tieneValor = !!valor && valor.trim() !== ''
+
+  const abrirEditor = () => {
+    setNuevoValor(valor || '')
+    setEditando(true)
+  }
+
+  const cancelar = () => {
+    setEditando(false)
+    setNuevoValor('')
+  }
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      await onSave(nuevoValor)
+      setEditando(false)
+      setNuevoValor('')
+    } catch (err) {
+      console.error('Error al guardar texto:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 12px',
+        backgroundColor: tieneValor ? '#F0F7F0' : '#FFFFFF',
+        border: `2px solid ${tieneValor ? '#B8D4B8' : COL.bordeSuave}`,
+        borderRadius: '10px',
+        marginBottom: '8px'
+      }}
+    >
+      <span
+        onClick={puedeEditar ? abrirEditor : undefined}
+        title={puedeEditar ? 'Click para editar' : ''}
+        style={{
+          fontSize: '20px',
+          flexShrink: 0,
+          cursor: puedeEditar ? 'pointer' : 'default',
+          userSelect: 'none',
+          padding: '2px',
+          borderRadius: '6px',
+          transition: 'background-color 0.15s'
+        }}
+        onMouseEnter={(e) => {
+          if (puedeEditar) e.currentTarget.style.backgroundColor = '#F3ECD8'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent'
+        }}
+      >
+        {tieneValor ? '✅' : '⬜'}
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'Oswald, sans-serif',
+          fontSize: 'clamp(12px, 3vw, 14px)',
+          fontWeight: '600',
+          color: COL.textoPrincipal,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          {label}
+        </div>
+
+        {editando ? (
+          <div style={{
+            display: 'flex',
+            gap: '6px',
+            marginTop: '6px',
+            alignItems: 'center',
+            flexWrap: 'wrap'
+          }}>
+            <input
+              type="text"
+              value={nuevoValor}
+              onChange={(e) => setNuevoValor(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') guardar()
+                if (e.key === 'Escape') cancelar()
+              }}
+              disabled={guardando}
+              autoFocus
+              placeholder={placeholder || ''}
+              style={{
+                flex: 1,
+                minWidth: '130px',
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box'
+              }}
+            />
+            <button
+              onClick={guardar}
+              disabled={guardando}
+              title="Guardar"
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: COL.verdeScout,
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: guardando ? 'not-allowed' : 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: 600,
+                opacity: guardando ? 0.5 : 1
+              }}
+            >
+              {guardando ? '...' : '✓'}
+            </button>
+            <button
+              onClick={cancelar}
+              disabled={guardando}
+              title="Cancelar"
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: '#E8DEC4',
+                color: COL.textoPrincipal,
+                border: 'none',
+                borderRadius: '6px',
+                cursor: guardando ? 'not-allowed' : 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: 600,
+                opacity: guardando ? 0.5 : 1
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '2px'
+          }}>
+            <span style={{
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              color: tieneValor ? COL.verdeClaro : COL.textoSecundario,
+              fontStyle: tieneValor ? 'normal' : 'italic'
+            }}>
+              {tieneValor ? valor : 'Sin cargar'}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// --- Tipo PROMESA ---
+const HitoPromesa = ({
+  label,
+  tiene,
+  fecha,
+  onSave,
+  puedeEditar
+}: {
+  label: string
+  tiene: boolean | null | undefined
+  fecha: string | null | undefined
+  onSave: (tiene: boolean, fecha: string) => Promise<void>
+  puedeEditar: boolean
+}) => {
+  const [editando, setEditando] = useState(false)
+  const [nuevoTiene, setNuevoTiene] = useState(false)
+  const [nuevaFecha, setNuevaFecha] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const tienePromesa = !!tiene && !!fecha
+
+  const abrirEditor = () => {
+    setNuevoTiene(!!tiene)
+    setNuevaFecha(fecha || '')
+    setEditando(true)
+  }
+
+  const cancelar = () => {
+    setEditando(false)
+    setNuevoTiene(false)
+    setNuevaFecha('')
+  }
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      // Si hay fecha → tiene promesa. Si no hay fecha → no tiene
+      await onSave(!!nuevaFecha, nuevaFecha)
+      setEditando(false)
+      setNuevoTiene(false)
+      setNuevaFecha('')
+    } catch (err) {
+      console.error('Error al guardar promesa:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const borrarFecha = async () => {
+    setGuardando(true)
+    try {
+      await onSave(false, '')
+      setEditando(false)
+      setNuevoTiene(false)
+      setNuevaFecha('')
+    } catch (err) {
+      console.error('Error al borrar promesa:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 12px',
+        backgroundColor: tienePromesa ? '#F0F7F0' : '#FFFFFF',
+        border: `2px solid ${tienePromesa ? '#B8D4B8' : COL.bordeSuave}`,
+        borderRadius: '10px',
+        marginBottom: '8px'
+      }}
+    >
+      <span
+        onClick={puedeEditar ? abrirEditor : undefined}
+        title={puedeEditar ? 'Click para editar' : ''}
+        style={{
+          fontSize: '20px',
+          flexShrink: 0,
+          cursor: puedeEditar ? 'pointer' : 'default',
+          userSelect: 'none',
+          padding: '2px',
+          borderRadius: '6px',
+          transition: 'background-color 0.15s'
+        }}
+        onMouseEnter={(e) => {
+          if (puedeEditar) e.currentTarget.style.backgroundColor = '#F3ECD8'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent'
+        }}
+      >
+        {tienePromesa ? '✅' : '⬜'}
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'Oswald, sans-serif',
+          fontSize: 'clamp(12px, 3vw, 14px)',
+          fontWeight: '600',
+          color: COL.textoPrincipal,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          {label}
+        </div>
+
+        {editando ? (
+          <div style={{
+            display: 'flex',
+            gap: '6px',
+            marginTop: '6px',
+            alignItems: 'center',
+            flexWrap: 'wrap'
+          }}>
+            <input
+              type="date"
+              value={nuevaFecha}
+              onChange={(e) => setNuevaFecha(e.target.value)}
+              disabled={guardando}
+              autoFocus
+              style={{
+                flex: 1,
+                minWidth: '130px',
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box'
+              }}
+            />
+            <button
+              onClick={guardar}
+              disabled={guardando || !nuevaFecha}
+              title="Guardar"
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: COL.verdeScout,
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: (guardando || !nuevaFecha) ? 'not-allowed' : 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: 600,
+                opacity: (guardando || !nuevaFecha) ? 0.5 : 1
+              }}
+            >
+              {guardando ? '...' : '✓'}
+            </button>
+            {tienePromesa && (
+              <button
+                onClick={borrarFecha}
+                disabled={guardando}
+                title="Borrar promesa"
+                style={{
+                  padding: '6px 10px',
+                  fontSize: '12px',
+                  backgroundColor: '#FEE2E2',
+                  color: COL.terracota,
+                  border: '1.5px solid #FECACA',
+                  borderRadius: '6px',
+                  cursor: guardando ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: 600,
+                  opacity: guardando ? 0.5 : 1
+                }}
+              >
+                🗑️
+              </button>
+            )}
+            <button
+              onClick={cancelar}
+              disabled={guardando}
+              title="Cancelar"
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: '#E8DEC4',
+                color: COL.textoPrincipal,
+                border: 'none',
+                borderRadius: '6px',
+                cursor: guardando ? 'not-allowed' : 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontWeight: 600,
+                opacity: guardando ? 0.5 : 1
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '2px'
+          }}>
+            <span style={{
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              color: tienePromesa ? COL.verdeClaro : COL.textoSecundario
+            }}>
+              {tienePromesa ? formatFecha(fecha) : 'Sin promesa'}
+            </span>
+          </div>
+        )
+       }
+      </div>
+    </div>
+  )
+}
+// --- Tipo ETAPA CAMINANTE (fecha + elemento) ---
+const HitoEtapaCaminante = ({
+  label,
+  fecha,
+  elemento,
+  elementosUsados,
+  onSave,
+  puedeEditar
+}: {
+  label: string
+  fecha: string | null | undefined
+  elemento: string | null | undefined
+  elementosUsados: string[]
+  onSave: (fecha: string, elemento: string) => Promise<void>
+  puedeEditar: boolean
+}) => {
+  const [editando, setEditando] = useState(false)
+  const [nuevaFecha, setNuevaFecha] = useState('')
+  const [nuevoElemento, setNuevoElemento] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const tieneFecha = !!fecha
+  const tieneElemento = !!elemento
+  const estaCompleta = tieneFecha && tieneElemento
+
+  const abrirEditor = () => {
+    setNuevaFecha(fecha || '')
+    setNuevoElemento(elemento || '')
+    setEditando(true)
+  }
+
+  const cancelar = () => {
+    setEditando(false)
+    setNuevaFecha('')
+    setNuevoElemento('')
+  }
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      await onSave(nuevaFecha, nuevoElemento)
+      setEditando(false)
+      setNuevaFecha('')
+      setNuevoElemento('')
+    } catch (err) {
+      console.error('Error al guardar etapa:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const borrarEtapa = async () => {
+    setGuardando(true)
+    try {
+      await onSave('', '')
+      setEditando(false)
+      setNuevaFecha('')
+      setNuevoElemento('')
+    } catch (err) {
+      console.error('Error al borrar etapa:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  // Filtrar los elementos disponibles: los que NO están usados en OTRAS etapas
+  // (pero sí mostrar el que ya tiene asignado esta etapa)
+  const elementosDisponibles = ELEMENTOS_CAMINANTES.filter(elem =>
+    !elementosUsados.includes(elem) || elem === elemento
+  )
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 12px',
+        backgroundColor: estaCompleta ? '#F0F7F0' : (tieneFecha || tieneElemento) ? '#FFF8E7' : '#FFFFFF',
+        border: `2px solid ${estaCompleta ? '#B8D4B8' : (tieneFecha || tieneElemento) ? COL.dorado : COL.bordeSuave}`,
+        borderRadius: '10px',
+        marginBottom: '8px'
+      }}
+    >
+      <span
+        onClick={puedeEditar ? abrirEditor : undefined}
+        title={puedeEditar ? 'Click para editar' : ''}
+        style={{
+          fontSize: '20px',
+          flexShrink: 0,
+          cursor: puedeEditar ? 'pointer' : 'default',
+          userSelect: 'none',
+          padding: '2px',
+          borderRadius: '6px',
+          transition: 'background-color 0.15s'
+        }}
+        onMouseEnter={(e) => {
+          if (puedeEditar) e.currentTarget.style.backgroundColor = '#F3ECD8'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent'
+        }}
+      >
+        {estaCompleta ? '✅' : (tieneFecha || tieneElemento) ? '🟡' : '⬜'}
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'Oswald, sans-serif',
+          fontSize: 'clamp(12px, 3vw, 14px)',
+          fontWeight: '600',
+          color: COL.textoPrincipal,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          {label}
+        </div>
+
+        {editando ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            marginTop: '6px'
+          }}>
+            <input
+              type="date"
+              value={nuevaFecha}
+              onChange={(e) => setNuevaFecha(e.target.value)}
+              disabled={guardando}
+              autoFocus
+              style={{
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box'
+              }}
+            />
+
+            <select
+              value={nuevoElemento}
+              onChange={(e) => setNuevoElemento(e.target.value)}
+              disabled={guardando || !nuevaFecha}
+              style={{
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: !nuevaFecha ? '#F3F4F6' : 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box',
+                cursor: (guardando || !nuevaFecha) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              <option value="">
+                {!nuevaFecha ? '🔒 Primero la fecha' : '🔲 Elegir elemento'}
+              </option>
+              {nuevaFecha && elementosDisponibles.map(elem => (
+                <option key={elem} value={elem}>
+                  {ELEMENTOS_EMOJIS[elem] || ''} {elem}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                onClick={guardar}
+                disabled={guardando || !nuevaFecha || !nuevoElemento}
+                title="Guardar"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  backgroundColor: COL.verdeScout,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: (guardando || !nuevaFecha || !nuevoElemento) ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: 600,
+                  opacity: (guardando || !nuevaFecha || !nuevoElemento) ? 0.5 : 1
+                }}
+              >
+                {guardando ? '...' : '✓ Guardar'}
+              </button>
+              {estaCompleta && (
+                <button
+                  onClick={borrarEtapa}
+                  disabled={guardando}
+                  title="Borrar etapa"
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '12px',
+                    backgroundColor: '#FEE2E2',
+                    color: COL.terracota,
+                    border: '1.5px solid #FECACA',
+                    borderRadius: '6px',
+                    cursor: guardando ? 'not-allowed' : 'pointer',
+                    fontFamily: 'Oswald, sans-serif',
+                    fontWeight: 600,
+                    opacity: guardando ? 0.5 : 1
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+              <button
+                onClick={cancelar}
+                disabled={guardando}
+                title="Cancelar"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  backgroundColor: '#E8DEC4',
+                  color: COL.textoPrincipal,
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: guardando ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: 600,
+                  opacity: guardando ? 0.5 : 1
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '2px',
+            flexWrap: 'wrap'
+          }}>
+            <span style={{
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              color: estaCompleta ? COL.verdeClaro : (tieneFecha || tieneElemento) ? COL.dorado : COL.textoSecundario
+            }}>
+              {tieneFecha ? formatFecha(fecha) : 'Sin cargar'}
+              {tieneFecha && tieneElemento && (
+                <span style={{ marginLeft: '8px' }}>
+                  · {ELEMENTOS_EMOJIS[elemento!] || ''} {elemento}
+                </span>
+              )}
+              {tieneFecha && !tieneElemento && (
+                <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>
+                  · Falta elemento
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+// --- Tipo TÓTEM (nombre + campamento, ambos obligatorios) ---
+const HitoTotem = ({
+  label,
+  nombre,
+  campamento,
+  onSave,
+  puedeEditar
+}: {
+  label: string
+  nombre: string | null | undefined
+  campamento: string | null | undefined
+  onSave: (nombre: string, campamento: string) => Promise<void>
+  puedeEditar: boolean
+}) => {
+  const [editando, setEditando] = useState(false)
+  const [nuevoNombre, setNuevoNombre] = useState('')
+  const [nuevoCampamento, setNuevoCampamento] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const tieneNombre = !!nombre && nombre.trim() !== ''
+  const tieneCampamento = !!campamento && campamento.trim() !== ''
+  const estaCompleto = tieneNombre && tieneCampamento
+
+  const abrirEditor = () => {
+    setNuevoNombre(nombre || '')
+    setNuevoCampamento(campamento || '')
+    setEditando(true)
+  }
+
+  const cancelar = () => {
+    setEditando(false)
+    setNuevoNombre('')
+    setNuevoCampamento('')
+  }
+
+  const guardar = async () => {
+    if (!nuevoNombre.trim() || !nuevoCampamento.trim()) {
+      return // no guarda si falta alguno
+    }
+    setGuardando(true)
+    try {
+      await onSave(nuevoNombre.trim(), nuevoCampamento.trim())
+      setEditando(false)
+      setNuevoNombre('')
+      setNuevoCampamento('')
+    } catch (err) {
+      console.error('Error al guardar tótem:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const borrarTotem = async () => {
+    setGuardando(true)
+    try {
+      await onSave('', '')
+      setEditando(false)
+      setNuevoNombre('')
+      setNuevoCampamento('')
+    } catch (err) {
+      console.error('Error al borrar tótem:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const puedeGuardar = nuevoNombre.trim() !== '' && nuevoCampamento.trim() !== ''
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 12px',
+        backgroundColor: estaCompleto ? '#FFF8E7' : '#FFFFFF',
+        border: `2px solid ${estaCompleto ? '#F5C842' : COL.bordeSuave}`,
+        borderRadius: '10px',
+        marginBottom: '8px'
+      }}
+    >
+      <span
+        onClick={puedeEditar ? abrirEditor : undefined}
+        title={puedeEditar ? 'Click para editar' : ''}
+        style={{
+          fontSize: '20px',
+          flexShrink: 0,
+          cursor: puedeEditar ? 'pointer' : 'default',
+          userSelect: 'none',
+          padding: '2px',
+          borderRadius: '6px',
+          transition: 'background-color 0.15s'
+        }}
+        onMouseEnter={(e) => {
+          if (puedeEditar) e.currentTarget.style.backgroundColor = '#F3ECD8'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent'
+        }}
+      >
+        {estaCompleto ? '✅' : '⬜'}
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'Oswald, sans-serif',
+          fontSize: 'clamp(12px, 3vw, 14px)',
+          fontWeight: '600',
+          color: COL.textoPrincipal,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          {label}
+        </div>
+
+        {editando ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            marginTop: '6px'
+          }}>
+            <input
+              type="text"
+              value={nuevoNombre}
+              onChange={(e) => setNuevoNombre(e.target.value)}
+              disabled={guardando}
+              autoFocus
+              placeholder="Nombre de tótem (ej: Águila Veloz)"
+              style={{
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box'
+              }}
+            />
+            <input
+              type="text"
+              value={nuevoCampamento}
+              onChange={(e) => setNuevoCampamento(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && puedeGuardar) guardar()
+                if (e.key === 'Escape') cancelar()
+              }}
+              disabled={guardando}
+              placeholder="Campamento de tótem (ej: Córdoba 2024)"
+              style={{
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box'
+              }}
+            />
+
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                onClick={guardar}
+                disabled={guardando || !puedeGuardar}
+                title={!puedeGuardar ? 'Completá ambos campos' : 'Guardar'}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  backgroundColor: COL.verdeScout,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: (guardando || !puedeGuardar) ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: 600,
+                  opacity: (guardando || !puedeGuardar) ? 0.5 : 1
+                }}
+              >
+                {guardando ? '...' : '✓ Guardar'}
+              </button>
+              {estaCompleto && (
+                <button
+                  onClick={borrarTotem}
+                  disabled={guardando}
+                  title="Borrar tótem"
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '12px',
+                    backgroundColor: '#FEE2E2',
+                    color: COL.terracota,
+                    border: '1.5px solid #FECACA',
+                    borderRadius: '6px',
+                    cursor: guardando ? 'not-allowed' : 'pointer',
+                    fontFamily: 'Oswald, sans-serif',
+                    fontWeight: 600,
+                    opacity: guardando ? 0.5 : 1
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+              <button
+                onClick={cancelar}
+                disabled={guardando}
+                title="Cancelar"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  backgroundColor: '#E8DEC4',
+                  color: COL.textoPrincipal,
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: guardando ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: 600,
+                  opacity: guardando ? 0.5 : 1
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {!puedeGuardar && (nuevoNombre || nuevoCampamento) && (
+              <span style={{
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: '10px',
+                color: COL.terracota,
+                fontStyle: 'italic'
+              }}>
+                Completá ambos campos para guardar
+              </span>
+            )}
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            marginTop: '2px'
+          }}>
+            {estaCompleto ? (
+              <>
+                <span style={{
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: 'clamp(11px, 2.5vw, 13px)',
+                  color: COL.verdeClaro
+                }}>
+                  🦅 {nombre}
+                </span>
+                <span style={{
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: 'clamp(11px, 2.5vw, 13px)',
+                  color: COL.textoSecundario
+                }}>
+                  🏕️ {campamento}
+                </span>
+              </>
+            ) : (
+              <span style={{
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: 'clamp(11px, 2.5vw, 13px)',
+                color: COL.textoSecundario
+              }}>
+                Sin cargar
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+// --- Tipo PROMESA SCOUT (con padrino, con soporte para heredada) ---
+const HitoPromesaScout = ({
+  label,
+  tiene,
+  fecha,
+  padrino,
+  onSave,
+  puedeEditar,
+  bloqueado = false,
+  ramaOriginal
+}: {
+  label: string
+  tiene: boolean | null | undefined
+  fecha: string | null | undefined
+  padrino: string | null | undefined
+  onSave: (tiene: boolean, fecha: string, padrino: string) => Promise<void>
+  puedeEditar: boolean
+  bloqueado?: boolean
+  ramaOriginal?: string | null
+}) => {
+  const [editando, setEditando] = useState(false)
+  const [nuevaFecha, setNuevaFecha] = useState('')
+  const [nuevoPadrino, setNuevoPadrino] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const tienePromesa = !!tiene && !!fecha
+
+  const abrirEditor = () => {
+    setNuevaFecha(fecha || '')
+    setNuevoPadrino(padrino || '')
+    setEditando(true)
+  }
+
+  const cancelar = () => {
+    setEditando(false)
+    setNuevaFecha('')
+    setNuevoPadrino('')
+  }
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      await onSave(!!nuevaFecha, nuevaFecha, nuevoPadrino)
+      setEditando(false)
+      setNuevaFecha('')
+      setNuevoPadrino('')
+    } catch (err) {
+      console.error('Error al guardar promesa:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const borrarPromesa = async () => {
+    setGuardando(true)
+    try {
+      await onSave(false, '', '')
+      setEditando(false)
+      setNuevaFecha('')
+      setNuevoPadrino('')
+    } catch (err) {
+      console.error('Error al borrar promesa:', err)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 12px',
+        backgroundColor: tienePromesa ? '#F0F7F0' : '#FFFFFF',
+        border: `2px solid ${tienePromesa ? '#B8D4B8' : COL.bordeSuave}`,
+        borderRadius: '10px',
+        marginBottom: '8px'
+      }}
+    >
+      <span
+        onClick={(puedeEditar && !bloqueado) ? abrirEditor : undefined}
+        title={bloqueado ? 'Promesa realizada en otra rama' : (puedeEditar ? 'Click para editar' : '')}
+        style={{
+          fontSize: '20px',
+          flexShrink: 0,
+          cursor: (puedeEditar && !bloqueado) ? 'pointer' : 'default',
+          userSelect: 'none',
+          padding: '2px',
+          borderRadius: '6px',
+          transition: 'background-color 0.15s'
+        }}
+        onMouseEnter={(e) => {
+          if (puedeEditar && !bloqueado) e.currentTarget.style.backgroundColor = '#F3ECD8'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent'
+        }}
+      >
+        {tienePromesa ? '✅' : '⬜'}
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'Oswald, sans-serif',
+          fontSize: 'clamp(12px, 3vw, 14px)',
+          fontWeight: '600',
+          color: COL.textoPrincipal,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          {label}
+        </div>
+
+        {editando ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            marginTop: '6px'
+          }}>
+            <input
+              type="date"
+              value={nuevaFecha}
+              onChange={(e) => setNuevaFecha(e.target.value)}
+              disabled={guardando}
+              autoFocus
+              style={{
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box'
+              }}
+            />
+            <input
+              type="text"
+              value={nuevoPadrino}
+              onChange={(e) => setNuevoPadrino(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') guardar()
+                if (e.key === 'Escape') cancelar()
+              }}
+              disabled={guardando}
+              placeholder="Padrino/Madrina"
+              style={{
+                padding: '6px 8px',
+                fontSize: '13px',
+                border: `2px solid ${COL.verdeScout}`,
+                borderRadius: '6px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white',
+                color: COL.textoPrincipal,
+                boxSizing: 'border-box'
+              }}
+            />
+
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                onClick={guardar}
+                disabled={guardando || !nuevaFecha}
+                title="Guardar"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  backgroundColor: COL.verdeScout,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: (guardando || !nuevaFecha) ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: 600,
+                  opacity: (guardando || !nuevaFecha) ? 0.5 : 1
+                }}
+              >
+                {guardando ? '...' : '✓ Guardar'}
+              </button>
+              {tienePromesa && (
+                <button
+                  onClick={borrarPromesa}
+                  disabled={guardando}
+                  title="Borrar promesa"
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '12px',
+                    backgroundColor: '#FEE2E2',
+                    color: COL.terracota,
+                    border: '1.5px solid #FECACA',
+                    borderRadius: '6px',
+                    cursor: guardando ? 'not-allowed' : 'pointer',
+                    fontFamily: 'Oswald, sans-serif',
+                    fontWeight: 600,
+                    opacity: guardando ? 0.5 : 1
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+              <button
+                onClick={cancelar}
+                disabled={guardando}
+                title="Cancelar"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  backgroundColor: '#E8DEC4',
+                  color: COL.textoPrincipal,
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: guardando ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontWeight: 600,
+                  opacity: guardando ? 0.5 : 1
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            marginTop: '2px'
+          }}>
+            <span style={{
+              fontFamily: 'Oswald, sans-serif',
+              fontSize: 'clamp(11px, 2.5vw, 13px)',
+              color: tienePromesa ? COL.verdeClaro : COL.textoSecundario
+            }}>
+              {tienePromesa ? formatFecha(fecha) : 'Sin promesa'}
+              {tienePromesa && padrino && (
+                <span style={{ marginLeft: '8px', color: COL.textoSecundario, fontStyle: 'italic' }}>
+                  · {padrino}
+                </span>
+              )}
+            </span>
+            {tienePromesa && ramaOriginal && (
+              <span style={{
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: 'clamp(10px, 2.2vw, 11px)',
+                color: COL.textoSecundario,
+                fontStyle: 'italic',
+                letterSpacing: '0.3px'
+              }}>
+                Promesa tomada en {ramaOriginal}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const BotonesInline = ({
   onCancelar,
