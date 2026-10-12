@@ -9,6 +9,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Perfil = lazy(() => import('./pages/Perfil'))
 const Admin = lazy(() => import('./pages/Admin'))
 const BeneficiarioDetalle = lazy(() => import('./pages/BeneficiarioDetalle'))
+const BeneficiarioNuevo = lazy(() => import('./pages/BeneficiarioNuevo'))
 const Pagos = lazy(() => import('./pages/Pagos'))
 const Planillas = lazy(() => import('./pages/Planillas'))
 const Inscripcion = lazy(() => import('./pages/Inscripcion'))
@@ -92,6 +93,13 @@ function AppRoutes() {
           <PrivateRoute>
             <Layout>
               <Admin />
+            </Layout>
+          </PrivateRoute>
+        } />
+                <Route path="/beneficiario/nuevo" element={
+          <PrivateRoute>
+            <Layout>
+              <BeneficiarioNuevo />
             </Layout>
           </PrivateRoute>
         } />

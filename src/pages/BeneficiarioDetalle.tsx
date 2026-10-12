@@ -6,6 +6,7 @@ import { formatearNombreConH } from '../utils/formatNombre'
 import { useSwipe } from '../hooks/useSwipe'
 import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
 import { calcularProgresionActual } from '../utils/calcularProgresion'
+import { generarPDFCaratula } from '../lib/generarPDFCaratula'
 
 interface Beneficiario {
   id: string
@@ -522,6 +523,8 @@ export default function BeneficiarioDetalle() {
   const [nuevoCampamentoOtro, setNuevoCampamentoOtro] = useState('')
   const [modalMode, setModalMode] = useState<'agregar' | 'crear'>('agregar')
 
+  const [datosPersonales, setDatosPersonales] = useState<any>(null)
+
   const [legajo, setLegajo] = useState<Legajo | null>(null)
   const [editandoLegajo, setEditandoLegajo] = useState(false)
   const [legajoForm, setLegajoForm] = useState<Legajo | null>(null)
@@ -672,14 +675,16 @@ export default function BeneficiarioDetalle() {
         unidadRes,
         caminantesRes,
         roversRes,
-        pagosRes
+        pagosRes,
+        datosPersonalesRes
       ] = await Promise.all([
         supabase.from('beneficiarios').select('*').eq('id', id).single(),
         supabase.from('progresion_manada').select('*').eq('beneficiario_id', id).maybeSingle(),
         supabase.from('progresion_unidad').select('*').eq('beneficiario_id', id).maybeSingle(),
         supabase.from('progresion_caminantes').select('*').eq('beneficiario_id', id).maybeSingle(),
         supabase.from('progresion_rovers').select('*').eq('beneficiario_id', id).maybeSingle(),
-        supabase.from('pagos').select('*').eq('beneficiario_id', id).order('fecha_pago', { ascending: false }).limit(30)
+        supabase.from('pagos').select('*').eq('beneficiario_id', id).order('fecha_pago', { ascending: false }).limit(30),
+        supabase.from('datos_personales_beneficiario').select('*').eq('beneficiario_id', id).maybeSingle()
       ])
 
       if (beneficiarioRes.error) throw beneficiarioRes.error
@@ -689,6 +694,7 @@ export default function BeneficiarioDetalle() {
       setProgresionUnidad(unidadRes.data || null)
       setProgresionCaminantes(caminantesRes.data || null)
       setProgresionRovers(roversRes.data || null)
+      setDatosPersonales(datosPersonalesRes.data || null)
       // ✅ Ordenar: fecha DESC → reciboNumero DESC
 const pagosOrdenados = (pagosRes.data || []).map((p: any) => ({
   ...p,
@@ -973,9 +979,41 @@ setPagos(pagosOrdenados)
                 fontWeight: '600',
                 color: COL.textoPrincipal,
                 textTransform: 'uppercase',
-                letterSpacing: '0.3px'
+                letterSpacing: '0.3px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap'
               }}>
-                {campo.label}
+                <span>{campo.label}</span>
+
+                {/* ✅ Botón "Carátula" al lado de Ficha de Datos Personales */}
+                {campo.key === 'ficha_datos_personales' && beneficiario && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      generarPDFCaratula(beneficiario, datosPersonales)
+                    }}
+                    title="Imprimir carátula del legajo"
+                    style={{
+                      padding: '3px 10px',
+                      fontSize: '10px',
+                      backgroundColor: '#24352A',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontFamily: 'Oswald, sans-serif',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0
+                    }}
+                  >
+                    🖨️ Carátula
+                  </button>
+                )}
               </div>
               {campo.fechaKey && fecha && (
                 <div style={{

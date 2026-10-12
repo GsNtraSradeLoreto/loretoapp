@@ -351,17 +351,51 @@ export default function Dashboard() {
         }}>
           🏠 Inicio
         </h1>
-        <p style={{
-          fontFamily: 'Oswald, sans-serif',
-          fontWeight: '400',
-          fontSize: 'clamp(11px, 2.5vw, 14px)',
-          color: '#7A7364',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          margin: 0
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+          flexWrap: 'wrap'
         }}>
-          ¡Hola {nombre}!
-        </p>
+          <p style={{
+            fontFamily: 'Oswald, sans-serif',
+            fontWeight: '400',
+            fontSize: 'clamp(11px, 2.5vw, 14px)',
+            color: '#7A7364',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            margin: 0
+          }}>
+            ¡Hola {nombre}!
+          </p>
+
+          {/* ✅ Botón "Nuevo Beneficiario" (solo Jefatura y SUPER_ADMIN) */}
+          {(isJefatura || isSuperAdmin) && (
+            <button
+              onClick={() => navigate('/beneficiario/nuevo')}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#24352A',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: '12px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              ➕ Nuevo Beneficiario
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tarjetas de estadísticas */}
