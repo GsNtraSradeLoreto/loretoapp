@@ -635,6 +635,7 @@ export default function BeneficiarioDetalle() {
     setLegajoAbierto(false)
     setEditandoInfoInline(false)
     setMessageInfoInline({ text: '', type: '' })
+    setAlertaLegajoCerrada(false)
   }, [id])
 
   const cargarListaIds = async () => {
@@ -771,11 +772,12 @@ setPagos(pagosOrdenados)
     }
   }, [beneficiario])
 
+  // ✅ Cargar el legajo apenas se tiene el beneficiario (para la alerta)
   useEffect(() => {
-    if (legajoAbierto && beneficiario) {
+    if (beneficiario) {
       cargarLegajo()
     }
-  }, [legajoAbierto, beneficiario, cargarLegajo])
+  }, [beneficiario, cargarLegajo])
 
   useEffect(() => {
     if (!beneficiario) return
@@ -2177,22 +2179,107 @@ setPagos(pagosOrdenados)
   }
 
   const edad = calcularEdad(beneficiario?.fecha_nacimiento || '')
+  // ✅ Devuelve la rama donde se hizo la Promesa Scout ('Unidad Scout', 'Caminantes', 'Rovers') o null
+  const getRamaOriginalPromesaScout = (): string | null => {
+    if (progresionUnidad?.tiene_promesa_scout && progresionUnidad.fecha_promesa_scout) return 'Unidad Scout'
+    if (progresionCaminantes?.tiene_promesa_scout && progresionCaminantes.fecha_promesa_scout) return 'Caminantes'
+    if (progresionRovers?.tiene_promesa_scout && progresionRovers.fecha_promesa_scout) return 'Rovers'
+    return null
+  }
+
+  // ✅ Papeles del legajo que faltan
+  const getPapelesFaltantes = (): string[] => {
+    const faltantes: string[] = []
+
+    // Definir la lista de papeles: [key, obsKey, label]
+    const papeles: Array<{ key: string; obsKey: string; label: string }> = [
+      // Papeles de nuestro Grupo
+      { key: 'ficha_datos_personales', obsKey: 'ficha_datos_personales_obs', label: '📋 Ficha de Datos Personales' },
+      { key: 'ficha_seguimiento', obsKey: 'ficha_seguimiento_obs', label: '📈 Ficha de Seguimiento' },
+      // Papeles de SAAC
+      { key: 'autorizacion_ingreso', obsKey: 'autorizacion_ingreso_obs', label: '📄 Autorización Ingreso' },
+      { key: 'salidas_cercanas', obsKey: 'salidas_cercanas_obs', label: '🚶 Salidas Cercanas' },
+      { key: 'uso_imagen', obsKey: 'uso_imagen_obs', label: '📸 Uso de Imagen' },
+      { key: 'declaracion_jurada_salud', obsKey: 'declaracion_jurada_salud_obs', label: '🏥 Declaración Jurada de Salud' },
+      { key: 'autorizacion_retirarse', obsKey: 'autorizacion_retirarse_obs', label: '🚪 Autorización Retirarse' },
+      // Papeles personales
+      { key: 'partida_nacimiento', obsKey: 'partida_nacimiento_obs', label: '📜 Partida de Nacimiento' },
+      { key: 'fotocopia_dni_beneficiario', obsKey: 'fotocopia_dni_beneficiario_obs', label: '🪪 Fotocopia DNI Beneficiario' },
+      { key: 'fotocopia_dni_padre', obsKey: 'fotocopia_dni_padre_obs', label: '👨 Fotocopia DNI Padre' },
+      { key: 'fotocopia_dni_madre', obsKey: 'fotocopia_dni_madre_obs', label: '👩 Fotocopia DNI Madre' },
+      { key: 'fotocopia_vacunas', obsKey: 'fotocopia_vacunas_obs', label: '💉 Fotocopia Vacunas' }
+    ]
+
+    // Si no hay legajo cargado todavía, faltan TODOS
+    if (!legajo) {
+      return papeles.map(p => p.label)
+    }
+
+    // Si hay legajo, chequear papel por papel
+    for (const papel of papeles) {
+      const tieneCheck = legajo[papel.key as keyof typeof legajo] === true
+      const tieneObs = typeof legajo[papel.obsKey as keyof typeof legajo] === 'string' &&
+                       (legajo[papel.obsKey as keyof typeof legajo] as string).trim() !== ''
+
+      // FALTA solo si NO está tildado Y NO tiene observación
+      if (!tieneCheck && !tieneObs) {
+        faltantes.push(papel.label)
+      }
+    }
+
+    return faltantes
+  }
+
+  // ✅ Estado para mostrar/ocultar el cartel de alerta
+  const [alertaLegajoCerrada, setAlertaLegajoCerrada] = useState(false)
 
   const getPromesaInfo = () => {
     if (!beneficiario) return { tiene: false, fecha: null as string | null, padrino: null as string | null }
     const rama = beneficiario.rama
-    if (rama === 'Manada' && progresionManada) {
-      return { tiene: progresionManada.tiene_promesa_manada, fecha: progresionManada.fecha_promesa_manada, padrino: null }
+
+    // ✅ 1) PROMESA DE MANADA — solo si está en Manada
+    if (rama === 'Manada') {
+      if (progresionManada?.tiene_promesa_manada) {
+        return {
+          tiene: true,
+          fecha: progresionManada.fecha_promesa_manada,
+          padrino: null
+        }
+      }
+      return { tiene: false, fecha: null, padrino: null }
     }
-    if (rama === 'Unidad Scout' && progresionUnidad) {
-      return { tiene: progresionUnidad.tiene_promesa_scout, fecha: progresionUnidad.fecha_promesa_scout, padrino: progresionUnidad.padrino_promesa_scout }
+
+    // ✅ 2) PROMESA SCOUT — cascada Unidad → Caminantes → Rovers
+    //    (sirve para Unidad, Caminantes y Rovers porque la promesa se hace una sola vez)
+
+    // ¿La hizo en Unidad?
+    if (progresionUnidad?.tiene_promesa_scout && progresionUnidad.fecha_promesa_scout) {
+      return {
+        tiene: true,
+        fecha: progresionUnidad.fecha_promesa_scout,
+        padrino: progresionUnidad.padrino_promesa_scout || null
+      }
     }
-    if (rama === 'Caminantes' && progresionCaminantes) {
-      return { tiene: progresionCaminantes.tiene_promesa_scout, fecha: progresionCaminantes.fecha_promesa_scout, padrino: progresionCaminantes.padrino_promesa_scout }
+
+    // ¿La hizo en Caminantes?
+    if (progresionCaminantes?.tiene_promesa_scout && progresionCaminantes.fecha_promesa_scout) {
+      return {
+        tiene: true,
+        fecha: progresionCaminantes.fecha_promesa_scout,
+        padrino: progresionCaminantes.padrino_promesa_scout || null
+      }
     }
-    if (rama === 'Rovers' && progresionRovers) {
-      return { tiene: progresionRovers.tiene_promesa_scout, fecha: progresionRovers.fecha_promesa_scout, padrino: progresionRovers.padrino_promesa_scout }
+
+    // ¿La hizo en Rovers?
+    if (progresionRovers?.tiene_promesa_scout && progresionRovers.fecha_promesa_scout) {
+      return {
+        tiene: true,
+        fecha: progresionRovers.fecha_promesa_scout,
+        padrino: progresionRovers.padrino_promesa_scout || null
+      }
     }
+
+    // No la hizo en ninguna
     return { tiene: false, fecha: null, padrino: null }
   }
 
@@ -2233,22 +2320,29 @@ setPagos(pagosOrdenados)
     let padrino = ''
 
     const rama = beneficiario.rama
-    if (rama === 'Manada' && progresionManada) {
-      tienePromesa = progresionManada.tiene_promesa_manada || false
-      fechaPromesa = progresionManada.fecha_promesa_manada || ''
-      padrino = ''
-    } else if (rama === 'Unidad Scout' && progresionUnidad) {
-      tienePromesa = progresionUnidad.tiene_promesa_scout || false
-      fechaPromesa = progresionUnidad.fecha_promesa_scout || ''
-      padrino = progresionUnidad.padrino_promesa_scout || ''
-    } else if (rama === 'Caminantes' && progresionCaminantes) {
-      tienePromesa = progresionCaminantes.tiene_promesa_scout || false
-      fechaPromesa = progresionCaminantes.fecha_promesa_scout || ''
-      padrino = progresionCaminantes.padrino_promesa_scout || ''
-    } else if (rama === 'Rovers' && progresionRovers) {
-      tienePromesa = progresionRovers.tiene_promesa_scout || false
-      fechaPromesa = progresionRovers.fecha_promesa_scout || ''
-      padrino = progresionRovers.padrino_promesa_scout || ''
+
+    if (rama === 'Manada') {
+      // Manada → Promesa de Manada
+      if (progresionManada) {
+        tienePromesa = progresionManada.tiene_promesa_manada || false
+        fechaPromesa = progresionManada.fecha_promesa_manada || ''
+        padrino = ''
+      }
+    } else {
+      // Unidad / Caminantes / Rovers → Promesa Scout en cascada
+      if (progresionUnidad?.tiene_promesa_scout && progresionUnidad.fecha_promesa_scout) {
+        tienePromesa = true
+        fechaPromesa = progresionUnidad.fecha_promesa_scout
+        padrino = progresionUnidad.padrino_promesa_scout || ''
+      } else if (progresionCaminantes?.tiene_promesa_scout && progresionCaminantes.fecha_promesa_scout) {
+        tienePromesa = true
+        fechaPromesa = progresionCaminantes.fecha_promesa_scout
+        padrino = progresionCaminantes.padrino_promesa_scout || ''
+      } else if (progresionRovers?.tiene_promesa_scout && progresionRovers.fecha_promesa_scout) {
+        tienePromesa = true
+        fechaPromesa = progresionRovers.fecha_promesa_scout
+        padrino = progresionRovers.padrino_promesa_scout || ''
+      }
     }
 
     setInfoInlineForm({
@@ -2288,29 +2382,35 @@ setPagos(pagosOrdenados)
       if (updateError) throw updateError
 
       const rama = beneficiario.rama
-      if (rama === 'Manada' && progresionManada) {
-        await supabase.from('progresion_manada').update({
-          tiene_promesa_manada: infoInlineForm.tiene_promesa,
-          fecha_promesa_manada: infoInlineForm.fecha_promesa || null
-        }).eq('id', progresionManada.id)
-      } else if (rama === 'Unidad Scout' && progresionUnidad) {
-        await supabase.from('progresion_unidad').update({
+
+      if (rama === 'Manada') {
+        // Promesa de Manada → siempre en progresion_manada
+        if (progresionManada) {
+          await supabase.from('progresion_manada').update({
+            tiene_promesa_manada: infoInlineForm.tiene_promesa,
+            fecha_promesa_manada: infoInlineForm.fecha_promesa || null
+          }).eq('id', progresionManada.id)
+        }
+      } else {
+        // Unidad / Caminantes / Rovers → Promesa Scout
+        // Guardamos en la rama donde se hizo originalmente (o en la actual si todavía no la hizo)
+
+        const ramaOriginal = getRamaOriginalPromesaScout()
+        const ramaDestino = ramaOriginal || rama
+
+        const datosPromesa = {
           tiene_promesa_scout: infoInlineForm.tiene_promesa,
           fecha_promesa_scout: infoInlineForm.fecha_promesa || null,
           padrino_promesa_scout: infoInlineForm.padrino.trim() || null
-        }).eq('id', progresionUnidad.id)
-      } else if (rama === 'Caminantes' && progresionCaminantes) {
-        await supabase.from('progresion_caminantes').update({
-          tiene_promesa_scout: infoInlineForm.tiene_promesa,
-          fecha_promesa_scout: infoInlineForm.fecha_promesa || null,
-          padrino_promesa_scout: infoInlineForm.padrino.trim() || null
-        }).eq('id', progresionCaminantes.id)
-      } else if (rama === 'Rovers' && progresionRovers) {
-        await supabase.from('progresion_rovers').update({
-          tiene_promesa_scout: infoInlineForm.tiene_promesa,
-          fecha_promesa_scout: infoInlineForm.fecha_promesa || null,
-          padrino_promesa_scout: infoInlineForm.padrino.trim() || null
-        }).eq('id', progresionRovers.id)
+        }
+
+        if (ramaDestino === 'Unidad Scout' && progresionUnidad) {
+          await supabase.from('progresion_unidad').update(datosPromesa).eq('id', progresionUnidad.id)
+        } else if (ramaDestino === 'Caminantes' && progresionCaminantes) {
+          await supabase.from('progresion_caminantes').update(datosPromesa).eq('id', progresionCaminantes.id)
+        } else if (ramaDestino === 'Rovers' && progresionRovers) {
+          await supabase.from('progresion_rovers').update(datosPromesa).eq('id', progresionRovers.id)
+        }
       }
 
       setMessageInfoInline({ text: '✅ Información actualizada', type: 'success' })
@@ -2444,6 +2544,70 @@ setPagos(pagosOrdenados)
           </div>
         </div>
       </div>
+      {/* ✅ CARTEL DE ALERTA: FALTAN PAPELES DEL LEGAJO */}
+      {(() => {
+        const faltantes = getPapelesFaltantes()
+        if (faltantes.length === 0 || alertaLegajoCerrada) return null
+
+        return (
+          <div style={{
+            backgroundColor: '#FEF3C7',
+            border: '2px solid #F59E0B',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            marginBottom: '16px',
+            fontFamily: 'Oswald, sans-serif',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  color: '#92400E',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '6px'
+                }}>
+                  ⚠️ Faltan papeles del legajo ({faltantes.length})
+                </div>
+                <div style={{
+                  fontSize: '12px',
+                  color: '#92400E',
+                  lineHeight: 1.5
+                }}>
+                  {faltantes.join(' · ')}
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: '#92400E',
+                  marginTop: '8px',
+                  fontStyle: 'italic',
+                  opacity: 0.85
+                }}>
+                  💡 Si un papel no aplica (por ejemplo, no tiene padre), escribí una observación en ese papel y desaparece de esta lista.
+                </div>
+              </div>
+              <button
+                onClick={() => setAlertaLegajoCerrada(true)}
+                title="Cerrar"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#92400E',
+                  fontSize: '18px',
+                  padding: '0 4px',
+                  lineHeight: 1,
+                  flexShrink: 0
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ✅ CUADRITO INLINE: PASAR DE RAMA */}
       {showPaseRama && isJefatura && beneficiario.rama !== 'RoverPartida' && (
@@ -2978,6 +3142,16 @@ setPagos(pagosOrdenados)
           <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
             {beneficiario.rama === 'Manada' ? 'Promesa de Manada' : 'Promesa Scout'}
           </p>
+          {beneficiario.rama !== 'Manada' && getRamaOriginalPromesaScout() && getRamaOriginalPromesaScout() !== beneficiario.rama && !editandoInfoInline && (
+            <p style={{
+              fontSize: '10px',
+              color: COL.textoSecundario,
+              fontStyle: 'italic',
+              margin: '4px 0 0 0'
+            }}>
+              Tomada en {getRamaOriginalPromesaScout()}
+            </p>
+          )}
           {editandoInfoInline ? (
             <div style={{ marginTop: '6px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '6px' }}>
