@@ -3625,6 +3625,60 @@ setPagos(pagosOrdenados)
           →
         </span>
       </div>
+            {/* ============================================ */}
+      {/* BLOQUE 5: FICHA COMPLETA (todos los datos) */}
+      {/* ============================================ */}
+      <div
+        onClick={() => navigate(`/beneficiario/${id}/datos`)}
+        style={{
+          backgroundColor: '#FFFFFF',
+          border: `2px solid ${COL.bordeSuave}`,
+          borderRadius: '16px',
+          padding: '20px',
+          marginBottom: '16px',
+          cursor: 'pointer',
+          fontFamily: 'Oswald, sans-serif',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          transition: 'all 0.2s'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = '#F0F7F0'
+          e.currentTarget.style.borderColor = COL.verdeClaro
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = '#FFFFFF'
+          e.currentTarget.style.borderColor = COL.bordeSuave
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 'clamp(15px, 4vw, 18px)',
+            fontWeight: '700',
+            color: COL.verdeClaro,
+            textTransform: 'uppercase',
+            letterSpacing: '1px'
+          }}>
+            📇 Ficha completa
+          </div>
+          <div style={{
+            fontSize: 'clamp(11px, 2.5vw, 13px)',
+            color: COL.textoSecundario,
+            marginTop: '4px'
+          }}>
+            Datos personales · Madre · Padre · Domicilio · Salud
+          </div>
+        </div>
+        <span style={{
+          fontSize: '24px',
+          color: COL.verdeClaro,
+          flexShrink: 0
+        }}>
+          →
+        </span>
+      </div>
     </div>
 
     {/* ============================================ */}
