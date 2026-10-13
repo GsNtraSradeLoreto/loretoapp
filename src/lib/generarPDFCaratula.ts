@@ -124,75 +124,73 @@ export const generarPDFCaratula = async (
   const anchoUtil = ancho - margen * 2
 
   // ============================================
-  // HEADER
+  // HEADER (compactado)
   // ============================================
-  let y = 10
+  let y = 8
 
-  // Logo (arriba a la izquierda) — 30x30mm
+  // Logo (arriba a la izquierda) — 20x20mm
   try {
     const logoBase64 = await cargarImagenBase64('/logo-grupo.png')
-    doc.addImage(logoBase64, 'PNG', margen, y, 30, 30)
+    doc.addImage(logoBase64, 'PNG', margen, y, 20, 20)
   } catch (err) {
     console.warn('No se pudo cargar el logo:', err)
   }
 
-  // Datos del grupo (centrado)
+  // Datos del grupo (centrado, compactado)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
+  doc.setFontSize(10)
   doc.setTextColor(COL.verdeScout)
-  doc.text('Grupo Scout Ntro. Sra. de Loreto', ancho / 2, y + 6, { align: 'center' })
+  doc.text('Grupo Scout Ntra. Sra. de Loreto', ancho / 2, y + 5, { align: 'center' })
 
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.text('Colón 1341 (C.P. 1674) - Villa Raffo', ancho / 2, y + 11, { align: 'center' })
-  doc.text('Distrito 1 - Zona 9', ancho / 2, y + 15, { align: 'center' })
-  doc.text('Tres de Febrero - Buenos Aires', ancho / 2, y + 19, { align: 'center' })
+  doc.setFontSize(8)
+  doc.text('Colón 1341 (C.P. 1674) - Villa Raffo', ancho / 2, y + 9.5, { align: 'center' })
+  doc.text('Distrito 1 - Zona 9', ancho / 2, y + 13, { align: 'center' })
+  doc.text('Tres de Febrero - Buenos Aires', ancho / 2, y + 16.5, { align: 'center' })
 
   // Fecha (arriba a la derecha)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
+  doc.setFontSize(8)
   doc.setTextColor(COL.verdeScout)
-  doc.text(`Villa Raffo, ${formatFechaHoy()}`, ancho - margen, y + 6, { align: 'right' })
+  doc.text(`Villa Raffo, ${formatFechaHoy()}`, ancho - margen, y + 5, { align: 'right' })
 
   // Versión (arriba a la derecha, debajo de la fecha)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
+  doc.setFontSize(5.5)
   doc.setTextColor(100, 100, 100)
-  doc.text('V6.5-2025', ancho - margen, y + 11, { align: 'right' })
+  doc.text('V7.10-2026', ancho - margen, y + 9, { align: 'right' })
 
   // Línea horizontal después del header
-  y = y + 34
+  y = y + 22
   doc.setDrawColor(COL.verdeScout)
   doc.setLineWidth(0.5)
   doc.line(margen, y, ancho - margen, y)
 
-  y += 6
+  y += 4
 
   // ============================================
   // FUNCIÓN AUXILIAR: dibujar bloque con título
   // ============================================
   const dibujarTituloBloque = (titulo: string, yActual: number) => {
     doc.setFillColor(COL.verdeScout)
-    doc.rect(margen, yActual, anchoUtil, 7, 'F')
+    doc.rect(margen, yActual, anchoUtil, 5.5, 'F')
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9)
+    doc.setFontSize(8)
     doc.setTextColor('#FFFFFF')
-    doc.text(titulo, margen + 2, yActual + 5)
-    return yActual + 7
+    doc.text(titulo, margen + 2, yActual + 4)
+    return yActual + 5.5
   }
 
   // ============================================
   // FUNCIÓN AUXILIAR: dibujar fila con campos
-  // Recibe: label, valor, ancho del label, ancho total
   // ============================================
   const dibujarFila = (
     campos: Array<{ label: string; valor: string; ancho: number }>,
     yActual: number,
-    alto: number = 10
+    alto: number = 9
   ) => {
     let xActual = margen
 
-    // Primero: fondos de los labels
     for (const campo of campos) {
       doc.setFillColor(COL.crema)
       doc.rect(xActual, yActual, campo.ancho, alto / 2, 'F')
@@ -202,18 +200,18 @@ export const generarPDFCaratula = async (
 
       // Label arriba
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(7)
+      doc.setFontSize(6.5)
       doc.setTextColor(COL.verdeScout)
       const labelTexto = doc.splitTextToSize(campo.label, campo.ancho - 4)
-      doc.text(labelTexto, xActual + 2, yActual + 3)
+      doc.text(labelTexto, xActual + 2, yActual + 2.8)
 
       // Valor abajo
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
+      doc.setFontSize(7.5)
       doc.setTextColor(0, 0, 0)
       const valorTexto = doc.splitTextToSize(campo.valor || '', campo.ancho - 4)
       if (valorTexto.length > 0) {
-        doc.text(valorTexto.slice(0, 2), xActual + 2, yActual + alto / 2 + 3)
+        doc.text(valorTexto.slice(0, 2), xActual + 2, yActual + alto / 2 + 2.8)
       }
 
       xActual += campo.ancho
@@ -227,13 +225,11 @@ export const generarPDFCaratula = async (
   // ============================================
   y = dibujarTituloBloque('DATOS PERSONALES DEL BENEFICIARIO', y)
 
-  // Fila 1: Apellidos y Nombres (ancho completo - fecha nac al lado)
   y = dibujarFila([
     { label: 'Apellidos y Nombres', valor: `${beneficiario.apellido || ''} ${beneficiario.nombre || ''}`.trim(), ancho: anchoUtil * 0.65 },
     { label: 'Fecha de Nacimiento', valor: formatFecha(beneficiario.fecha_nacimiento), ancho: anchoUtil * 0.35 }
-  ], y, 12)
+  ], y, 11)
 
-  // Fila 2: N° Documento / Nacionalidad / Religión
   const religionFinal = datos?.religion === 'Otro'
     ? (datos?.religion_otro || '')
     : (datos?.religion || '')
@@ -242,9 +238,8 @@ export const generarPDFCaratula = async (
     { label: 'N° Documento', valor: datos?.dni || '', ancho: anchoUtil * 0.35 },
     { label: 'Nacionalidad', valor: datos?.nacionalidad || '', ancho: anchoUtil * 0.30 },
     { label: 'Religión', valor: religionFinal, ancho: anchoUtil * 0.35 }
-  ], y, 12)
+  ], y, 11)
 
-  // Fila 3: Domicilio (calle) + Localidad + Cód. Post.
   const domicilioCompleto = [
     datos?.direccion_calle,
     datos?.direccion_numero,
@@ -255,17 +250,16 @@ export const generarPDFCaratula = async (
     { label: 'Domicilio (Calle - Nro. - Piso-Dpto.)', valor: domicilioCompleto, ancho: anchoUtil * 0.55 },
     { label: 'Localidad', valor: datos?.localidad || '', ancho: anchoUtil * 0.25 },
     { label: 'Cód. Post.', valor: datos?.codigo_postal || '', ancho: anchoUtil * 0.20 }
-  ], y, 12)
+  ], y, 11)
 
-  // Fila 4: Teléfono Emergencia + Pertenece a + Obra social
   y = dibujarFila([
     { label: 'Teléfono Emergencia', valor: datos?.telefono_emergencia || '', ancho: anchoUtil * 0.35 },
     { label: 'Pertenece a', valor: datos?.telefono_emergencia_pertenece_a || '', ancho: anchoUtil * 0.30 },
     { label: 'Obra Social', valor: datos?.obra_social || '', ancho: anchoUtil * 0.20 },
     { label: 'N° Afiliado', valor: datos?.obra_social_numero || '', ancho: anchoUtil * 0.15 }
-  ], y, 12)
+  ], y, 11)
 
-  y += 3
+  y += 2
 
   // ============================================
   // BLOQUE 2 — DATOS DE LA MADRE
@@ -275,21 +269,21 @@ export const generarPDFCaratula = async (
   y = dibujarFila([
     { label: 'Apellidos y Nombres', valor: datos?.madre_apellido_nombre || '', ancho: anchoUtil * 0.65 },
     { label: 'Fecha de Nacimiento', valor: formatFecha(datos?.madre_fecha_nacimiento), ancho: anchoUtil * 0.35 }
-  ], y, 12)
+  ], y, 11)
 
   y = dibujarFila([
     { label: 'N° Documento', valor: datos?.madre_dni || '', ancho: anchoUtil * 0.35 },
     { label: 'Nacionalidad', valor: datos?.madre_nacionalidad || '', ancho: anchoUtil * 0.30 },
     { label: 'Ocupación', valor: datos?.madre_ocupacion || '', ancho: anchoUtil * 0.35 }
-  ], y, 12)
+  ], y, 11)
 
   y = dibujarFila([
     { label: 'Domicilio', valor: datos?.madre_domicilio || '', ancho: anchoUtil * 0.55 },
     { label: 'Localidad', valor: datos?.madre_localidad || '', ancho: anchoUtil * 0.25 },
     { label: 'Cód. Post.', valor: datos?.madre_codigo_postal || '', ancho: anchoUtil * 0.20 }
-  ], y, 12)
+  ], y, 11)
 
-  y += 3
+  y += 2
 
   // ============================================
   // BLOQUE 3 — DATOS DEL PADRE
@@ -299,21 +293,21 @@ export const generarPDFCaratula = async (
   y = dibujarFila([
     { label: 'Apellidos y Nombres', valor: datos?.padre_apellido_nombre || '', ancho: anchoUtil * 0.65 },
     { label: 'Fecha de Nacimiento', valor: formatFecha(datos?.padre_fecha_nacimiento), ancho: anchoUtil * 0.35 }
-  ], y, 12)
+  ], y, 11)
 
   y = dibujarFila([
     { label: 'N° Documento', valor: datos?.padre_dni || '', ancho: anchoUtil * 0.35 },
     { label: 'Nacionalidad', valor: datos?.padre_nacionalidad || '', ancho: anchoUtil * 0.30 },
     { label: 'Ocupación', valor: datos?.padre_ocupacion || '', ancho: anchoUtil * 0.35 }
-  ], y, 12)
+  ], y, 11)
 
   y = dibujarFila([
     { label: 'Domicilio', valor: datos?.padre_domicilio || '', ancho: anchoUtil * 0.55 },
     { label: 'Localidad', valor: datos?.padre_localidad || '', ancho: anchoUtil * 0.25 },
     { label: 'Cód. Post.', valor: datos?.padre_codigo_postal || '', ancho: anchoUtil * 0.20 }
-  ], y, 12)
+  ], y, 11)
 
-  y += 3
+  y += 2
 
   // ============================================
   // BLOQUE 4 — ADULTO A CARGO
@@ -322,12 +316,12 @@ export const generarPDFCaratula = async (
 
   y = dibujarFila([
     { label: 'Adulto a cargo', valor: datos?.adulto_a_cargo || '', ancho: anchoUtil }
-  ], y, 12)
+  ], y, 11)
 
-  y += 3
+  y += 2
 
   // ============================================
-  // BLOQUE 5 — SE ADJUNTA AL LEGAJO
+  // BLOQUE 5 — SE ADJUNTA AL LEGAJO (compactado)
   // ============================================
   y = dibujarTituloBloque('SE ADJUNTA AL LEGAJO LA SIGUIENTE DOCUMENTACIÓN:', y)
 
@@ -344,14 +338,13 @@ export const generarPDFCaratula = async (
     'Otro:'
   ]
 
-  // Sub-encabezado de la tabla
   const anchoTablaDocs = anchoUtil * 0.65
   const anchoRevisiones = anchoUtil * 0.35
   const xDocs = margen
   const xRevisiones = margen + anchoTablaDocs
 
-  // Fila del sub-encabezado (arriba de los docs)
-  const altoSubHeader = 6
+  // Fila del sub-encabezado
+  const altoSubHeader = 5
   doc.setFillColor(COL.crema)
   doc.rect(xRevisiones, y, anchoRevisiones, altoSubHeader, 'F')
   doc.setDrawColor(COL.verdeScout)
@@ -359,14 +352,13 @@ export const generarPDFCaratula = async (
   doc.rect(xRevisiones, y, anchoRevisiones, altoSubHeader, 'S')
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7)
+  doc.setFontSize(6.5)
   doc.setTextColor(COL.verdeScout)
-  doc.text('Revisiones', xRevisiones + anchoRevisiones / 2, y + 4, { align: 'center' })
+  doc.text('Revisiones', xRevisiones + anchoRevisiones / 2, y + 3.5, { align: 'center' })
 
   y += altoSubHeader
 
-  // Filas de documentos
-  const altoFilaDoc = 6
+  const altoFilaDoc = 4.5
   const anchoColRevision = anchoRevisiones / 4
 
   for (const docTexto of documentos) {
@@ -375,9 +367,9 @@ export const generarPDFCaratula = async (
     doc.setLineWidth(0.3)
     doc.rect(xDocs, y, anchoTablaDocs, altoFilaDoc, 'S')
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
+    doc.setFontSize(7)
     doc.setTextColor(0, 0, 0)
-    doc.text(docTexto, xDocs + 2, y + 4)
+    doc.text(docTexto, xDocs + 2, y + 3)
 
     // 4 columnas de revisiones
     for (let i = 0; i < 4; i++) {
@@ -388,46 +380,45 @@ export const generarPDFCaratula = async (
     y += altoFilaDoc
   }
 
-  y += 3
+  y += 2
 
   // ============================================
   // BLOQUE 6 — ALERGIAS
   // ============================================
   y = dibujarTituloBloque('ALERGIAS O DIETA ESPECIAL:', y)
 
-  // Caja para escribir (vacía, con alto fijo)
+  const altoAlergias = 9
   doc.setDrawColor(COL.verdeScout)
   doc.setLineWidth(0.3)
-  doc.rect(margen, y, anchoUtil, 12, 'S')
+  doc.rect(margen, y, anchoUtil, altoAlergias, 'S')
 
-  // Si tiene alergias cargadas, las pongo
   if (datos?.alergias_dieta) {
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
+    doc.setFontSize(8)
     doc.setTextColor(0, 0, 0)
     const textoAlergias = doc.splitTextToSize(datos.alergias_dieta, anchoUtil - 4)
-    doc.text(textoAlergias.slice(0, 2), margen + 2, y + 5)
+    doc.text(textoAlergias.slice(0, 2), margen + 2, y + 4)
   }
 
-  y += 12 + 3
+  y += altoAlergias + 2
 
   // ============================================
   // BLOQUE 7 — OTRA INFORMACIÓN
   // ============================================
   y = dibujarTituloBloque('ALGUNA OTRA INFORMACIÓN DE IMPORTANCIA DEL MENOR QUE QUIERA MENCIONAR:', y)
 
-  // Caja grande (para llenar a mano)
-  const altoUltimaCaja = Math.max(20, 297 - margen - y) // usar lo que queda de la hoja
+  // Alto de la caja = lo que queda de la hoja (con mínimo 12mm)
+  const altoUltimaCaja = Math.max(12, 297 - margen - y)
   doc.setDrawColor(COL.verdeScout)
   doc.setLineWidth(0.3)
   doc.rect(margen, y, anchoUtil, altoUltimaCaja, 'S')
 
   if (datos?.info_importancia_menor) {
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
+    doc.setFontSize(8)
     doc.setTextColor(0, 0, 0)
     const textoInfo = doc.splitTextToSize(datos.info_importancia_menor, anchoUtil - 4)
-    doc.text(textoInfo, margen + 2, y + 5)
+    doc.text(textoInfo, margen + 2, y + 4)
   }
 
   // ============================================
