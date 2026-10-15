@@ -136,7 +136,8 @@ export default function BeneficiarioNuevo() {
     menor_obra_social_numero: '',
     menor_colegio: '',
     menor_estudios_cursados: '',
-    menor_alergias_dieta: '',
+    menor_alergias: '',
+    menor_dieta_especial: '',
 
     // Extras
     tiene_uniforme: false,
@@ -302,7 +303,8 @@ export default function BeneficiarioNuevo() {
           obra_social_numero: form.menor_obra_social_numero.trim() || null,
           colegio: form.menor_colegio.trim() || null,
           estudios_cursados: form.menor_estudios_cursados.trim() || null,
-          alergias_dieta: form.menor_alergias_dieta.trim() || null,
+          alergias: form.menor_alergias.trim() || null,
+          dieta_especial: form.menor_dieta_especial.trim() || null,
           madre_apellido_nombre: form.madre_apellido_nombre.trim() || null,
           madre_dni: form.madre_dni.trim() || null,
           madre_nacionalidad: form.madre_nacionalidad.trim() || null,
@@ -793,12 +795,27 @@ export default function BeneficiarioNuevo() {
             <div style={{ ...gridFullStyle, marginTop: '14px' }}>
               <div>
                 <label style={labelStyle}>
-                  Alergias o Dieta Especial
+                  Alergias
                   <span style={aclaracionStyle}>(si no tiene, escribir "Ninguna")</span>
                 </label>
                 <textarea
-                  value={form.menor_alergias_dieta}
-                  onChange={(e) => setCampo('menor_alergias_dieta', e.target.value)}
+                  value={form.menor_alergias}
+                  onChange={(e) => setCampo('menor_alergias', e.target.value)}
+                  rows={2}
+                  style={{ ...inputStyle, resize: 'vertical' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ ...gridFullStyle, marginTop: '14px' }}>
+              <div>
+                <label style={labelStyle}>
+                  Dieta Especial
+                  <span style={aclaracionStyle}>(si no tiene, escribir "Ninguna")</span>
+                </label>
+                <textarea
+                  value={form.menor_dieta_especial}
+                  onChange={(e) => setCampo('menor_dieta_especial', e.target.value)}
                   rows={2}
                   style={{ ...inputStyle, resize: 'vertical' }}
                 />

@@ -47,7 +47,8 @@ interface DatosPersonales {
   obra_social_numero: string
   colegio: string
   estudios_cursados: string
-  alergias_dieta: string
+  alergias: string
+  dieta_especial: string
   madre_apellido_nombre: string
   madre_dni: string
   madre_nacionalidad: string
@@ -332,7 +333,8 @@ export default function BeneficiarioDatos() {
         obra_social_numero: datosRes.data?.obra_social_numero || '',
         colegio: datosRes.data?.colegio || '',
         estudios_cursados: datosRes.data?.estudios_cursados || '',
-        alergias_dieta: datosRes.data?.alergias_dieta || '',
+        alergias: datosRes.data?.alergias || '',
+        dieta_especial: datosRes.data?.dieta_especial || '',
         madre_apellido_nombre: datosRes.data?.madre_apellido_nombre || '',
         madre_dni: datosRes.data?.madre_dni || '',
         madre_nacionalidad: datosRes.data?.madre_nacionalidad || '',
@@ -858,7 +860,8 @@ export default function BeneficiarioDatos() {
           <Campo label="N° de afiliado" valor={valores.obra_social_numero} editando={editando} onChange={v => setCampo('obra_social_numero', v)} />
           <Campo label="Colegio" valor={valores.colegio} editando={editando} onChange={v => setCampo('colegio', v)} />
           <Campo label="Estudios cursados" valor={valores.estudios_cursados} editando={editando} onChange={v => setCampo('estudios_cursados', v)} />
-          <Campo label="Alergias o dieta especial" valor={valores.alergias_dieta} editando={editando} onChange={v => setCampo('alergias_dieta', v)} textarea spanFull />
+          <Campo label="Alergias" valor={valores.alergias} editando={editando} onChange={v => setCampo('alergias', v)} textarea spanFull />
+          <Campo label="Dieta especial" valor={valores.dieta_especial} editando={editando} onChange={v => setCampo('dieta_especial', v)} textarea spanFull />
         </div>
       </Seccion>
 

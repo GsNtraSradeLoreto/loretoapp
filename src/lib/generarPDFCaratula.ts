@@ -31,7 +31,8 @@ interface DatosPersonales {
   obra_social_numero?: string | null
   colegio?: string | null
   estudios_cursados?: string | null
-  alergias_dieta?: string | null
+  alergias?: string | null
+  dieta_especial?: string | null
   // Madre
   madre_apellido_nombre?: string | null
   madre_dni?: string | null
@@ -385,22 +386,42 @@ export const generarPDFCaratula = async (
   // ============================================
   // BLOQUE 6 — ALERGIAS
   // ============================================
-  y = dibujarTituloBloque('ALERGIAS O DIETA ESPECIAL:', y)
+  y = dibujarTituloBloque('ALERGIAS:', y)
 
   const altoAlergias = 9
   doc.setDrawColor(COL.verdeScout)
   doc.setLineWidth(0.3)
   doc.rect(margen, y, anchoUtil, altoAlergias, 'S')
 
-  if (datos?.alergias_dieta) {
+  if (datos?.alergias) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     doc.setTextColor(0, 0, 0)
-    const textoAlergias = doc.splitTextToSize(datos.alergias_dieta, anchoUtil - 4)
+    const textoAlergias = doc.splitTextToSize(datos.alergias, anchoUtil - 4)
     doc.text(textoAlergias.slice(0, 2), margen + 2, y + 4)
   }
 
   y += altoAlergias + 2
+
+  // ============================================
+  // BLOQUE 6b — DIETA ESPECIAL
+  // ============================================
+  y = dibujarTituloBloque('DIETA ESPECIAL:', y)
+
+  const altoDieta = 9
+  doc.setDrawColor(COL.verdeScout)
+  doc.setLineWidth(0.3)
+  doc.rect(margen, y, anchoUtil, altoDieta, 'S')
+
+  if (datos?.dieta_especial) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(0, 0, 0)
+    const textoDieta = doc.splitTextToSize(datos.dieta_especial, anchoUtil - 4)
+    doc.text(textoDieta.slice(0, 2), margen + 2, y + 4)
+  }
+
+  y += altoDieta + 2
 
   // ============================================
   // BLOQUE 7 — OTRA INFORMACIÓN

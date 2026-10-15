@@ -122,7 +122,8 @@ export default function Inscripcion() {
     menor_obra_social_numero: '',
     menor_colegio: '',
     menor_estudios_cursados: '',
-    menor_alergias_dieta: '',
+    menor_alergias: '',
+    menor_dieta_especial: '',
 
     // Madre
     madre_apellido_nombre: '',
@@ -314,7 +315,8 @@ export default function Inscripcion() {
         menor_obra_social_numero: form.menor_obra_social_numero.trim() || null,
         menor_colegio: form.menor_colegio.trim(),
         menor_estudios_cursados: form.menor_estudios_cursados.trim(),
-        menor_alergias_dieta: form.menor_alergias_dieta.trim() || null,
+        menor_alergias: form.menor_alergias.trim() || null,
+        menor_dieta_especial: form.menor_dieta_especial.trim() || null,
         menor_foto_url: fotoUrl,
 
         madre_apellido_nombre: form.madre_apellido_nombre.trim(),
@@ -793,14 +795,31 @@ export default function Inscripcion() {
             <div style={{ ...gridFullStyle, marginTop: '14px' }}>
               <div>
                 <label style={labelStyle}>
-                  Alergias o Dieta Especial
+                  Alergias *
                   <span style={aclaracionStyle}>(si no tiene, escribir "Ninguna")</span>
                 </label>
                 <textarea
-                  value={form.menor_alergias_dieta}
-                  onChange={(e) => setCampo('menor_alergias_dieta', e.target.value)}
+                  value={form.menor_alergias}
+                  onChange={(e) => setCampo('menor_alergias', e.target.value)}
                   rows={2}
                   style={{ ...inputStyle, resize: 'vertical' }}
+                  required
+                />
+              </div>
+            </div>
+
+            <div style={{ ...gridFullStyle, marginTop: '14px' }}>
+              <div>
+                <label style={labelStyle}>
+                  Dieta Especial *
+                  <span style={aclaracionStyle}>(si no tiene, escribir "Ninguna")</span>
+                </label>
+                <textarea
+                  value={form.menor_dieta_especial}
+                  onChange={(e) => setCampo('menor_dieta_especial', e.target.value)}
+                  rows={2}
+                  style={{ ...inputStyle, resize: 'vertical' }}
+                  required
                 />
               </div>
             </div>

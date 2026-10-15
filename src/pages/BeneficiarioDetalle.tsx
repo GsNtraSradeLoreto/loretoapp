@@ -7,6 +7,7 @@ import { useSwipe } from '../hooks/useSwipe'
 import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
 import { calcularProgresionActual } from '../utils/calcularProgresion'
 import { generarPDFCaratula } from '../lib/generarPDFCaratula'
+import { generarPDFFichaSeguimiento } from '../lib/generarPDFFichaSeguimiento'
 
 interface Beneficiario {
   id: string
@@ -785,6 +786,13 @@ setPagos(pagosOrdenados)
     }
   }, [beneficiario, cargarLegajo])
 
+  // ✅ Cargar campamentos cuando se abre el legajo (para el PDF de Ficha)
+  useEffect(() => {
+    if (legajoAbierto && beneficiario) {
+      cargarCampamentos()
+    }
+  }, [legajoAbierto, beneficiario])
+
   useEffect(() => {
     if (!beneficiario) return
 
@@ -1012,6 +1020,42 @@ setPagos(pagosOrdenados)
                     }}
                   >
                     🖨️ Carátula
+                  </button>
+                )}
+                                {/* ✅ Botón "Ficha" al lado de Ficha de Seguimiento */}
+                {campo.key === 'ficha_seguimiento' && beneficiario && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      generarPDFFichaSeguimiento(
+                        beneficiario,
+                        {
+                          manada: progresionManada,
+                          unidad: progresionUnidad,
+                          caminantes: progresionCaminantes,
+                          rovers: progresionRovers
+                        },
+                        campamentos
+                      )
+                    }}
+                    title="Imprimir ficha de seguimiento (Vida Scout)"
+                    style={{
+                      padding: '3px 10px',
+                      fontSize: '10px',
+                      backgroundColor: '#24352A',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontFamily: 'Oswald, sans-serif',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0
+                    }}
+                  >
+                    🖨️ Ficha
                   </button>
                 )}
               </div>
@@ -3280,36 +3324,54 @@ setPagos(pagosOrdenados)
             )}
           </div>
         )}
+        {/* ✅ Dieta especial (solo si tiene contenido) */}
+        {datosPersonales?.dieta_especial && datosPersonales.dieta_especial.trim() !== '' && (
+          <div style={{ marginBottom: '12px' }}>
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
+              🍽️ Dieta Especial
+            </p>
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0', lineHeight: 1.5 }}>
+              {datosPersonales.dieta_especial}
+            </p>
+          </div>
+        )}
 
-        {/* Observaciones */}
-        <div style={{ marginBottom: '0' }}>
-          <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Observaciones</p>
-          {editandoInfoInline ? (
-            <textarea
-              value={infoInlineForm.observaciones}
-              onChange={(e) => setInfoInlineForm({ ...infoInlineForm, observaciones: e.target.value })}
-              rows={3}
-              placeholder="Observaciones sobre el beneficiario..."
-              disabled={savingInfoInline}
-              style={{
-                width: '100%', marginTop: '6px', padding: '8px 10px', fontSize: '13px',
-                border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
-                resize: 'vertical', boxSizing: 'border-box'
-              }}
-            />
-          ) : (
-            beneficiario.observaciones && beneficiario.observaciones.trim() !== '' ? (
+        {/* ✅ Alergias (solo si tiene contenido) */}
+        {datosPersonales?.alergias && datosPersonales.alergias.trim() !== '' && (
+          <div style={{ marginBottom: '12px' }}>
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
+              ⚠️ Alergias
+            </p>
+            <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0', lineHeight: 1.5 }}>
+              {datosPersonales.alergias}
+            </p>
+          </div>
+        )}
+        {/* Observaciones (solo si tiene contenido, o si está editando) */}
+        {((beneficiario.observaciones && beneficiario.observaciones.trim() !== '') || editandoInfoInline) && (
+          <div style={{ marginBottom: '0' }}>
+            <p style={{ fontSize: '11px', color: COL.textoSecundario, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Observaciones</p>
+            {editandoInfoInline ? (
+              <textarea
+                value={infoInlineForm.observaciones}
+                onChange={(e) => setInfoInlineForm({ ...infoInlineForm, observaciones: e.target.value })}
+                rows={3}
+                placeholder="Observaciones sobre el beneficiario..."
+                disabled={savingInfoInline}
+                style={{
+                  width: '100%', marginTop: '6px', padding: '8px 10px', fontSize: '13px',
+                  border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white',
+                  resize: 'vertical', boxSizing: 'border-box'
+                }}
+              />
+            ) : (
               <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoPrincipal, margin: '4px 0 0 0', lineHeight: 1.5 }}>
                 {beneficiario.observaciones}
               </p>
-            ) : (
-              <p style={{ fontSize: 'clamp(13px, 3vw, 15px)', color: COL.textoSecundario, margin: '4px 0 0 0', fontStyle: 'italic' }}>
-                Sin observaciones
-              </p>
-            )
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </Seccion>
 
       {/* ============================================ */}

@@ -37,7 +37,8 @@ interface Solicitud {
   menor_obra_social_numero: string | null
   menor_colegio: string
   menor_estudios_cursados: string
-  menor_alergias_dieta: string | null
+  menor_alergias: string | null
+  menor_dieta_especial: string | null
   menor_foto_url: string | null
 
   madre_apellido_nombre: string
@@ -280,7 +281,8 @@ export default function Solicitudes() {
           obra_social_numero: solicitud.menor_obra_social_numero,
           colegio: solicitud.menor_colegio,
           estudios_cursados: solicitud.menor_estudios_cursados,
-          alergias_dieta: solicitud.menor_alergias_dieta,
+          alergias: solicitud.menor_alergias,
+          dieta_especial: solicitud.menor_dieta_especial,
           madre_apellido_nombre: solicitud.madre_apellido_nombre,
           madre_dni: solicitud.madre_dni,
           madre_nacionalidad: solicitud.madre_nacionalidad,
@@ -742,7 +744,8 @@ export default function Solicitudes() {
                       {solicitud.menor_obra_social_numero && <Fila label="N° Afiliado" valor={solicitud.menor_obra_social_numero} />}
                       <Fila label="Colegio" valor={solicitud.menor_colegio} />
                       <Fila label="Estudios cursados" valor={solicitud.menor_estudios_cursados} />
-                      {solicitud.menor_alergias_dieta && <Fila label="Alergias / Dieta" valor={solicitud.menor_alergias_dieta} />}
+                      {solicitud.menor_alergias && <Fila label="Alergias" valor={solicitud.menor_alergias} />}
+                      {solicitud.menor_dieta_especial && <Fila label="Dieta Especial" valor={solicitud.menor_dieta_especial} />}
                       <Fila label="Email de contacto" valor={solicitud.email_contacto} />
                     </Seccion>
 
