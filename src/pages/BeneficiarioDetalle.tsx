@@ -9,6 +9,9 @@ import { calcularProgresionActual } from '../utils/calcularProgresion'
 import { generarPDFCaratula } from '../lib/generarPDFCaratula'
 import { generarPDFFichaSeguimiento } from '../lib/generarPDFFichaSeguimiento'
 
+// URL de la carpeta de Drive con los formularios de SAAC
+const URL_FORMULARIOS_SAAC = 'https://drive.google.com/drive/folders/11GDnKUdxRBzLPpxLTAGoySZHWjsqXN7Z'
+
 interface Beneficiario {
   id: string
   nombre: string
@@ -911,6 +914,7 @@ setPagos(pagosOrdenados)
     // Secciones del legajo (con subtítulo informativo en cursiva)
     const seccionesLegajo: {
       subtitulo: string
+      subtituloExtra?: React.ReactNode
       campos: Array<{ key: string; label: string; obsKey: string; fechaKey?: string }>
     }[] = [
       {
@@ -922,12 +926,38 @@ setPagos(pagosOrdenados)
       },
       {
         subtitulo: 'Papeles de SAAC (formularios)',
+        subtituloExtra: (
+          <div style={{
+            fontSize: 'clamp(10px, 2.2vw, 11px)',
+            color: COL.textoSecundario,
+            fontStyle: 'italic',
+            marginTop: '6px',
+            paddingLeft: '2px',
+            lineHeight: 1.5
+          }}>
+            📥 Si necesitás algún formulario, descargalo de acá:{' '}
+            <a
+              href={URL_FORMULARIOS_SAAC}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                color: COL.verdeScout,
+                fontWeight: '700',
+                textDecoration: 'underline',
+                fontStyle: 'normal'
+              }}
+            >
+              Formularios SAAC
+            </a>
+          </div>
+        ),
         campos: [
           { key: 'autorizacion_ingreso', label: '📄 Autorización Ingreso', obsKey: 'autorizacion_ingreso_obs' },
-          { key: 'salidas_cercanas', label: '🚶 Salidas Cercanas', obsKey: 'salidas_cercanas_obs', fechaKey: 'salidas_cercanas_fecha' },
-          { key: 'uso_imagen', label: '📸 Uso de Imagen', obsKey: 'uso_imagen_obs', fechaKey: 'uso_imagen_fecha' },
-          { key: 'declaracion_jurada_salud', label: '🏥 Declaración Jurada de Salud', obsKey: 'declaracion_jurada_salud_obs' },
-          { key: 'autorizacion_retirarse', label: '🚪 Autorización retirarse solos', obsKey: 'autorizacion_retirarse_obs' },
+          { key: 'salidas_cercanas', label: '🚶 Salidas Cercanas (Anual)', obsKey: 'salidas_cercanas_obs', fechaKey: 'salidas_cercanas_fecha' },
+          { key: 'uso_imagen', label: '📸 Uso de Imagen (Anual)', obsKey: 'uso_imagen_obs', fechaKey: 'uso_imagen_fecha' },
+          { key: 'declaracion_jurada_salud', label: '🏥 Declaración Jurada de Salud (Anual)', obsKey: 'declaracion_jurada_salud_obs' },
+          { key: 'autorizacion_retirarse', label: '🚪 Autorización retirarse solos (Anual)', obsKey: 'autorizacion_retirarse_obs' },
         ]
       },
       {
@@ -995,14 +1025,14 @@ setPagos(pagosOrdenados)
               }}>
                 <span>{campo.label}</span>
 
-                {/* ✅ Botón "Carátula" al lado de Ficha de Datos Personales */}
+                {/* ✅ Botón "PDF Carátula" al lado de Ficha de Datos Personales */}
                 {campo.key === 'ficha_datos_personales' && beneficiario && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       generarPDFCaratula(beneficiario, datosPersonales)
                     }}
-                    title="Imprimir carátula del legajo"
+                    title="Descargar carátula del legajo en PDF"
                     style={{
                       padding: '3px 10px',
                       fontSize: '10px',
@@ -1019,10 +1049,11 @@ setPagos(pagosOrdenados)
                       flexShrink: 0
                     }}
                   >
-                    🖨️ Carátula
+                    📄 PDF Carátula
                   </button>
                 )}
-                                {/* ✅ Botón "Ficha" al lado de Ficha de Seguimiento */}
+
+                {/* ✅ Botón "PDF Ficha" al lado de Ficha de Seguimiento */}
                 {campo.key === 'ficha_seguimiento' && beneficiario && (
                   <button
                     onClick={(e) => {
@@ -1038,7 +1069,7 @@ setPagos(pagosOrdenados)
                         campamentos
                       )
                     }}
-                    title="Imprimir ficha de seguimiento (Vida Scout)"
+                    title="Descargar ficha de seguimiento en PDF"
                     style={{
                       padding: '3px 10px',
                       fontSize: '10px',
@@ -1055,7 +1086,7 @@ setPagos(pagosOrdenados)
                       flexShrink: 0
                     }}
                   >
-                    🖨️ Ficha
+                    📄 PDF Ficha
                   </button>
                 )}
               </div>
@@ -1136,6 +1167,10 @@ setPagos(pagosOrdenados)
       if (!editandoLegajo || !legajoForm || !puedeEditarLegajo) return
       setLegajoForm({ ...legajoForm, [key]: value })
     }
+
+    // ✅ Observaciones generales: ocultar si está vacío y no se está editando
+    const tieneObservacionesGenerales = data.observaciones_generales &&
+      data.observaciones_generales.trim() !== ''
 
     return (
       <div>
@@ -1227,8 +1262,11 @@ setPagos(pagosOrdenados)
                   {seccion.subtitulo}
                 </div>
 
+                {/* Extra del subtítulo (ej: link a Formularios SAAC) */}
+                {seccion.subtituloExtra && seccion.subtituloExtra}
+
                 {/* Campos de la sección */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: seccion.subtituloExtra ? '8px' : '0' }}>
                   {seccion.campos.map(campo => renderCampo(campo))}
                 </div>
               </div>
@@ -1236,38 +1274,41 @@ setPagos(pagosOrdenados)
           })}
         </div>
 
-        <div style={{
-          marginTop: '16px', backgroundColor: 'white', borderRadius: '12px',
-          padding: '12px 16px', border: '2px solid #D1C9B4'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '14px', color: COL.textoPrincipal, fontWeight: '600' }}>
-              📝 Observaciones Generales
-            </span>
-          </div>
-          {editandoLegajo && puedeEditarLegajo ? (
-            <textarea
-              value={data.observaciones_generales || ''}
-              onChange={(e) => {
-                if (!legajoForm) return
-                setLegajoForm({ ...legajoForm, observaciones_generales: e.target.value })
-              }}
-              rows={3}
-              placeholder="Observaciones generales del beneficiario..."
-              style={{
-                width: '100%', marginTop: '8px', padding: '8px 12px', fontSize: '14px',
-                border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
-                fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', resize: 'vertical',
-                boxSizing: 'border-box'
-              }}
-              disabled={saving}
-            />
-          ) : (
-            <div style={{ marginTop: '8px', fontSize: '14px', color: COL.textoSecundario, fontFamily: 'Oswald, sans-serif', padding: '4px 0' }}>
-              {data.observaciones_generales || '-'}
+        {/* ✅ Observaciones Generales: solo si tiene contenido o si está editando */}
+        {(tieneObservacionesGenerales || editandoLegajo) && (
+          <div style={{
+            marginTop: '16px', backgroundColor: 'white', borderRadius: '12px',
+            padding: '12px 16px', border: '2px solid #D1C9B4'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '14px', color: COL.textoPrincipal, fontWeight: '600' }}>
+                📝 Observaciones Generales
+              </span>
             </div>
-          )}
-        </div>
+            {editandoLegajo && puedeEditarLegajo ? (
+              <textarea
+                value={data.observaciones_generales || ''}
+                onChange={(e) => {
+                  if (!legajoForm) return
+                  setLegajoForm({ ...legajoForm, observaciones_generales: e.target.value })
+                }}
+                rows={3}
+                placeholder="Observaciones generales del beneficiario..."
+                style={{
+                  width: '100%', marginTop: '8px', padding: '8px 12px', fontSize: '14px',
+                  border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none',
+                  fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+                disabled={saving}
+              />
+            ) : (
+              <div style={{ marginTop: '8px', fontSize: '14px', color: COL.textoSecundario, fontFamily: 'Oswald, sans-serif', padding: '4px 0' }}>
+                {data.observaciones_generales || '-'}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -3669,7 +3710,7 @@ setPagos(pagosOrdenados)
             textTransform: 'uppercase',
             letterSpacing: '1px'
           }}>
-            📜 Vida Scout
+            📜 Ir a... Vida Scout
           </div>
           <div style={{
             fontSize: 'clamp(11px, 2.5vw, 13px)',
