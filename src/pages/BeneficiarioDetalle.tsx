@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
@@ -643,6 +643,7 @@ export default function BeneficiarioDetalle() {
     setEditandoInfoInline(false)
     setMessageInfoInline({ text: '', type: '' })
     setAlertaLegajoCerrada(false)
+    setAlertaFichaCerrada(false)
   }, [id])
 
   const cargarListaIds = async () => {
@@ -2309,6 +2310,23 @@ setPagos(pagosOrdenados)
     if (progresionRovers?.tiene_promesa_scout && progresionRovers.fecha_promesa_scout) return 'Rovers'
     return null
   }
+  // ✅ Chequea si la ficha de datos personales está incompleta
+  // (chequea que los 3 DNIs tengan algo: beneficiario, madre, padre)
+  const fichaDatosIncompleta = (): boolean => {
+    if (!datosPersonales) return true // no hay fila cargada → incompleta
+
+    const tieneValor = (v: any) => {
+      if (v === null || v === undefined) return false
+      if (typeof v === 'string' && v.trim() === '') return false
+      return true
+    }
+
+    return !(
+      tieneValor(datosPersonales.dni) &&
+      tieneValor(datosPersonales.madre_dni) &&
+      tieneValor(datosPersonales.padre_dni)
+    )
+  }
 
   // ✅ Papeles del legajo que faltan
   const getPapelesFaltantes = (): string[] => {
@@ -2355,6 +2373,7 @@ setPagos(pagosOrdenados)
 
   // ✅ Estado para mostrar/ocultar el cartel de alerta
   const [alertaLegajoCerrada, setAlertaLegajoCerrada] = useState(false)
+  const [alertaFichaCerrada, setAlertaFichaCerrada] = useState(false)
 
   const getPromesaInfo = () => {
     if (!beneficiario) return { tiene: false, fecha: null as string | null, padrino: null as string | null }
@@ -2667,6 +2686,69 @@ setPagos(pagosOrdenados)
           </div>
         </div>
       </div>
+            {/* ✅ CARTEL DE ALERTA: FICHA DE DATOS PERSONALES INCOMPLETA */}
+      {fichaDatosIncompleta() && !alertaFichaCerrada && (
+        <div style={{
+          backgroundColor: '#FEE2E2',
+          border: '2px solid #BF4E30',
+          borderRadius: '12px',
+          padding: '12px 14px',
+          marginBottom: '16px',
+          fontFamily: 'Oswald, sans-serif',
+          position: 'relative'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: '14px',
+                fontWeight: '700',
+                color: '#BF4E30',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '6px'
+              }}>
+                ⚠️ Ficha de datos personales incompleta
+              </div>
+              <div style={{
+                fontSize: '12px',
+                color: '#7A2A1A',
+                lineHeight: 1.5
+              }}>
+                <strong>{beneficiario.apellido}, {beneficiario.nombre}</strong> no tiene la ficha de datos personales completa.
+                Para llenar esos datos, hacé click{' '}
+                <Link
+                  to={`/beneficiario/${id}/datos`}
+                  style={{
+                    color: '#BF4E30',
+                    fontWeight: '700',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  acá
+                </Link>
+                .
+              </div>
+            </div>
+            <button
+              onClick={() => setAlertaFichaCerrada(true)}
+              title="Cerrar"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#BF4E30',
+                fontSize: '18px',
+                padding: '0 4px',
+                lineHeight: 1,
+                flexShrink: 0
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ✅ CARTEL DE ALERTA: FALTAN PAPELES DEL LEGAJO */}
       {(() => {
         const faltantes = getPapelesFaltantes()
