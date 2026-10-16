@@ -13,6 +13,7 @@ interface Beneficiario {
   tiene_uniforme: boolean
   fecha_entrega_uniforme: string
   hizo_tada: boolean
+  foto_url: string | null
 }
 
 interface Campamento {
