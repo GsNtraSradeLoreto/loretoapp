@@ -390,8 +390,8 @@ export const generarPDFFichaSeguimiento = async (
 
     y += altoTitulo
 
-    // Anchos de las 2 tablas
-    const anchoProg = 90
+    // Anchos de las 2 tablas (Progresiones más angosta para darle espacio a Campamentos)
+    const anchoProg = 50
     const anchoCamp = anchoUtil - anchoProg - gapEntreTablas
     const xProg = margen
     const xCamp = margen + anchoProg + gapEntreTablas
@@ -428,22 +428,22 @@ export const generarPDFFichaSeguimiento = async (
 
       doc.setDrawColor(0, 0, 0)
       doc.setLineWidth(0.2)
-      doc.rect(xProg, yProg, 30, altoFilaProg, 'S')
-      doc.rect(xProg + 30, yProg, anchoProg - 30, altoFilaProg, 'S')
+      doc.rect(xProg, yProg, 18, altoFilaProg, 'S')
+      doc.rect(xProg + 18, yProg, anchoProg - 18, altoFilaProg, 'S')
 
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
+      doc.setFontSize(7)
       doc.setTextColor(0, 0, 0)
 
       if (filaProg.fecha) {
-        doc.text(filaProg.fecha, xProg + 2, yProg + 3.8)
+        doc.text(filaProg.fecha, xProg + 1.5, yProg + 3.8)
         doc.setFont('helvetica', 'bold')
 
         const textHito = filaProg.extra
           ? `${filaProg.label} - ${filaProg.extra}`
           : filaProg.label
 
-        const anchoMaxHito = anchoProg - 30 - 4
+        const anchoMaxHito = anchoProg - 18 - 4
         let textoMostrar = textHito
         while (doc.getTextWidth(textoMostrar) > anchoMaxHito && textoMostrar.length > 0) {
           textoMostrar = textoMostrar.slice(0, -1)
@@ -452,7 +452,7 @@ export const generarPDFFichaSeguimiento = async (
           textoMostrar = textoMostrar.slice(0, -1) + '…'
         }
 
-        doc.text(textoMostrar, xProg + 32, yProg + 3.8)
+        doc.text(textoMostrar, xProg + 20, yProg + 3.8)
       }
 
       yProg += altoFilaProg
@@ -490,12 +490,65 @@ export const generarPDFFichaSeguimiento = async (
       doc.setTextColor(0, 0, 0)
 
       if (camp1) {
-        const texto = `${formatFecha(camp1.fecha_inicio)} · ${camp1.nombre}`.substring(0, 38)
-        doc.text(texto, xCamp + 1, yCamp + 3.6)
+        // Fecha + Nombre en negrita + (Tipo) en más chico y gris
+        const fecha = formatFecha(camp1.fecha_inicio)
+        const textoFecha = `${fecha} - `
+        const textoNombre = camp1.nombre
+        const textoTipo = camp1.tipo ? ` (${camp1.tipo})` : ''
+
+        let xTexto = xCamp + 1
+        const yTexto = yCamp + 3.6
+
+        // Fecha (normal)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        doc.setTextColor(0, 0, 0)
+        doc.text(textoFecha, xTexto, yTexto)
+        xTexto += doc.getTextWidth(textoFecha)
+
+        // Nombre (en negrita)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(7)
+        doc.text(textoNombre, xTexto, yTexto)
+        xTexto += doc.getTextWidth(textoNombre)
+
+        // Tipo (chiquito y gris) — solo si entra en el ancho
+        if (textoTipo && xTexto + doc.getTextWidth(textoTipo) < xCamp + anchoCamp / 2 - 1) {
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(6)
+          doc.setTextColor(100, 100, 100)
+          doc.text(textoTipo, xTexto, yTexto)
+          doc.setTextColor(0, 0, 0)
+        }
       }
       if (camp2) {
-        const texto = `${formatFecha(camp2.fecha_inicio)} · ${camp2.nombre}`.substring(0, 38)
-        doc.text(texto, xCamp + anchoCamp / 2 + 1, yCamp + 3.6)
+        // Igual que camp1 pero para la segunda columna
+        const fecha = formatFecha(camp2.fecha_inicio)
+        const textoFecha = `${fecha} - `
+        const textoNombre = camp2.nombre
+        const textoTipo = camp2.tipo ? ` (${camp2.tipo})` : ''
+
+        let xTexto = xCamp + anchoCamp / 2 + 1
+        const yTexto = yCamp + 3.6
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        doc.setTextColor(0, 0, 0)
+        doc.text(textoFecha, xTexto, yTexto)
+        xTexto += doc.getTextWidth(textoFecha)
+
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(7)
+        doc.text(textoNombre, xTexto, yTexto)
+        xTexto += doc.getTextWidth(textoNombre)
+
+        if (textoTipo && xTexto + doc.getTextWidth(textoTipo) < xCamp + anchoCamp - 1) {
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(6)
+          doc.setTextColor(100, 100, 100)
+          doc.text(textoTipo, xTexto, yTexto)
+          doc.setTextColor(0, 0, 0)
+        }
       }
 
       yCamp += altoFilaProg
