@@ -3013,9 +3013,24 @@ export default function VidaScout() {
                   color: COL.textoPrincipal,
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
-                  marginBottom: '4px'
+                  marginBottom: '4px',
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  flexWrap: 'wrap',
+                  gap: '6px'
                 }}>
-                  🏕️ {camp.nombre}
+                  <span>🏕️ {camp.nombre}</span>
+                  {camp.tipo && (
+                    <span style={{
+                      fontSize: 'clamp(10px, 2.2vw, 12px)',
+                      fontWeight: '400',
+                      color: COL.textoSecundario,
+                      textTransform: 'none',
+                      letterSpacing: '0'
+                    }}>
+                      ({formatTipoConDetalle(camp.tipo, camp.rama_principal)})
+                    </span>
+                  )}
                 </div>
                 <div style={{
                   fontSize: 'clamp(11px, 2.5vw, 13px)',
@@ -3024,17 +3039,6 @@ export default function VidaScout() {
                   📅 {formatFecha(camp.fecha_inicio)}
                   {camp.fecha_fin && camp.fecha_fin !== camp.fecha_inicio && ` - ${formatFecha(camp.fecha_fin)}`}
                 </div>
-                {camp.tipo && (
-                  <div style={{
-                    fontSize: 'clamp(10px, 2vw, 12px)',
-                    color: COL.terracota,
-                    marginTop: '4px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {formatTipoConDetalle(camp.tipo, camp.rama_principal)}
-                  </div>
-                )}
               </div>
             ))}
           </div>
