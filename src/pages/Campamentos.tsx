@@ -1076,14 +1076,27 @@ export default function Campamentos() {
               >
                 <div style={{
                   fontFamily: 'Oswald, sans-serif',
-                  fontWeight: '700',
                   fontSize: 'clamp(13px, 3vw, 16px)',
                   color: '#24352A',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
-                  marginBottom: '6px'
+                  marginBottom: '6px',
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: '8px',
+                  flexWrap: 'wrap'
                 }}>
-                  {campamento.nombre}
+                  <span style={{ fontWeight: '700' }}>
+                    {campamento.nombre}
+                  </span>
+                  <span style={{
+                    fontWeight: '400',
+                    fontSize: 'clamp(10px, 2.2vw, 12px)',
+                    color: '#7A7364',
+                    textTransform: 'none'
+                  }}>
+                    - ({formatTipoConDetalle(campamento.tipo, campamento.rama_principal)})
+                  </span>
                 </div>
                 <div style={{
                   display: 'flex',
@@ -1097,8 +1110,6 @@ export default function Campamentos() {
                     📅 {formatFechaCorta(campamento.fecha_inicio)}
                     {campamento.fecha_fin && ` - ${formatFechaCorta(campamento.fecha_fin)}`}
                   </span>
-                  <span>·</span>
-                  <span>{formatTipoConDetalle(campamento.tipo, campamento.rama_principal)}</span>
                   <span>·</span>
                   <span>👥 {campamento.asistentes_count || 0}</span>
                 </div>
