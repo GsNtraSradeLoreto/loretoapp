@@ -299,7 +299,8 @@ export default function Planillas() {
 
   // ✅ ÚNICO useEffect: si un dirigente arranca con ramas abiertas, precargar sus datos
   useEffect(() => {
-    if (ramasAbiertas.size === 0) return
+    // 👇 Esperamos a que el año esté cargado antes de buscar datos
+    if (ramasAbiertas.size === 0 || anioActivo === null) return 
     ramasAbiertas.forEach(key => {
       let concepto: Concepto | null = null
       let rama: Rama | null = null
@@ -323,7 +324,7 @@ export default function Planillas() {
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [anioActivo])
 
   // Carga de datos
   const cargarDatos = async (concepto: Concepto, rama: Rama, forzar = false) => {
