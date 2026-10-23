@@ -8,6 +8,7 @@ import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
 import { calcularProgresionActual } from '../utils/calcularProgresion'
 import { generarPDFCaratula } from '../lib/generarPDFCaratula'
 import { generarPDFFichaSeguimiento } from '../lib/generarPDFFichaSeguimiento'
+import { getAnioActivo } from '../lib/getAnioActivo'
 
 // URL de la carpeta de Drive con los formularios de SAAC
 const URL_FORMULARIOS_SAAC = 'https://drive.google.com/drive/folders/11GDnKUdxRBzLPpxLTAGoySZHWjsqXN7Z'
@@ -482,6 +483,7 @@ export default function BeneficiarioDetalle() {
   const [pagos, setPagos] = useState<Pago[]>([])
   const [campamentos, setCampamentos] = useState<Campamento[]>([])
   const [loading, setLoading] = useState(true)
+  const [anioActivo, setAnioActivo] = useState<number | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showPhotoModal, setShowPhotoModal] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -623,13 +625,22 @@ export default function BeneficiarioDetalle() {
     }
   }, [])
 
+  // Cargar el año activo (período scout actual) una sola vez
   useEffect(() => {
-    if (id && todosLosIds.length > 0) {
+    const cargarAnio = async () => {
+      const anio = await getAnioActivo()
+      setAnioActivo(anio)
+    }
+    cargarAnio()
+  }, [])
+
+  useEffect(() => {
+    if (id && todosLosIds.length > 0 && anioActivo !== null) {
       const idx = todosLosIds.indexOf(id)
       setPosicionActual(idx)
       loadData()
     }
-  }, [id, todosLosIds])
+  }, [id, todosLosIds, anioActivo])
 
   // Reset refs cuando cambia el ID
   useEffect(() => {
@@ -688,7 +699,7 @@ export default function BeneficiarioDetalle() {
         supabase.from('progresion_unidad').select('*').eq('beneficiario_id', id).maybeSingle(),
         supabase.from('progresion_caminantes').select('*').eq('beneficiario_id', id).maybeSingle(),
         supabase.from('progresion_rovers').select('*').eq('beneficiario_id', id).maybeSingle(),
-        supabase.from('pagos').select('*').eq('beneficiario_id', id).order('fecha_pago', { ascending: false }).limit(30),
+        supabase.from('pagos').select('*').eq('beneficiario_id', id).eq('anio', anioActivo ?? new Date().getFullYear()).order('fecha_pago', { ascending: false }).limit(30),
         supabase.from('datos_personales_beneficiario').select('*').eq('beneficiario_id', id).maybeSingle()
       ])
 
@@ -1540,25 +1551,36 @@ setPagos(pagosOrdenados)
                     rama === 'Unidad Scout' ? 'U' :
                     rama === 'Caminantes' ? 'C' : 'R'
 
+    if (anioActivo === null) {
+      console.warn('Año activo no cargado todavía, usando fallback')
+      return `${prefijo}-1`
+    }
+
+    // Traemos todos los recibos del prefijo Y del año activo
     const { data, error } = await supabase
       .from('pagos')
       .select('recibo')
       .ilike('recibo', `${prefijo}-%`)
-      .order('recibo', { ascending: false })
-      .limit(1)
+      .eq('anio', anioActivo)
 
     if (error) {
       console.error('Error al obtener recibos:', error)
       return `${prefijo}-1`
     }
 
-    let numero = 1
-    if (data && data.length > 0 && data[0].recibo) {
-      const match = data[0].recibo.match(new RegExp(`^${prefijo}-(\\d+)$`))
-      if (match) numero = parseInt(match[1]) + 1
+    // Calculamos el número máximo real (no como string, sino como número)
+    let numeroMaximo = 0
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        const match = row.recibo?.match(new RegExp(`^${prefijo}-(\\d+)$`))
+        if (match) {
+          const num = parseInt(match[1], 10)
+          if (num > numeroMaximo) numeroMaximo = num
+        }
+      })
     }
 
-    return `${prefijo}-${numero}`
+    return `${prefijo}-${numeroMaximo + 1}`
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2217,6 +2239,13 @@ setPagos(pagosOrdenados)
         categoriaFinal = nuevoPago.categoria_otro.trim().toUpperCase()
       }
 
+      // Guardar con el año activo (período scout actual)
+      if (anioActivo === null) {
+        setMessage({ text: '⚠️ No se pudo determinar el período activo. Recargá la página.', type: 'warning' })
+        setSaving(false)
+        return
+      }
+
       const { error } = await supabase
         .from('pagos')
         .insert({
@@ -2227,7 +2256,8 @@ setPagos(pagosOrdenados)
           fecha_pago: nuevoPago.fecha_pago,
           categoria: categoriaFinal,
           medio_pago: nuevoPago.medio_pago,
-          observaciones: nuevoPago.observaciones || null
+          observaciones: nuevoPago.observaciones || null,
+          anio: anioActivo
         })
 
       if (error) throw error
@@ -2248,6 +2278,7 @@ setPagos(pagosOrdenados)
   .from('pagos')
   .select('*')
   .eq('beneficiario_id', beneficiario.id)
+  .eq('anio', anioActivo)
   .order('fecha_pago', { ascending: false })
   .limit(30)
     // ✅ Ordenar: fecha DESC → reciboNumero DESC

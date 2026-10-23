@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
 import { ordenarListaBeneficiarios } from '../utils/ordenBeneficiarios'
 import { generarPDFPlanilla } from '../lib/generarPDFPlanilla'
+import { getAnioActivo } from '../lib/getAnioActivo'
 
 // ============================================
 // INTERFACES
@@ -61,11 +62,11 @@ type DireccionOrden = 'asc' | 'desc'
 
 const RAMAS: Rama[] = ['Manada', 'Unidad Scout', 'Caminantes', 'Rovers', 'Dirigentes y otros']
 
-const CONCEPTOS: { key: Concepto; label: string; emoji: string }[] = [
-  { key: 'afiliacion', label: 'AFILIACIÓN 2026', emoji: '📋' },
-  { key: 'cuotas', label: 'CUOTAS 2026', emoji: '💰' },
-  { key: 'camp_corto', label: 'CAMPAMENTO CORTO 2026', emoji: '🏕️' },
-  { key: 'camp_anual', label: 'CAMPAMENTO ANUAL 2027', emoji: '🏕️' }
+const getConceptos = (anio: number): { key: Concepto; label: string; emoji: string }[] => [
+  { key: 'afiliacion', label: `AFILIACIÓN ${anio}`, emoji: '📋' },
+  { key: 'cuotas', label: `CUOTAS ${anio}`, emoji: '💰' },
+  { key: 'camp_corto', label: `CAMPAMENTO CORTO ${anio}`, emoji: '🏕️' },
+  { key: 'camp_anual', label: `CAMPAMENTO ANUAL ${anio + 1}`, emoji: '🏕️' }
 ]
 
 const MESES_CUOTAS = [
@@ -80,7 +81,7 @@ const MESES_CUOTAS = [
   { key: '12', label: 'DIC' }
 ]
 
-const ANIO_ACTUAL = 2026
+// (borrado: ahora es dinámico desde configuracion_grupo)
 
 const COLORES = {
   verdeScout: '#24352A',
@@ -221,6 +222,7 @@ export default function Planillas() {
 
   const [config, setConfig] = useState<any>(null)
   const [loadingConfig, setLoadingConfig] = useState(true)
+  const [anioActivo, setAnioActivo] = useState<number | null>(null)
 
   const abrirPorDefecto = (): { conceptos: Set<Concepto>; ramas: Set<string> } => {
     const rol = getRolData()
@@ -263,7 +265,7 @@ export default function Planillas() {
       ? [ramaAsignada]
       : []
 
-  // Cargar config
+  // Cargar config + año activo
   useEffect(() => {
     const cargarConfig = async () => {
       try {
@@ -274,9 +276,20 @@ export default function Planillas() {
           .maybeSingle()
 
         if (error) throw error
-        if (data) setConfig(data.valores_planillas)
+        if (data) {
+          setConfig(data.valores_planillas)
+          const anio = data.valores_planillas?.anio_actual
+          if (typeof anio === 'number' && anio > 2000 && anio < 2100) {
+            setAnioActivo(anio)
+          } else {
+            setAnioActivo(new Date().getFullYear())
+          }
+        } else {
+          setAnioActivo(new Date().getFullYear())
+        }
       } catch (error) {
         console.error('Error al cargar config:', error)
+        setAnioActivo(new Date().getFullYear())
       } finally {
         setLoadingConfig(false)
       }
@@ -314,6 +327,8 @@ export default function Planillas() {
 
   // Carga de datos
   const cargarDatos = async (concepto: Concepto, rama: Rama, forzar = false) => {
+    if (anioActivo === null) return  // ⏳ esperar a que cargue la config
+
     const key = `${concepto}-${rama}`
     if (!forzar && movimientos[key] !== undefined) return
 
@@ -334,7 +349,7 @@ export default function Planillas() {
       const { data: mov, error: errMov } = await supabase
         .from('planilla_movimientos')
         .select('*')
-        .eq('anio', ANIO_ACTUAL)
+        .eq('anio', anioActivo)
         .eq('rama', rama)
         .eq('concepto', concepto)
 
@@ -343,7 +358,7 @@ export default function Planillas() {
       const { data: obs, error: errObs } = await supabase
         .from('planilla_observaciones')
         .select('*')
-        .eq('anio', ANIO_ACTUAL)
+        .eq('anio', anioActivo)
         .eq('rama', rama)
         .eq('concepto', concepto)
 
@@ -352,7 +367,7 @@ export default function Planillas() {
       const { data: asis, error: errAsis } = await supabase
         .from('planilla_asistencia')
         .select('*')
-        .eq('anio', ANIO_ACTUAL)
+        .eq('anio', anioActivo)
         .eq('rama', rama)
         .eq('concepto', concepto)
 
@@ -407,11 +422,16 @@ export default function Planillas() {
     mesInicio?: string, mesFin?: string,
     noAplica?: boolean
   ) => {
+    if (anioActivo === null) {
+      alert('Todavía no se cargó el año activo. Esperá un segundo.')
+      return
+    }
+
     try {
       const { data: nuevoMov, error } = await supabase
         .from('planilla_movimientos')
         .insert({
-          anio: ANIO_ACTUAL, rama, concepto,
+          anio: anioActivo, rama, concepto,
           beneficiario_id: beneficiarioId,
           nombre_libre: nombreLibre || null,
           categoria: categoria || 'beneficiario',
@@ -527,7 +547,7 @@ export default function Planillas() {
         const { data: nuevaObs, error } = await supabase
           .from('planilla_observaciones')
           .insert({
-            anio: ANIO_ACTUAL, rama, concepto,
+            anio: anioActivo, rama, concepto,
             beneficiario_id: beneficiarioId,
             nombre_libre: nombreLibre || null,
             observacion: texto,
@@ -581,7 +601,7 @@ export default function Planillas() {
         const { data: nuevaAsist, error } = await supabase
           .from('planilla_asistencia')
           .insert({
-            anio: ANIO_ACTUAL,
+            anio: anioActivo,
             rama,
             concepto,
             beneficiario_id: beneficiarioId,
@@ -606,8 +626,8 @@ export default function Planillas() {
   }
 
   const getValorReferencia = (concepto: Concepto): string => {
-    if (!config) return ''
-    const anioStr = ANIO_ACTUAL.toString()
+    if (!config || anioActivo === null) return ''
+    const anioStr = anioActivo.toString()
 
     if (concepto === 'afiliacion') {
       const afiliacionAnio = config.afiliacion?.[anioStr]
@@ -643,7 +663,7 @@ export default function Planillas() {
     }
 
     if (concepto === 'camp_anual') {
-      const anioCampAnual = (ANIO_ACTUAL + 1).toString()
+      const anioCampAnual = (anioActivo + 1).toString()
       const c = config.camp_anual?.[anioCampAnual]
       if (c) return `Único ${formatMonto(c.unico)} / Hermano ${formatMonto(c.hermano)} / Dirigente ${formatMonto(c.dirigente)}`
     }
@@ -652,7 +672,7 @@ export default function Planillas() {
   }
 
   // RENDER
-  if (loadingConfig) {
+  if (loadingConfig || anioActivo === null) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
         <span style={{ fontFamily: 'Oswald, sans-serif', color: COLORES.textoSecundario }}>
@@ -686,7 +706,7 @@ export default function Planillas() {
             color: COLORES.verdeScout, textTransform: 'uppercase',
             letterSpacing: '1px', margin: 0
           }}>
-            📊 Planillas {ANIO_ACTUAL}
+            📊 Planillas {anioActivo ?? '...'}
           </h1>
           <p style={{
             fontSize: 'clamp(11px, 2.5vw, 14px)', color: COLORES.textoSecundario,
@@ -717,7 +737,7 @@ export default function Planillas() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {CONCEPTOS.map(({ key, label, emoji }) => {
+        {getConceptos(anioActivo ?? new Date().getFullYear()).map(({ key, label, emoji }) => {
           const abierto = conceptosAbiertos.has(key)
           const esCamp = key === 'camp_corto' || key === 'camp_anual'
 
@@ -781,7 +801,7 @@ export default function Planillas() {
                         const estadoAsiste = asist?.asiste || 'no_se_sabe'
                         const esActivo = b.estado === 'activo'
                         if (estadoAsiste !== 'si' || !esActivo) return sum
-                        const valorCamp = getValorCamp(key, b, config, ANIO_ACTUAL)
+                        const valorCamp = getValorCamp(key, b, config, anioActivo ?? new Date().getFullYear())
                         const pagado = movsEstaRama
                           .filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo')
                           .reduce((s, m) => s + m.monto, 0)
@@ -950,7 +970,7 @@ export default function Planillas() {
                                         asistencias={asistencias[ramaKey] || []}
                                         config={config}
                                         puedeEditar={puedeEditar}
-                                        anioActual={ANIO_ACTUAL}
+                                        anioActual={anioActivo ?? new Date().getFullYear()}
                                         onCrear={crearMovimiento}
                                         onActualizar={actualizarMovimiento}
                                         onEliminar={eliminarMovimiento}

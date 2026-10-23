@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatearNombreConH } from '../utils/formatNombre'
+import { getAnioActivo } from '../lib/getAnioActivo'
 
 interface Pago {
   id: string
@@ -52,6 +53,7 @@ export default function Pagos() {
   const [pagos, setPagos] = useState<Pago[]>([])
   const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([])
   const [loading, setLoading] = useState(true)
+  const [anioActivo, setAnioActivo] = useState<number | null>(null)
 
   // ✅ Form de CREAR (arriba)
   const [showForm, setShowForm] = useState(false)
@@ -173,15 +175,20 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
   }  
 
   useEffect(() => {
+    const cargarAnio = async () => {
+      const anio = await getAnioActivo()
+      setAnioActivo(anio)
+    }
+    cargarAnio()
     loadBeneficiarios()
   }, [])
 
   useEffect(() => {
-    if (!loading) {
+    if (!loading && anioActivo !== null) {
       cargarPagos(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterRama, filterBeneficiario])
+  }, [filterRama, filterBeneficiario, anioActivo])
 
   // 🆕 NAVEGACIÓN CON FLECHAS (todos los usuarios, salvo cuando escriben)
   // (el useEffect va más abajo, después de pagosOrdenados)
@@ -235,6 +242,13 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
       const desde = (paginaActual - 1) * PAGE_SIZE
       const hasta = desde + PAGE_SIZE - 1
 
+      if (anioActivo === null) {
+        // Todavía no cargó el año activo, no hacemos la query
+        setLoading(false)
+        setCargandoMas(false)
+        return
+      }
+
       let query = supabase
         .from('pagos')
         .select(`
@@ -246,6 +260,7 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
             estado
           )
         `)
+        .eq('anio', anioActivo) // 👈 FILTRO POR AÑO ACTIVO
         .order('fecha_pago', { ascending: false })
         .order('id', { ascending: false })
         .range(desde, hasta)
@@ -273,14 +288,19 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
         )
       }
 
-      const pagosConNombres = pagosFiltrados.map((pago: any) => ({
-        ...pago,
-        beneficiario_nombre: pago.beneficiarios?.nombre || '',
-        beneficiario_apellido: pago.beneficiarios?.apellido || '',
-        beneficiario_tiene_hermanos: pago.beneficiarios?.tiene_hermanos || false,
-        beneficiario_estado: pago.beneficiarios?.estado || '',
-        reciboNumero: pago.recibo ? parseInt(pago.recibo.replace(/^[A-Z]-/, '')) : 0
-      }))
+      const pagosConNombres = pagosFiltrados.map((pago: any) => {
+        // Extraemos el número del recibo (ej: "U-101" → 101)
+        const reciboLimpio = pago.recibo ? pago.recibo.replace(/^[A-Z]-/, '') : '0'
+        const reciboNumero = parseInt(reciboLimpio, 10) || 0
+        return {
+          ...pago,
+          beneficiario_nombre: pago.beneficiarios?.nombre || '',
+          beneficiario_apellido: pago.beneficiarios?.apellido || '',
+          beneficiario_tiene_hermanos: pago.beneficiarios?.tiene_hermanos || false,
+          beneficiario_estado: pago.beneficiarios?.estado || '',
+          reciboNumero
+        }
+      })
 
       if (reset) {
         setPagos(pagosConNombres)
@@ -312,11 +332,16 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
                     beneficiario.rama === 'Unidad Scout' ? 'U' :
                     beneficiario.rama === 'Caminantes' ? 'C' : 'R'
 
+    if (anioActivo === null) {
+      console.warn('Año activo no cargado, usando fallback')
+      return `${prefijo}-01`
+    }
+
     const { data, error } = await supabase
       .from('pagos')
       .select('recibo')
       .ilike('recibo', `${prefijo}-%`)
-      .order('recibo', { ascending: false })
+      .eq('anio', anioActivo) // 👈 FILTRO POR AÑO
 
     if (error) throw error
 
@@ -327,12 +352,14 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
       if (!pago.recibo) continue
       const match = pago.recibo.match(regex)
       if (match) {
-        const num = parseInt(match[1])
+        const num = parseInt(match[1], 10)
         if (num > maxNumero) maxNumero = num
       }
     }
 
-    return `${prefijo}-${maxNumero + 1}`
+    const proximo = maxNumero + 1
+    const formateado = proximo < 10 ? `0${proximo}` : proximo.toString()
+    return `${prefijo}-${formateado}`
   }
 
   const verificarYResolverDuplicado = async (recibo: string, excludeId?: string): Promise<string> => {
@@ -466,6 +493,11 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
         categoriaFinal = formData.categoria_otro.trim().toUpperCase()
       }
 
+      if (anioActivo === null) {
+        setMessage({ text: '⚠️ No se pudo determinar el período activo. Recargá la página.', type: 'warning' })
+        return
+      }
+
       const payload = {
         beneficiario_id: formData.beneficiario_id,
         rama: beneficiario?.rama || '',
@@ -474,7 +506,8 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
         fecha_pago: formData.fecha_pago,
         categoria: categoriaFinal,
         medio_pago: formData.medio_pago,
-        observaciones: formData.observaciones || null
+        observaciones: formData.observaciones || null,
+        anio: anioActivo // 👈 GUARDAMOS EL AÑO ACTIVO
       }
 
       const { error } = await supabase
@@ -608,6 +641,11 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
         categoriaFinal = editFormData.categoria_otro.trim().toUpperCase()
       }
 
+      if (anioActivo === null) {
+        setEditMessage({ text: '⚠️ No se pudo determinar el período activo. Recargá la página.', type: 'warning' })
+        return
+      }
+
       const payload = {
         beneficiario_id: editFormData.beneficiario_id,
         rama: beneficiario?.rama || '',
@@ -616,7 +654,8 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
         fecha_pago: editFormData.fecha_pago,
         categoria: categoriaFinal,
         medio_pago: editFormData.medio_pago,
-        observaciones: editFormData.observaciones || null
+        observaciones: editFormData.observaciones || null,
+        anio: anioActivo // 👈 GUARDAMOS EL AÑO ACTIVO
       }
 
       const { error } = await supabase
