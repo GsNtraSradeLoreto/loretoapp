@@ -187,15 +187,15 @@ export default function Pagos() {
 
   // ✅ Este useEffect es el ÚNICO encargado de cargar los pagos
   useEffect(() => {
-    if (anioActivo !== null && !loading) {
+    if (anioActivo !== null) {
       cargarPagos(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterRama, filterBeneficiario, anioActivo, loading])
+  }, [filterRama, filterBeneficiario, anioActivo])
 
   const loadBeneficiarios = async () => {
     try {
-      setLoading(true)
+      // Quitamos el setLoading(true) de acá para que no interfiera con la carga de pagos
 
       let beneficiariosQuery = supabase
         .from('beneficiarios')
@@ -243,8 +243,7 @@ export default function Pagos() {
 
       if (anioActivo === null) {
         // Todavía no cargó el año activo, no hacemos la query
-        setLoading(false)
-        setCargandoMas(false)
+        // No apagamos el loading acá, dejamos que el useEffect lo maneje
         return
       }
 
@@ -890,7 +889,7 @@ export default function Pagos() {
 
   const totalMonto = pagos.reduce((sum, p) => sum + (p.monto || 0), 0)
 
-  if (loading && pagos.length === 0) {
+  if ((loading || anioActivo === null) && pagos.length === 0) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
         <span style={{ fontFamily: 'Oswald, sans-serif', color: '#7A7364' }}>Cargando pagos...</span>
