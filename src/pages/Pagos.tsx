@@ -14,6 +14,7 @@ interface Pago {
   categoria: string
   medio_pago: string
   observaciones: string
+  anio: number
   beneficiario_nombre?: string
   beneficiario_apellido?: string
   beneficiario_tiene_hermanos?: boolean
@@ -145,7 +146,7 @@ export default function Pagos() {
   }
 
   // 🆕 Agregar etiqueta a observaciones
-const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
+  const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
     const pago = pagos.find(p => p.id === pagoId)
     if (!pago) return
 
@@ -172,8 +173,9 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
           ))
         }
       })
-  }  
+  }
 
+  // ✅ Carga inicial
   useEffect(() => {
     const cargarAnio = async () => {
       const anio = await getAnioActivo()
@@ -183,15 +185,13 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
     loadBeneficiarios()
   }, [])
 
+  // ✅ Este useEffect es el ÚNICO encargado de cargar los pagos
   useEffect(() => {
-    if (!loading && anioActivo !== null) {
+    if (anioActivo !== null && !loading) {
       cargarPagos(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterRama, filterBeneficiario, anioActivo])
-
-  // 🆕 NAVEGACIÓN CON FLECHAS (todos los usuarios, salvo cuando escriben)
-  // (el useEffect va más abajo, después de pagosOrdenados)
+  }, [filterRama, filterBeneficiario, anioActivo, loading])
 
   const loadBeneficiarios = async () => {
     try {
@@ -219,8 +219,7 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
       })
 
       setBeneficiarios(beneficiariosOrdenados)
-
-      await cargarPagos(true)
+      setLoading(false)
 
     } catch (error) {
       console.error('Error:', error)
@@ -320,7 +319,8 @@ const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
       setCargandoMas(false)
     }
   }
-    const cargarMas = () => {
+  
+  const cargarMas = () => {
     cargarPagos(false)
   }
 
