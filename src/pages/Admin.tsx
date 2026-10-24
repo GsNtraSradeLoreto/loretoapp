@@ -36,6 +36,7 @@ export default function Admin() {
   const [message, setMessage] = useState({ text: '', type: '' })
   const [editando, setEditando] = useState<string | null>(null)
   const [editRol, setEditRol] = useState('')
+  const [orden, setOrden] = useState<'ultimo_acceso' | 'nombre' | 'creado_en'>('ultimo_acceso')
 
   useEffect(() => {
     if (!isSuperAdmin) return
@@ -185,6 +186,29 @@ export default function Admin() {
     { value: 'AyudanteRovers', label: '🔥 Ayudante de Rovers' }
   ]
 
+  // ✅ Lógica para ordenar la lista de usuarios según el selector
+  const usuariosOrdenados = [...usuarios].sort((a, b) => {
+    if (orden === 'ultimo_acceso') {
+      const fechaA = a.ultimo_acceso ? new Date(a.ultimo_acceso).getTime() : 0
+      const fechaB = b.ultimo_acceso ? new Date(b.ultimo_acceso).getTime() : 0
+      return fechaB - fechaA // Los más recientes primero
+    }
+    
+    if (orden === 'nombre') {
+      const nombreA = `${a.apellido} ${a.nombre}`.toLowerCase()
+      const nombreB = `${b.apellido} ${b.nombre}`.toLowerCase()
+      return nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' })
+    }
+    
+    if (orden === 'creado_en') {
+      const fechaA = new Date(a.creado_en).getTime()
+      const fechaB = new Date(b.creado_en).getTime()
+      return fechaB - fechaA // Los más nuevos primero
+    }
+    
+    return 0
+  })
+
   if (!isSuperAdmin) {
     return (
       <div style={{
@@ -307,9 +331,48 @@ export default function Admin() {
         </div>
       </div>
 
+      {/* BARRA DE ORDENAMIENTO */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        marginBottom: '16px',
+        padding: '10px 14px',
+        backgroundColor: 'white',
+        borderRadius: '10px',
+        border: '2px solid #D1C9B4',
+        flexWrap: 'wrap'
+      }}>
+        <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: '13px', fontWeight: '600', color: '#24352A', textTransform: 'uppercase' }}>
+          Ordenar por:
+        </span>
+        <select
+          value={orden}
+          onChange={(e) => setOrden(e.target.value as any)}
+          style={{
+            padding: '6px 12px',
+            fontSize: '13px',
+            border: '2px solid #D1C9B4',
+            borderRadius: '6px',
+            outline: 'none',
+            fontFamily: 'Oswald, sans-serif',
+            backgroundColor: '#F9F6EE',
+            cursor: 'pointer',
+            fontWeight: '600',
+            color: '#24352A',
+            flex: 1,
+            minWidth: '180px'
+          }}
+        >
+          <option value="ultimo_acceso">🕒 Última conexión (más reciente)</option>
+          <option value="nombre">🔤 Nombre (A-Z)</option>
+          <option value="creado_en">📅 Fecha de alta (más nuevo)</option>
+        </select>
+      </div>
+
       {/* LISTA DE USUARIOS (cards) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {usuarios.map((usuario) => {
+        {usuariosOrdenados.map((usuario) => {
           const isEditing = editando === usuario.id
           const nombreCompleto = `${usuario.nombre}${usuario.apellido ? ' ' + usuario.apellido : ''}`
           const inicial = (usuario.nombre || 'U').charAt(0).toUpperCase()

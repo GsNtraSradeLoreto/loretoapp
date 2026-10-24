@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { enviarEmail } from '../lib/enviarEmail'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -128,6 +129,33 @@ const esPrimerUsuario = !countError && count === 0
     
     // Error esperado → el trigger ya creó el perfil, seguimos
     console.log('ℹ️ El trigger creó el perfil automáticamente')
+  }
+
+  // 🆕 Enviar mail a Jefatura y SuperAdmin avisando del nuevo usuario
+  try {
+    const { data: jefaturas } = await supabase
+      .from('usuarios')
+      .select('email')
+      .in('rol', ['Jefatura', 'SUPER_ADMIN'])
+      .eq('activo', true)
+
+    const destinatarios = (jefaturas || []).map(j => j.email).filter(Boolean)
+
+    if (destinatarios.length > 0) {
+      await enviarEmail({
+        tipo: 'nuevo_usuario',
+        destinatarios,
+        datos: {
+          jefe_nombre: `${nombre.trim()} ${apellido.trim() || ''}`.trim(),
+          adulto_email: email,
+          // Reutilizamos estos campos genéricos para no cambiar la interfaz
+          fecha_salida: new Date().toLocaleDateString('es-AR'),
+          ubicacion: 'Registro desde la app'
+        }
+      })
+    }
+  } catch (mailError) {
+    console.error('⚠️ Error al enviar mail de nuevo usuario:', mailError)
   }
 
   setMessage({ 

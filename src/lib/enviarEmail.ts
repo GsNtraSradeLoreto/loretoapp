@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
 interface EnviarEmailParams {
-  tipo: 'nuevo_permiso' | 'devolucion' | 'cargado' | 'nueva_inscripcion'
+  tipo: 'nuevo_permiso' | 'devolucion' | 'cargado' | 'nueva_inscripcion' | 'nuevo_usuario'
   destinatarios: string[]
   datos: {
     permiso_id?: string
