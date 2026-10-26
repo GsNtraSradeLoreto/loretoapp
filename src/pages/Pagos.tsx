@@ -49,7 +49,7 @@ export default function Pagos() {
     isAdministrador,
     isTesorero,
     getRolData,
-    canCreatePagos
+    puedeHacer
   } = useAuth()
   const [pagos, setPagos] = useState<Pago[]>([])
   const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([])
@@ -743,24 +743,15 @@ export default function Pagos() {
   }
 
   const canEdit = (pago: Pago): boolean => {
-    if (isSuperAdmin) return true
-    if (isTesorero) return true
-    if (esJefe && pago.rama === ramaAsignada) return true
-    return false
+    return puedeHacer('editar_pago')
   }
 
   const canDelete = (pago: Pago): boolean => {
-    if (isSuperAdmin) return true
-    if (isTesorero) return true
-    if (esJefe && pago.rama === ramaAsignada) return true
-    return false
+    return puedeHacer('editar_pago') // Usamos el mismo permiso
   }
 
   const puedeCrearPagos = (): boolean => {
-    if (isSuperAdmin) return true
-    if (isTesorero) return true
-    if (esJefe && ramaAsignada) return true
-    return false
+    return puedeHacer('crear_pago')
   }
 
   const handleFilterByRama = (rama: string) => {
@@ -1964,7 +1955,7 @@ return (
                         </div>
                       </div>
 
-                      {/* 🆕 Chips de observaciones (solo superadmin y tesorero) */}
+                      {/* 🆕 Chips de observaciones (solo tesorero/superadmin) */}
                       {(isSuperAdmin || isTesorero) && (
                         <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '2px dashed #E8DEC4' }}>
                           <p style={{

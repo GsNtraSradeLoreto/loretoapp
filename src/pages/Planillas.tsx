@@ -215,7 +215,8 @@ export default function Planillas() {
     isJefatura,
     isAdministrador,
     isTesorero,
-    getRolData
+    getRolData,
+    puedeHacer
   } = useAuth()
 
   const isMobile = useIsMobile()
@@ -257,7 +258,12 @@ export default function Planillas() {
   const ramaAsignada = rolData.rama as Rama | null
 
   const puedeVerTodo = isSuperAdmin || isJefatura || isAdministrador || isTesorero
-  const puedeEditar = isSuperAdmin || isTesorero
+  
+  // ✅ Permiso para editar Celdas, Asistencia y Montos (Tesorero/SuperAdmin)
+  const puedeEditarCeldas = puedeHacer('editar_planilla')
+  
+  // ✅ Permiso para editar SOLO la columna de Observaciones (Jefe de Rama, etc)
+  const puedeEditarObservaciones = puedeHacer('editar_obs_planilla')
 
   const ramasVisibles: Rama[] = puedeVerTodo
     ? RAMAS
@@ -970,7 +976,8 @@ export default function Planillas() {
                                         observaciones={observaciones[ramaKey] || []}
                                         asistencias={asistencias[ramaKey] || []}
                                         config={config}
-                                        puedeEditar={puedeEditar}
+                                        puedeEditarCeldas={puedeEditarCeldas}
+                                        puedeEditarObservaciones={puedeEditarObservaciones}
                                         anioActual={anioActivo ?? new Date().getFullYear()}
                                         onCrear={crearMovimiento}
                                         onActualizar={actualizarMovimiento}
@@ -1020,7 +1027,7 @@ export default function Planillas() {
 // TABLA PLANILLA
 // ============================================
 function TablaPlanilla({
-  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, puedeEditar, anioActual,
+  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, puedeEditarCeldas, puedeEditarObservaciones, anioActual,
   onCrear, onActualizar, onEliminar, onGuardarObservacion, onGuardarAsistencia
 }: {
   concepto: Concepto
@@ -1030,7 +1037,8 @@ function TablaPlanilla({
   observaciones: Observacion[]
   asistencias: Asistencia[]
   config: any
-  puedeEditar: boolean
+  puedeEditarCeldas: boolean
+  puedeEditarObservaciones: boolean
   anioActual: number
   onCrear: (concepto: Concepto, rama: Rama, benefId: string | null, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean, nombreLibre?: string, categoria?: string, mesInicio?: string, mesFin?: string, noAplica?: boolean) => void
   onActualizar: (concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
@@ -1075,7 +1083,7 @@ function TablaPlanilla({
   }, [concepto, rama])
 
   const handleMesMouseDown = (beneficiarioId: string, mesKey: string) => {
-    if (!puedeEditar || !esCuotas) return
+    if (!puedeEditarCeldas || !esCuotas) return
     setDrag({ beneficiarioId, mesInicio: mesKey, mesActual: mesKey })
   }
 
@@ -1246,7 +1254,7 @@ function TablaPlanilla({
                     position: 'relative'
                   }}>
                     PAGO {i + 1}
-                    {esUltimaColumnaPago && puedeEditar && (
+                    {esUltimaColumnaPago && puedeEditarCeldas && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -1446,14 +1454,14 @@ function TablaPlanilla({
                         enEditor={enEditor}
                         esInactivo={esInactivo}
                         bgFila={bgFila}
-                        puedeEditar={puedeEditar}
+                        puedeEditar={puedeEditarCeldas}
                         editorAbierto={editorCuotas?.beneficiarioId === b.id && editorCuotas?.mesInicio === mes.key}
                         editorRango={editorCuotas?.beneficiarioId === b.id ? editorCuotas : null}
                         onMouseDown={() => handleMesMouseDown(b.id, mes.key)}
                         onMouseEnter={() => handleMesMouseEnter(b.id, mes.key)}
                         onMouseUp={handleMesMouseUp}
                         onClickCelda={() => {
-                          if (movQueCubre && movQueCubre.mes_inicio && movQueCubre.mes_fin) {
+                          if (puedeEditarCeldas && movQueCubre && movQueCubre.mes_inicio && movQueCubre.mes_fin) {
                             setEditorCuotas({
                               beneficiarioId: b.id,
                               mesInicio: movQueCubre.mes_inicio,
@@ -1486,7 +1494,7 @@ function TablaPlanilla({
                       <CeldaPago
                         key={i}
                         movimiento={mov}
-                        puedeEditar={puedeEditar}
+                        puedeEditar={puedeEditarCeldas}
                         bgFila={bgFila}
                         bloqueada={celdaBloqueada}
                         onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}
@@ -1550,7 +1558,7 @@ function TablaPlanilla({
                 {esCamp && (
                   <CeldaAsistencia
                     asistencia={asistencia}
-                    puedeEditar={puedeEditar}
+                    puedeEditar={puedeEditarCeldas}
                     bgFila={bgFila}
                     colorLinea={coloresRama.colorLinea}
                     onGuardar={(nuevoEstado) => onGuardarAsistencia(concepto, rama, b.id, nuevoEstado, undefined, asistencia?.id)}
@@ -1572,7 +1580,7 @@ function TablaPlanilla({
                   }}>
                     <CeldaObservacion
                       observacion={obs}
-                      puedeEditar={puedeEditar}
+                      puedeEditar={puedeEditarObservaciones}
                       onGuardar={(texto) => onGuardarObservacion(concepto, rama, b.id, texto, obs?.id)}
                     />
                   </td>
@@ -1581,7 +1589,7 @@ function TablaPlanilla({
                 {!esCamp && esAfiliacion && (
                   <CeldaPagoGrupo
                     movimiento={pagoGrupo}
-                    puedeEditar={puedeEditar}
+                    puedeEditar={puedeEditarCeldas}
                     bgFila={bgFila}
                     colorLinea={coloresRama.colorLinea}
                     onCrear={(fecha, monto, pagadoPor, reciboEntregado) => onCrear(concepto, rama, b.id, fecha, monto, pagadoPor, reciboEntregado)}

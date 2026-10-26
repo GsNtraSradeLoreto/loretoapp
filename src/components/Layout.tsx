@@ -155,7 +155,8 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/dashboard' },
     { path: '/pagos' },
     ...(isSuperAdmin || isJefatura ? [{ path: '/campamentos' }, { path: '/auditoria' }] : []),
-    ...(isSuperAdmin || isJefatura || isAdministrador ? [{ path: '/admin' }] : [])
+    ...(isSuperAdmin || isJefatura || isAdministrador ? [{ path: '/admin' }] : []),
+    ...(isSuperAdmin ? [{ path: '/configuracion-roles' }] : [])
   ]
 
   const indiceActual = rutasNav.findIndex(r => r.path === location.pathname)
@@ -672,7 +673,6 @@ export default function Layout({ children }: LayoutProps) {
                           textTransform: 'uppercase',
                           letterSpacing: '0.5px',
                           borderTop: '1px solid #D1C9B4',
-                          borderBottom: '1px solid #D1C9B4',
                           margin: '2px 0'
                         }}
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
@@ -681,6 +681,32 @@ export default function Layout({ children }: LayoutProps) {
                       >
                         <span style={{ marginRight: '8px' }}>⚙️</span>
                         Administración
+                      </Link>
+                    )}
+
+                    {/* 🔐 NUEVO BOTÓN: Configuración de Roles (Solo SuperAdmin) */}
+                    {isSuperAdmin && (
+                      <Link
+                        to="/configuracion-roles"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '8px 16px',
+                          color: '#24352A',
+                          textDecoration: 'none',
+                          fontSize: '14px',
+                          fontFamily: 'Oswald, sans-serif',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          borderBottom: '1px solid #D1C9B4',
+                          margin: '2px 0'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        onClick={() => setShowMenu(false)}
+                      >
+                        <span style={{ marginRight: '8px' }}>🔐</span>
+                        Permisos de Roles
                       </Link>
                     )}
 

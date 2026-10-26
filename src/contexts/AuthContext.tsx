@@ -40,6 +40,9 @@ interface AuthContextType {
   canCreatePagos: boolean
   // Permisos específicos de campamentos
   canEditCampamentos: (rama?: string) => boolean
+  // 🆕 MATRIZ DE PERMISOS DINÁMICA
+  matrizPermisos: Record<string, string[]>
+  puedeHacer: (permiso: string) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -48,6 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<any>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [matrizPermisos, setMatrizPermisos] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
     const loadSession = async () => {
@@ -90,28 +94,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .single()
 
-if (error) {
-  if (error.code === 'PGRST116') {
-    const { data: newProfile, error: insertError } = await supabase
-      .from('usuarios')
-      .insert({
-        id: userId,
-        nombre: 'Usuario',
-        apellido: '',
-email: email || '',
-        rol: 'viewer',
-        rama_asignada: null,
-        activo: true
-      })
-      .select()
-      .single()
+      // 1. Cargamos la matriz de permisos de la base de datos
+      const { data: configData } = await supabase
+        .from('configuracion_grupo')
+        .select('valores_planillas')
+        .limit(1)
+        .maybeSingle()
+      
+      if (configData?.valores_planillas?.permisos_roles) {
+        setMatrizPermisos(configData.valores_planillas.permisos_roles)
+      }
 
-    if (!insertError && newProfile) {
-      setProfile(newProfile)
-    }
-  }
-  return
-}
+      if (error) {
+        if (error.code === 'PGRST116') {
+          const { data: newProfile, error: insertError } = await supabase
+            .from('usuarios')
+            .insert({
+              id: userId,
+              nombre: 'Usuario',
+              apellido: '',
+              email: email || '',
+              rol: 'viewer',
+              rama_asignada: null,
+              activo: true
+            })
+            .select()
+            .single()
+
+          if (!insertError && newProfile) {
+            setProfile(newProfile)
+          }
+        }
+        return
+      }
 
       setProfile(data)
 
@@ -144,7 +159,7 @@ email: email || '',
     setProfile(null)
   }
 
-    const actualizarFechaNacimiento = async (fecha: string) => {
+  const actualizarFechaNacimiento = async (fecha: string) => {
     if (!profile?.id) throw new Error('No hay usuario logueado')
 
     const { error } = await supabase
@@ -154,7 +169,6 @@ email: email || '',
 
     if (error) throw error
 
-    // Actualizar el perfil local
     setProfile({ ...profile, fecha_nacimiento: fecha })
   }
 
@@ -201,7 +215,6 @@ email: email || '',
   const canViewAll = isSuperAdmin || isJefatura || isAdministrador || isTesorero
   const canEditAll = isSuperAdmin || isJefatura
 
-  // Verificar si puede ver una rama específica
   const canViewRama = (rama: string): boolean => {
     if (canViewAll) return true
     if (esJefe && ramaAsignada === rama) return true
@@ -210,15 +223,12 @@ email: email || '',
     return false
   }
 
-  // Verificar si puede editar una rama específica
   const canEditRama = (rama: string): boolean => {
     if (canEditAll) return true
     if (esJefe && ramaAsignada === rama) return true
-    // Ayudante NO puede editar
     return false
   }
 
-  // Permisos específicos de finanzas
   const canViewAllFinanzas = isSuperAdmin || isJefatura || isTesorero || isAdministrador
   
   const canEditFinanzas = (rama?: string): boolean => {
@@ -226,25 +236,29 @@ email: email || '',
     if (isTesorero) return true
     if (isJefatura) return false
     if (esJefe && rama && ramaAsignada === rama) return true
-    // Ayudante NO puede editar finanzas
     return false
   }
 
-  // Permisos para crear pagos
   const canCreatePagos = (): boolean => {
     if (isSuperAdmin) return true
     if (isTesorero) return true
     if (esJefe) return true
-    // Ayudante NO puede crear pagos
     return false
   }
 
-  // Permisos específicos de campamentos
   const canEditCampamentos = (rama?: string): boolean => {
     if (isSuperAdmin || isJefatura || isAdministrador) return true
     if (esJefe && rama && ramaAsignada === rama) return true
-    // Ayudante NO puede editar campamentos
     return false
+  }
+
+  // =============================================
+  // 🆕 FUNCIÓN MAESTRA DE PERMISOS DINÁMICOS
+  // =============================================
+  const puedeHacer = (permiso: string): boolean => {
+    if (isSuperAdmin) return true
+    const permisosDelRol = matrizPermisos[rol] || []
+    return permisosDelRol.includes(permiso)
   }
 
   return (
@@ -269,8 +283,10 @@ email: email || '',
       canEditRama,
       canViewAllFinanzas,
       canEditFinanzas,
-      canCreatePagos: canCreatePagos(),
-      canEditCampamentos
+      canCreatePagos: puedeHacer('crear_pago'),
+      canEditCampamentos,
+      matrizPermisos,
+      puedeHacer
     }}>
       {children}
     </AuthContext.Provider>

@@ -40,7 +40,8 @@ export default function Dashboard() {
     isJefatura,
     isAdministrador,
     isTesorero,
-    getRolData
+    getRolData,
+    puedeHacer
   } = useAuth()
   const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([])
   const [filtered, setFiltered] = useState<Beneficiario[]>([])
@@ -370,8 +371,8 @@ export default function Dashboard() {
             ¡Hola {nombre}!
           </p>
 
-          {/* ✅ Botón "Nuevo Beneficiario" (solo Jefatura y SUPER_ADMIN) */}
-          {(isJefatura || isSuperAdmin) && (
+          {/* ✅ Botón "Nuevo Beneficiario" */}
+          {puedeHacer('crear_beneficiario') && (
             <button
               onClick={() => navigate('/beneficiario/nuevo')}
               style={{
@@ -688,8 +689,8 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ✅ SECCIÓN ROVERS DE PARTIDA (solo Jefatura y SUPER_ADMIN) */}
-        {(isJefatura || isSuperAdmin) && roversPartida.length > 0 && (
+        {/* ✅ SECCIÓN ROVERS DE PARTIDA */}
+        {puedeHacer('ver_rovers_partida') && roversPartida.length > 0 && (
           <div style={{ marginTop: '32px' }}>
             <div style={{
               fontFamily: 'Oswald, sans-serif',

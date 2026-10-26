@@ -471,7 +471,7 @@ const Seccion = ({
 export default function BeneficiarioDetalle() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { isSuperAdmin, isJefatura, isAdministrador, isTesorero, getRolData } = useAuth()
+  const { isSuperAdmin, isJefatura, isAdministrador, isTesorero, getRolData, puedeHacer } = useAuth()
   const [beneficiario, setBeneficiario] = useState<Beneficiario | null>(null)
   const [todosLosIds, setTodosLosIds] = useState<string[]>([])
   const [posicionActual, setPosicionActual] = useState<number>(-1)
@@ -583,24 +583,17 @@ export default function BeneficiarioDetalle() {
 
   // ✅ Datos "fijos" del header: solo superadmin y jefatura
   const puedeEditarDatosFijos = (): boolean => {
-    return isSuperAdmin || isJefatura
+    return puedeHacer('editar_beneficiario')
   }
 
   // ✅ INFORMACIÓN (uniforme/promesa/obs): superadmin, jefatura, jefe y subjefe de su rama
   const puedeEditarInformacion = (): boolean => {
-    if (!beneficiario) return false
-    if (isSuperAdmin || isJefatura) return true
-    if (esJefe && ramaAsignada === beneficiario.rama) return true
-    if (esSubJefe && ramaAsignada === beneficiario.rama) return true
-    return false
+    return puedeHacer('editar_info_benef')
   }
 
   // ✅ PAGOS (crear): superadmin, tesorero y jefe de su rama. SubJefes y Ayudantes NO.
   const puedeCrearPagos = (): boolean => {
-    if (!beneficiario) return false
-    if (isSuperAdmin || isTesorero) return true
-    if (esJefe && ramaAsignada === beneficiario.rama) return true
-    return false
+    return puedeHacer('crear_pago')
   }
 
   const categorias = [
@@ -2987,7 +2980,7 @@ setPagos(pagosOrdenados)
             justifyContent: 'flex-end'
           }}>
             {/* ✅ BOTÓN PASAR DE RAMA (solo Jefatura/SUPER_ADMIN, no para RoverPartida) */}
-            {isJefatura && beneficiario.rama !== 'RoverPartida' && (
+            {puedeHacer('pasar_de_rama') && beneficiario.rama !== 'RoverPartida' && (
               <button
                 onClick={() => {
                   setShowPaseRama(!showPaseRama)

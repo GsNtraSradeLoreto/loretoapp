@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './components/Layout'
+import ConfiguracionRolesUsuarios from './pages/ConfiguracionRolesUsuarios'
 
 // ✅ Lazy loading de las páginas
 const Login = lazy(() => import('./pages/Login'))
@@ -199,6 +200,13 @@ function AppRoutes() {
           <PrivateRoute>
             <Layout>
               <Auditoria />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/configuracion-roles" element={
+          <PrivateRoute>
+            <Layout>
+              <ConfiguracionRolesUsuarios />
             </Layout>
           </PrivateRoute>
         } />
