@@ -896,11 +896,7 @@ setPagos(pagosOrdenados)
 
   const renderLegajo = () => {
     const puedeEditar = (): boolean => {
-      if (!beneficiario) return false
-      if (esSuperAdmin || esJefatura) return true
-      if (esJefe && ramaAsignada === beneficiario.rama) return true
-      if (esSubJefe && ramaAsignada === beneficiario.rama) return true
-      return false
+      return puedeHacer('editar_legajo')
     }
 
     if (cargandoLegajo) {

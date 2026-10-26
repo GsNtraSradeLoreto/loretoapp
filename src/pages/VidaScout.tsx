@@ -501,7 +501,7 @@ const HistorialScout = ({ eventos }: { eventos: EventoHistorial[] }) => {
 export default function VidaScout() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { isSuperAdmin, isJefatura, isAdministrador, isTesorero, getRolData } = useAuth()
+  const { isSuperAdmin, isJefatura, isAdministrador, isTesorero, getRolData, puedeHacer } = useAuth()
 
   const [beneficiario, setBeneficiario] = useState<Beneficiario | null>(null)
   const [progresionManada, setProgresionManada] = useState<ProgresionManada | null>(null)
@@ -606,8 +606,8 @@ export default function VidaScout() {
   // ✅ Visibilidad: superadmin/jefatura/admin/tesorero ven TODO
   const puedeVerInactivos = isSuperAdmin || isJefatura || isAdministrador || isTesorero
 
-  // ✅ Permiso para editar ingreso al grupo: solo superadmin y jefatura
-  const puedeEditarIngresoGrupo = isSuperAdmin || isJefatura
+  // ✅ Permiso para editar ingreso al grupo
+  const puedeEditarIngresoGrupo = puedeHacer('editar_fecha_grupo')
 
   // ✅ ¿Hay alguna edición abierta? Bloquea el swipe
   const hayEdicionAbierta = editandoManada || editandoUnidad || editandoCaminantes || editandoRovers || editandoIngresoGrupo
@@ -623,10 +623,7 @@ export default function VidaScout() {
 
   // ✅ Permisos: ¿puedo EDITAR esta rama?
   const puedeEditarRama = (rama: string): boolean => {
-    if (esSuperAdmin || esJefatura) return true
-    if (esJefe && ramaAsignada === rama) return true
-    if (esSubJefe && ramaAsignada === rama) return true
-    return false
+    return puedeHacer('editar_progresion')
   }
 
   // ============================================

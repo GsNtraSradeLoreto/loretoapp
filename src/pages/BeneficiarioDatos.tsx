@@ -221,7 +221,7 @@ const Campo = ({
 export default function BeneficiarioDatos() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { isSuperAdmin, isJefatura, getRolData } = useAuth()
+  const { isSuperAdmin, isJefatura, getRolData, puedeHacer } = useAuth()
 
   const [beneficiario, setBeneficiario] = useState<Beneficiario | null>(null)
   const [datos, setDatos] = useState<DatosPersonales | null>(null)
@@ -240,8 +240,8 @@ export default function BeneficiarioDatos() {
   const esDirigente = rolData.tipo === 'jefe' || rolData.tipo === 'subjefe' || rolData.tipo === 'ayudante'
   const ramaAsignada = rolData.rama
 
-  // Solo SUPER_ADMIN y Jefatura editan
-  const puedeEditar = isSuperAdmin || isJefatura
+  // ✅ Permiso dinámico para editar la ficha completa
+  const puedeEditar = puedeHacer('editar_ficha_completa')
 
   // ============================================
   // EFECTOS
