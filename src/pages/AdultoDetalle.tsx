@@ -858,7 +858,7 @@ export default function AdultoDetalle() {
               }}
             />
             <button
-              onClick={buscarUsuarios}
+              onClick={() => buscarUsuarios()}
               disabled={buscandoUsuarios || !busquedaUsuario.trim()}
               style={{
                 backgroundColor: '#24352A',

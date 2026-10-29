@@ -285,7 +285,7 @@ const necesitaValidacion = (d: Dirigente): boolean => {
   if (d.tiene_insignia_madera) return false
 
   // 2) Roles sin rama → nunca
-  if (esRolSinRama(d.rol)) return false
+  if (esRolSinRama(d.rol_grupo)) return false
 
   // 3) Inactivos → tampoco
   if (!d.activo) return false
@@ -318,7 +318,7 @@ const necesitaValidacion = (d: Dirigente): boolean => {
 const obtenerEtapasSinValidar = (d: Dirigente): string[] => {
   // Mismas condiciones que necesitaValidacion
   if (d.tiene_insignia_madera) return []
-  if (esRolSinRama(d.rol)) return []
+  if (esRolSinRama(d.rol_grupo)) return []
   if (!d.activo) return []
 
   const etapas = ['basica', 'intermedia', 'avanzada'] as const
@@ -514,7 +514,7 @@ export default function Formacion() {
         case 'fecha_desc':
           return new Date(b.creado_en).getTime() - new Date(a.creado_en).getTime()
         case 'rol':
-          return (a.rol || '').localeCompare(b.rol || '')
+          return (a.rol_grupo || '').localeCompare(b.rol_grupo || '')
         case 'rama': {
           const oA = ORDEN_RAMAS[a.rama_asignada || ''] || 99
           const oB = ORDEN_RAMAS[b.rama_asignada || ''] || 99
@@ -585,12 +585,12 @@ export default function Formacion() {
     const dirigenteAbierto = dirigentesFiltrados[indiceDirigente]
     const estado = calcularEstadoGeneral(dirigenteAbierto.cursos)
     const etapas = ['basica', 'intermedia', 'avanzada', 'religiosa']
-    const rolSinRama = esRolSinRama(dirigenteAbierto.rol)
+    const rolSinRama = esRolSinRama(dirigenteAbierto.rol_grupo)
     const cursosCambioRama = calcularCursosCambioRama(
       dirigenteAbierto.tiene_insignia_madera,
       dirigenteAbierto.rama_im,
       dirigenteAbierto.rama_asignada,
-      dirigenteAbierto.rol
+      dirigenteAbierto.rol_grupo
     )
 
     const total = dirigentesFiltrados.length
@@ -767,7 +767,7 @@ export default function Formacion() {
             fontSize: 'clamp(11px, 2.5vw, 13px)', color: '#D1C9B4',
             margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.5px'
           }}>
-            {getRolLabel(dirigenteAbierto.rol)}
+            {getRolLabel(dirigenteAbierto.rol_grupo)}
           </p>
 
           {dirigenteAbierto.rama_asignada && (
@@ -1301,7 +1301,7 @@ export default function Formacion() {
 
       {dirigentesFiltrados.map((d, idx) => {
         const estado = calcularEstadoGeneral(d.cursos)
-        const rolSinRama = esRolSinRama(d.rol)
+        const rolSinRama = esRolSinRama(d.rol_grupo)
         const valBasica = getValidacion(d, 'basica')
         const valIntermedia = getValidacion(d, 'intermedia')
         const valAvanzada = getValidacion(d, 'avanzada')
@@ -1491,7 +1491,7 @@ function FormDirigenteInline({
   const [nombre, setNombre] = useState(dirigente?.nombre || '')
   const [apellido, setApellido] = useState(dirigente?.apellido || '')
   const [email, setEmail] = useState(dirigente?.email || '')
-  const [rol, setRol] = useState(dirigente?.rol || '')
+  const [rol, setRol] = useState(dirigente?.rol_grupo || '')
   const [ramaAsignada, setRamaAsignada] = useState(dirigente?.rama_asignada || '')
   const [tieneIM, setTieneIM] = useState(dirigente?.tiene_insignia_madera || false)
   const [ramaIM, setRamaIM] = useState(dirigente?.rama_im || '')
@@ -1528,7 +1528,7 @@ function FormDirigenteInline({
         nombre: nombre.trim(),
         apellido: apellido.trim(),
         email: email.trim() || null,
-        rol: rol || null,
+        rol_grupo: rol || null,
         rama_asignada: ramaAsignada || null,
         tiene_insignia_madera: tieneIM,
         rama_im: tieneIM ? (ramaIM || null) : null,
@@ -1578,7 +1578,7 @@ function FormDirigenteInline({
         }
 
         const { error: updateError } = await supabase
-          .from('formacion_dirigentes')
+          .from('dirigentes')
           .update(payload)
           .eq('id', dirigente!.id)
         if (updateError) throw updateError
@@ -1613,7 +1613,7 @@ function FormDirigenteInline({
         payload.validaciones = validacionesIniciales
 
         const { error: insertError } = await supabase
-          .from('formacion_dirigentes')
+          .from('dirigentes')
           .insert(payload)
         if (insertError) throw insertError
       }
