@@ -6,6 +6,7 @@ import CartelFechaNacimiento from './CartelFechaNacimiento'
 import CartelSolicitudesPendientes from './CartelSolicitudesPendientes'
 import { supabase } from '../lib/supabase'
 import { useSwipe } from '../hooks/useSwipe'
+import { getRolLabel } from '../lib/rolesLabels'
 
 interface LayoutProps {
   children: ReactNode
@@ -36,7 +37,8 @@ export default function Layout({ children }: LayoutProps) {
   const [permisosPendientes, setPermisosPendientes] = React.useState(0)
   const [solicitudesPendientesParaBadge, setSolicitudesPendientesParaBadge] = React.useState(0)
   const [dragOffset, setDragOffset] = React.useState(0)
-
+  const [fotoPerfil, setFotoPerfil] = React.useState<string | null>(null)
+  const [miFichaId, setMiFichaId] = React.useState<string | null>(null)
   const menuPerfilRef = useRef<HTMLDivElement>(null)
 
   // ✅ Cerrar menú al tocar afuera
@@ -148,6 +150,46 @@ export default function Layout({ children }: LayoutProps) {
       })
   }, [isSuperAdmin, isJefatura, esJefeDeRama])
 
+  // 🖼️ Cargar foto de perfil (busca en usuarios y si no, en dirigentes)
+  React.useEffect(() => {
+    if (!profile?.id) return
+    
+    // Primero intentamos buscar la foto en la tabla de usuarios (donde se sube desde "Mi Perfil")
+    supabase
+      .from('usuarios')
+      .select('foto_url')
+      .eq('id', profile.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.foto_url) {
+          setFotoPerfil(data.foto_url)
+        } else {
+          // Si no tiene, buscamos en la tabla de dirigentes por si la subió desde la ficha de Adultos
+          supabase
+            .from('dirigentes')
+            .select('foto_url')
+            .eq('usuario_id', profile.id)
+            .maybeSingle()
+            .then(({ data: dirData }) => {
+              if (dirData?.foto_url) setFotoPerfil(dirData.foto_url)
+            })
+        }
+      })
+  }, [profile?.id, location.pathname]) // 👈 Se vuelve a ejecutar cada vez que cambiás de página
+
+  // 🪪 Cargar ID de mi ficha de dirigente (si tengo)
+  React.useEffect(() => {
+    if (!profile?.id) return
+    supabase
+      .from('dirigentes')
+      .select('id')
+      .eq('usuario_id', profile.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.id) setMiFichaId(data.id)
+      })
+  }, [profile?.id])
+
   // ============================================
   // NAVEGACIÓN POR SWIPE
   // ============================================
@@ -155,7 +197,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/dashboard' },
     { path: '/pagos' },
     ...(isSuperAdmin || isJefatura ? [{ path: '/campamentos' }, { path: '/auditoria' }] : []),
-    ...(isSuperAdmin || isJefatura || isAdministrador ? [{ path: '/admin' }] : []),
+    // { path: '/admin' } eliminado (fusionado en /adultos)
     ...(isSuperAdmin ? [{ path: '/configuracion-roles' }] : [])
   ]
 
@@ -269,17 +311,19 @@ export default function Layout({ children }: LayoutProps) {
                   flexShrink: 0
                 }}
               />
-              <span style={{
-                fontSize: esCelular ? '16px' : '20px',
-                fontWeight: '700',
-                color: '#F3ECD8',
-                letterSpacing: '1px',
-                textTransform: 'uppercase',
-                fontFamily: 'Oswald, sans-serif',
-                whiteSpace: 'nowrap'
-              }}>
-                LoretApp
-              </span>
+              {!esCelular && (
+                <span style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  color: '#F3ECD8',
+                  letterSpacing: '1px',
+                  textTransform: 'uppercase',
+                  fontFamily: 'Oswald, sans-serif',
+                  whiteSpace: 'nowrap'
+                }}>
+                  LoretApp
+                </span>
+              )}
             </Link>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -347,7 +391,8 @@ export default function Layout({ children }: LayoutProps) {
                     cursor: 'pointer',
                     padding: '4px 12px',
                     borderRadius: '8px',
-                    fontFamily: 'Oswald, sans-serif'
+                    fontFamily: 'Oswald, sans-serif',
+                    maxWidth: '250px'
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#3D4F3F'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -364,9 +409,15 @@ export default function Layout({ children }: LayoutProps) {
                       justifyContent: 'center',
                       fontSize: '14px',
                       fontWeight: '700',
-                      fontFamily: 'Oswald, sans-serif'
+                      fontFamily: 'Oswald, sans-serif',
+                      overflow: 'hidden',
+                      flexShrink: 0
                     }}>
-                      {nombreCompleto.charAt(0).toUpperCase()}
+                      {fotoPerfil ? (
+                        <img src={fotoPerfil} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        nombreCompleto.charAt(0).toUpperCase()
+                      )}
                     </div>
 
                     {/* Badge de solicitudes pendientes */}
@@ -395,18 +446,34 @@ export default function Layout({ children }: LayoutProps) {
                       </span>
                     )}
                   </div>
-                  {!esCelular && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                     <span style={{
                       fontSize: '14px',
                       fontWeight: '500',
                       color: '#F3ECD8',
                       fontFamily: 'Oswald, sans-serif',
                       textTransform: 'uppercase',
-                      letterSpacing: '0.5px'
+                      letterSpacing: '0.5px',
+                      lineHeight: 1.1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      maxWidth: '150px'
                     }}>
                       {nombreCompleto}
                     </span>
-                  )}
+                    <span style={{
+                      fontSize: '10px',
+                      color: '#C48A2A',
+                      fontFamily: 'Oswald, sans-serif',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      lineHeight: 1.1,
+                      marginTop: '2px'
+                    }}>
+                      {getRolLabel(profile?.rol || '')}
+                    </span>
+                  </div>
                   <svg style={{ width: '16px', height: '16px', color: '#F3ECD8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
@@ -447,27 +514,6 @@ export default function Layout({ children }: LayoutProps) {
                     </Link>
 
                     <Link
-                      to="/pagos"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '8px 16px',
-                        color: '#24352A',
-                        textDecoration: 'none',
-                        fontSize: '14px',
-                        fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      onClick={() => setShowMenu(false)}
-                    >
-                      <span style={{ marginRight: '8px' }}>💰</span>
-                      Pagos
-                    </Link>
-
-                    <Link
                       to="/cumpleanos"
                       style={{
                         display: 'flex',
@@ -486,110 +532,6 @@ export default function Layout({ children }: LayoutProps) {
                     >
                       <span style={{ marginRight: '8px' }}>🎂</span>
                       Cumpleaños
-                    </Link>
-
-
-                    <Link
-                      to="/campamentos"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '8px 16px',
-                        color: '#24352A',
-                        textDecoration: 'none',
-                        fontSize: '14px',
-                        fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      onClick={() => setShowMenu(false)}
-                    >
-                      <span style={{ marginRight: '8px' }}>🏕️</span>
-                      Campamentos
-                    </Link>
-
-                    <Link
-                      to="/permisos"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '8px 16px',
-                        color: '#24352A',
-                        textDecoration: 'none',
-                        fontSize: '14px',
-                        fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      onClick={() => setShowMenu(false)}
-                    >
-                      <span style={{ marginRight: '8px' }}>📋</span>
-                      Permisos
-                      {(isSuperAdmin || isJefatura) && permisosPendientes > 0 && (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          minWidth: '20px',
-                          height: '20px',
-                          padding: '0 6px',
-                          backgroundColor: '#B71C1C',
-                          color: 'white',
-                          borderRadius: '10px',
-                          fontSize: '11px',
-                          fontWeight: '700',
-                          fontFamily: 'Oswald, sans-serif',
-                          marginLeft: '8px',
-                          lineHeight: 1
-                        }}>
-                          {permisosPendientes > 99 ? '99+' : permisosPendientes}
-                        </span>
-                      )}
-                      {ramaUsuario && notifPermisos > 0 && (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          minWidth: '20px',
-                          height: '20px',
-                          padding: '0 6px',
-                          backgroundColor: '#C48A2A',
-                          color: 'white',
-                          borderRadius: '10px',
-                          fontSize: '11px',
-                          fontWeight: '700',
-                          fontFamily: 'Oswald, sans-serif',
-                          marginLeft: '8px',
-                          lineHeight: 1
-                        }}>
-                          {notifPermisos > 99 ? '99+' : notifPermisos}
-                        </span>
-                      )}
-                    </Link>
-
-                    <Link
-                      to="/planillas"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '8px 16px',
-                        color: '#24352A',
-                        textDecoration: 'none',
-                        fontSize: '14px',
-                        fontFamily: 'Oswald, sans-serif',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      onClick={() => setShowMenu(false)}
-                    >
-                      <span style={{ marginRight: '8px' }}>📊</span>
-                      Planillas
                     </Link>
 
                     {(isSuperAdmin || isJefatura || isAdministrador || esJefeDeRama) && (
@@ -611,7 +553,7 @@ export default function Layout({ children }: LayoutProps) {
                         onClick={() => setShowMenu(false)}
                       >
                         <span style={{ marginRight: '8px' }}>📋</span>
-                        Solicitudes
+                        Solicitudes de Inscripción
                         {(isSuperAdmin || isJefatura || esJefeDeRama) && solicitudesPendientesParaBadge > 0 && (
                           <span style={{
                             display: 'inline-flex',
@@ -635,114 +577,25 @@ export default function Layout({ children }: LayoutProps) {
                       </Link>
                     )}
 
-                    {(isSuperAdmin || isJefatura) && (
-                      <Link
-                        to="/auditoria"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          padding: '8px 16px',
-                          color: '#24352A',
-                          textDecoration: 'none',
-                          fontSize: '14px',
-                          fontFamily: 'Oswald, sans-serif',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        onClick={() => setShowMenu(false)}
-                      >
-                        <span style={{ marginRight: '8px' }}>📋</span>
-                        Historial
-                        <Badge />
-                      </Link>
-                    )}
-
-                    {isSuperAdmin && (
-                      <Link
-                        to="/admin"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          padding: '8px 16px',
-                          color: '#24352A',
-                          textDecoration: 'none',
-                          fontSize: '14px',
-                          fontFamily: 'Oswald, sans-serif',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          borderTop: '1px solid #D1C9B4',
-                          margin: '2px 0'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        onClick={() => setShowMenu(false)}
-                      >
-                        <span style={{ marginRight: '8px' }}>⚙️</span>
-                        Administración
-                      </Link>
-                    )}
-
-                    {/* 🔐 NUEVO BOTÓN: Configuración de Roles (Solo SuperAdmin) */}
-                    {isSuperAdmin && (
-                      <Link
-                        to="/configuracion-roles"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          padding: '8px 16px',
-                          color: '#24352A',
-                          textDecoration: 'none',
-                          fontSize: '14px',
-                          fontFamily: 'Oswald, sans-serif',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          borderBottom: '1px solid #D1C9B4',
-                          margin: '2px 0'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        onClick={() => setShowMenu(false)}
-                      >
-                        <span style={{ marginRight: '8px' }}>🔐</span>
-                        Permisos de Roles
-                      </Link>
-                    )}
-
-                    {(isSuperAdmin || isJefatura) && (
-                      <Link
-                        to="/formacion"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          padding: '8px 16px',
-                          color: '#24352A',
-                          textDecoration: 'none',
-                          fontSize: '14px',
-                          fontFamily: 'Oswald, sans-serif',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          borderBottom: '1px solid #D1C9B4',
-                          margin: '2px 0'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        onClick={() => setShowMenu(false)}
-                      >
-                        <span style={{ marginRight: '8px' }}>🎓</span>
-                        Formación
-                      </Link>
-                    )}
-
-                    <Link
-                      to="/perfil"
+                    <button
+                      onClick={() => {
+                        setShowMenu(false)
+                        if (miFichaId) {
+                          navigate(`/adultos/${miFichaId}`)
+                        } else {
+                          navigate('/perfil')
+                        }
+                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
+                        width: '100%',
                         padding: '8px 16px',
                         color: '#24352A',
-                        textDecoration: 'none',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
                         fontSize: '14px',
                         fontFamily: 'Oswald, sans-serif',
                         textTransform: 'uppercase',
@@ -750,11 +603,10 @@ export default function Layout({ children }: LayoutProps) {
                       }}
                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      onClick={() => setShowMenu(false)}
                     >
                       <span style={{ marginRight: '8px' }}>👤</span>
                       Mi Perfil
-                    </Link>
+                    </button>
 
                     <button
                       onClick={() => {

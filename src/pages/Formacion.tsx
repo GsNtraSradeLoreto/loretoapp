@@ -153,7 +153,7 @@ interface Dirigente {
   apellido: string
   email: string | null
   rama_asignada: string | null
-  rol: string | null
+  rol_grupo: string | null
   tiene_insignia_madera: boolean
   rama_im: string | null
   im_sistema_anterior: boolean
@@ -353,6 +353,7 @@ const obtenerEtapasSinValidar = (d: Dirigente): string[] => {
 // ============================================
 export default function Formacion() {
   const { isSuperAdmin, isJefatura, profile } = useAuth()
+  const navigate = useNavigate()
 
   const [dirigentes, setDirigentes] = useState<Dirigente[]>([])
   const [loading, setLoading] = useState(true)
@@ -385,7 +386,7 @@ export default function Formacion() {
     try {
       setLoading(true)
       const { data, error } = await supabase
-        .from('formacion_dirigentes')
+        .from('dirigentes')
         .select('*')
         .order('apellido', { ascending: true })
 
@@ -413,7 +414,7 @@ export default function Formacion() {
 
     try {
       const { error } = await supabase
-        .from('formacion_dirigentes')
+        .from('dirigentes')
         .delete()
         .eq('id', dirigente.id)
 
@@ -437,7 +438,7 @@ export default function Formacion() {
     )
 
     const { error } = await supabase
-      .from('formacion_dirigentes')
+      .from('dirigentes')
       .update({ cursos: cursosNuevos })
       .eq('id', dirigenteId)
 
@@ -455,7 +456,7 @@ export default function Formacion() {
     }
 
     const { error } = await supabase
-      .from('formacion_dirigentes')
+      .from('dirigentes')
       .update({ validaciones: validacionesNuevas })
       .eq('id', dirigenteId)
 
@@ -1011,6 +1012,26 @@ export default function Formacion() {
   // ============================================
   return (
     <div style={{ fontFamily: 'Oswald, sans-serif' }}>
+      {/* Botón Volver */}
+      <button
+        onClick={() => navigate('/adultos')}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: '#24352A',
+          cursor: 'pointer',
+          fontFamily: 'Oswald, sans-serif',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          fontSize: '12px',
+          marginBottom: '12px',
+          padding: 0,
+          fontWeight: '600'
+        }}
+      >
+        ← Volver a Adultos
+      </button>
+
       <div style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'flex-start', gap: '12px', marginBottom: '20px',
@@ -1032,25 +1053,6 @@ export default function Formacion() {
             {dirigentesFiltrados.length} de {dirigentes.length} dirigentes
           </p>
         </div>
-
-        <button
-          onClick={() => {
-            setCreandoDirigenteInline(true)
-            setHayEdicionAbierta(true)
-            setMessage({ text: '', type: '' })
-          }}
-          style={{
-            backgroundColor: '#24352A', color: 'white',
-            padding: '8px 16px', borderRadius: '8px',
-            border: 'none', cursor: 'pointer',
-            fontSize: 'clamp(11px, 2.5vw, 13px)',
-            fontFamily: 'Oswald, sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.5px',
-            fontWeight: '600'
-          }}
-        >
-          + Nuevo Dirigente
-        </button>
       </div>
 
       {message.text && (
@@ -1343,7 +1345,7 @@ export default function Formacion() {
                     fontSize: 'clamp(10px, 2vw, 12px)',
                     color: '#7A7364', marginTop: '2px'
                   }}>
-                    {getRolLabel(d.rol)} {d.rama_asignada && `· ${getRamaLabel(d.rama_asignada)}`}
+                    {getRolLabel(d.rol_grupo)} {d.rama_asignada && `· ${getRamaLabel(d.rama_asignada)}`}
                   </div>
                 </div>
 

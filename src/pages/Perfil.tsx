@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -11,6 +11,90 @@ export default function Perfil() {
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  
+  // Estados para la foto
+  const [fotoPerfil, setFotoPerfil] = useState<string | null>(null)
+  const [subiendoFoto, setSubiendoFoto] = useState(false)
+
+  // Cargar foto actual
+  useEffect(() => {
+    if (!profile?.id) return
+    supabase
+      .from('usuarios')
+      .select('foto_url')
+      .eq('id', profile.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.foto_url) setFotoPerfil(data.foto_url)
+      })
+  }, [profile?.id])
+
+  const handleSubirFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !profile?.id) return
+
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(file.type)) {
+      setMessage({ text: '❌ Solo se permiten imágenes (JPG, PNG, WEBP)', type: 'error' })
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ text: '❌ La imagen no debe superar los 5 MB', type: 'error' })
+      return
+    }
+
+    setSubiendoFoto(true)
+    setMessage({ text: '', type: '' })
+
+    try {
+      const ext = file.name.split('.').pop()
+      const fileName = `perfil-${profile.id}-${Date.now()}.${ext}`
+      const filePath = `avatares/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('beneficiarios')
+        .upload(filePath, file, { cacheControl: '3600', upsert: true })
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('beneficiarios')
+        .getPublicUrl(filePath)
+
+      const { error: updateError } = await supabase
+        .from('usuarios')
+        .update({ foto_url: publicUrl })
+        .eq('id', profile.id)
+
+      if (updateError) throw updateError
+
+      setFotoPerfil(publicUrl)
+      setMessage({ text: '✅ Foto actualizada correctamente', type: 'success' })
+    } catch (err: any) {
+      console.error('Error al subir foto:', err)
+      setMessage({ text: '❌ Error al subir la foto: ' + err.message, type: 'error' })
+    } finally {
+      setSubiendoFoto(false)
+    }
+  }
+
+  const handleEliminarFoto = async () => {
+    if (!profile?.id) return
+    if (!confirm('¿Eliminar la foto de perfil actual?')) return
+
+    setSubiendoFoto(true)
+    const { error } = await supabase
+      .from('usuarios')
+      .update({ foto_url: null })
+      .eq('id', profile.id)
+
+    if (error) {
+      setMessage({ text: '❌ Error al eliminar foto: ' + error.message, type: 'error' })
+    } else {
+      setFotoPerfil(null)
+      setMessage({ text: '✅ Foto eliminada', type: 'success' })
+    }
+    setSubiendoFoto(false)
+  }
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -81,21 +165,86 @@ export default function Perfil() {
         marginBottom: '24px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '50%',
-            backgroundColor: '#BF4E30',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '24px',
-            fontWeight: '700',
-            color: 'white',
-            fontFamily: 'Oswald, sans-serif'
-          }}>
-            {iniciales || 'U'}
+          
+          {/* AVATAR CON FOTO */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              backgroundColor: '#BF4E30',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              fontWeight: '700',
+              color: 'white',
+              fontFamily: 'Oswald, sans-serif',
+              overflow: 'hidden'
+            }}>
+              {fotoPerfil ? (
+                <img src={fotoPerfil} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                iniciales || 'U'
+              )}
+            </div>
+            
+            {/* Botón de cambiar foto */}
+            <label style={{
+              position: 'absolute',
+              bottom: '-4px',
+              right: '-4px',
+              backgroundColor: '#24352A',
+              color: 'white',
+              borderRadius: '50%',
+              width: '24px',
+              height: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: subiendoFoto ? 'wait' : 'pointer',
+              border: '2px solid #C48A2A',
+              fontSize: '12px'
+            }}>
+              {subiendoFoto ? '⏳' : '📷'}
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={handleSubirFoto} 
+                style={{ display: 'none' }} 
+                disabled={subiendoFoto} 
+              />
+            </label>
+
+            {/* Botón de eliminar foto */}
+            {fotoPerfil && (
+              <button
+                onClick={handleEliminarFoto}
+                disabled={subiendoFoto}
+                title="Eliminar foto"
+                style={{
+                  position: 'absolute',
+                  top: '-4px',
+                  right: '-4px',
+                  backgroundColor: '#BF4E30',
+                  color: 'white',
+                  borderRadius: '50%',
+                  width: '20px',
+                  height: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: subiendoFoto ? 'wait' : 'pointer',
+                  border: '2px solid #24352A',
+                  fontSize: '10px',
+                  padding: 0
+                }}
+              >
+                ✕
+              </button>
+            )}
           </div>
+
           <div>
             <h1 style={{
               fontFamily: 'Oswald, sans-serif',

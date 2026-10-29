@@ -50,6 +50,18 @@ const PERMISOS_DISPONIBLES = [
       { id: 'ver_historial', label: 'Ver Historial / Logs' },
       { id: 'ver_config_planilla', label: 'Ver Configuración de Planillas (Año dinámico)' },
     ]
+  },
+  {
+    grupo: '👥 Adultos y Dirigentes',
+    items: [
+      { id: 'ver_adultos', label: 'Ver la lista y las fichas de adultos/dirigentes' },
+      { id: 'editar_adultos', label: 'Editar datos personales, rol y rama de adultos' },
+      { id: 'vincular_adultos', label: 'Vincular ficha de adulto con cuenta de usuario' },
+      { id: 'ver_formacion_adultos', label: 'Ver la formación (cursos y validaciones) de adultos' },
+      { id: 'editar_formacion_adultos', label: 'Editar la formación de adultos' },
+      { id: 'ver_pagos_adultos', label: 'Ver los pagos de campamentos de adultos' },
+      { id: 'editar_pagos_adultos', label: 'Editar / agregar pagos de adultos' },
+    ]
   }
 ]
 

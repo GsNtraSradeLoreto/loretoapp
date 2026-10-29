@@ -8,7 +8,7 @@ import ConfiguracionRolesUsuarios from './pages/ConfiguracionRolesUsuarios'
 const Login = lazy(() => import('./pages/Login'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Perfil = lazy(() => import('./pages/Perfil'))
-const Admin = lazy(() => import('./pages/Admin'))
+// const Admin = lazy(() => import('./pages/Admin')) // Eliminado: fusionado en Adultos.tsx
 const BeneficiarioDetalle = lazy(() => import('./pages/BeneficiarioDetalle'))
 const BeneficiarioNuevo = lazy(() => import('./pages/BeneficiarioNuevo'))
 const BeneficiarioDatos = lazy(() => import('./pages/BeneficiarioDatos'))
@@ -25,6 +25,8 @@ const Permisos = lazy(() => import('./pages/Permisos'))
 const Cumpleanos = lazy(() => import('./pages/Cumpleanos'))
 const PermisoNuevo = lazy(() => import('./pages/PermisoNuevo'))
 const PermisoDetalle = lazy(() => import('./pages/PermisoDetalle'))
+const Adultos = lazy(() => import('./pages/Adultos'))
+const AdultoDetalle = lazy(() => import('./pages/AdultoDetalle'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -91,13 +93,30 @@ function AppRoutes() {
             </Layout>
           </PrivateRoute>
         } />
-        <Route path="/admin" element={
+        
+        {/* 🆕 Módulo de Adultos / Dirigentes */}
+        <Route path="/adultos" element={
+          <PrivateRoute>
+            <Layout>
+              <Adultos />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/adultos/:id" element={
+          <PrivateRoute>
+            <Layout>
+              <AdultoDetalle />
+            </Layout>
+          </PrivateRoute>
+        } />
+         {/* ⚠️ Ruta /admin eliminada: ahora todo vive en /adultos */}
+        {/* <Route path="/admin" element={
           <PrivateRoute>
             <Layout>
               <Admin />
             </Layout>
           </PrivateRoute>
-        } />
+        } /> */}
                 <Route path="/beneficiario/nuevo" element={
           <PrivateRoute>
             <Layout>

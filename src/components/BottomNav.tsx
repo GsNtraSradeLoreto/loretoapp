@@ -10,8 +10,12 @@ export default function BottomNav() {
     isJefatura,
     isAdministrador,
     isTesorero,
-    getRolData
+    getRolData,
+    puedeHacer // 👈 Agregamos esto
   } = useAuth()
+
+  // 🚩 FLAG DE CONTROL: Cambiar a true cuando quieras que el botón se vea
+  const MOSTRAR_ADULTOS_EN_BOTTOMNAV = true
   const rolData = getRolData()
   const ramaUsuario = rolData.rama
 
@@ -95,7 +99,11 @@ export default function BottomNav() {
     navItems.push({ id: 'beneficiarios', label: 'Beneficiarios', icon: '👥', path: '/dashboard' })
     navItems.push({ id: 'pagos', label: 'Pagos', icon: '💰', path: '/pagos' })
 
-    // SuperAdmin: + Permisos, Campamentos, Historial, Planillas
+    // 👥 Adultos (Preparado para el futuro)
+    if (MOSTRAR_ADULTOS_EN_BOTTOMNAV && (isSuperAdmin || puedeHacer('ver_adultos'))) {
+      navItems.push({ id: 'adultos', label: 'Adultos', icon: '👥', path: '/adultos' })
+    }
+
     if (isSuperAdmin) {
       navItems.push({ id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' })
       navItems.push({ id: 'campamentos', label: 'Campamentos', icon: '🏕️', path: '/campamentos' })
