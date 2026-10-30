@@ -19,13 +19,29 @@ export default function Perfil() {
   // Cargar foto actual
   useEffect(() => {
     if (!profile?.id) return
+    
     supabase
-      .from('usuarios')
+      .from('dirigentes')
       .select('foto_url')
-      .eq('id', profile.id)
+      .eq('usuario_id', profile.id)
       .maybeSingle()
       .then(({ data }) => {
-        if (data?.foto_url) setFotoPerfil(data.foto_url)
+        if (data?.foto_url) {
+          setFotoPerfil(`${data.foto_url}?t=${Date.now()}`)
+        } else {
+          supabase
+            .from('usuarios')
+            .select('foto_url')
+            .eq('id', profile.id)
+            .maybeSingle()
+            .then(({ data: usrData }) => {
+              if (usrData?.foto_url) {
+                setFotoPerfil(`${usrData.foto_url}?t=${Date.now()}`)
+              } else {
+                setFotoPerfil(null)
+              }
+            })
+        }
       })
   }, [profile?.id])
 
@@ -60,15 +76,36 @@ export default function Perfil() {
         .from('beneficiarios')
         .getPublicUrl(filePath)
 
-      const { error: updateError } = await supabase
-        .from('usuarios')
-        .update({ foto_url: publicUrl })
-        .eq('id', profile.id)
+      // 1) Intentar actualizar en la tabla de dirigentes (por si tiene ficha)
+      const { data: dirigente, error: errFind } = await supabase
+        .from('dirigentes')
+        .select('id')
+        .eq('usuario_id', profile.id)
+        .maybeSingle()
 
-      if (updateError) throw updateError
+      if (errFind) throw errFind
 
-      setFotoPerfil(publicUrl)
+      if (dirigente) {
+        // Si tiene ficha, guardamos ahí
+        const { error: errDir } = await supabase
+          .from('dirigentes')
+          .update({ foto_url: publicUrl })
+          .eq('id', dirigente.id)
+        if (errDir) throw errDir
+      } else {
+        // Si no tiene ficha, guardamos en su cuenta (usuarios)
+        const { error: errUsr } = await supabase
+          .from('usuarios')
+          .update({ foto_url: publicUrl })
+          .eq('id', profile.id)
+        if (errUsr) throw errUsr
+      }
+
+            setFotoPerfil(publicUrl)
       setMessage({ text: '✅ Foto actualizada correctamente', type: 'success' })
+      
+      // Avisamos a la app
+      window.dispatchEvent(new Event('foto-perfil-cambiada'))
     } catch (err: any) {
       console.error('Error al subir foto:', err)
       setMessage({ text: '❌ Error al subir la foto: ' + err.message, type: 'error' })
@@ -82,18 +119,42 @@ export default function Perfil() {
     if (!confirm('¿Eliminar la foto de perfil actual?')) return
 
     setSubiendoFoto(true)
-    const { error } = await supabase
-      .from('usuarios')
-      .update({ foto_url: null })
-      .eq('id', profile.id)
+    setMessage({ text: 'Eliminando...', type: 'success' })
 
-    if (error) {
-      setMessage({ text: '❌ Error al eliminar foto: ' + error.message, type: 'error' })
-    } else {
+    try {
+      // 1. Borrar de la tabla DIRIGENTES (donde está la foto que ves en la ficha)
+      const { error: errDir } = await supabase
+        .from('dirigentes')
+        .update({ foto_url: null })
+        .eq('usuario_id', profile.id)
+
+      if (errDir) console.error('Error al borrar de dirigentes:', errDir)
+
+      // 2. Borrar de la tabla USUARIOS
+      const { error: errUsr } = await supabase
+        .from('usuarios')
+        .update({ foto_url: null })
+        .eq('id', profile.id)
+
+      if (errUsr) {
+        alert('Error de permisos: ' + errUsr.message)
+        throw errUsr // 👈 Si falla, que frene y te avise
+      }
+
+      // 3. Limpiamos el estado local
       setFotoPerfil(null)
-      setMessage({ text: '✅ Foto eliminada', type: 'success' })
+      setMessage({ text: '✅ Foto eliminada. Refrescá la página (F5) para ver el cambio.', type: 'success' })
+      
+      // 4. Forzamos un pequeño refresco después de 1 segundo para que el Header se entere
+      setTimeout(() => {
+        window.location.reload()
+      }, 1000)
+
+    } catch (err: any) {
+      setMessage({ text: '❌ Error inesperado: ' + err.message, type: 'error' })
+    } finally {
+      setSubiendoFoto(false)
     }
-    setSubiendoFoto(false)
   }
 
   const handleUpdateProfile = async (e: React.FormEvent) => {

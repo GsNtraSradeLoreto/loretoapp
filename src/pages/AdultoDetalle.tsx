@@ -88,10 +88,13 @@ export default function AdultoDetalle() {
   // =========================================================
   // Cargar ficha
   // =========================================================
-  useEffect(() => {
+    useEffect(() => {
     if (!id) return
     cargarFicha()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // 🔥 Escuchamos si la foto cambió
+    window.addEventListener('foto-perfil-cambiada', cargarFicha)
+    return () => window.removeEventListener('foto-perfil-cambiada', cargarFicha)
   }, [id])
 
   // =========================================================
@@ -166,7 +169,7 @@ export default function AdultoDetalle() {
     setSubiendoFoto(false)
   }
 
-  const cargarFicha = async () => {
+    const cargarFicha = async () => {
     setCargando(true)
     setError('')
     const { data, error: err } = await supabase
@@ -182,7 +185,23 @@ export default function AdultoDetalle() {
       return
     }
 
-    setDirigente(data)
+    // 🆕 Buscar foto en usuarios (igual que el Header)
+    let fotoFinal = data.foto_url
+    if (!fotoFinal && data.usuario_id) {
+      const { data: usrData } = await supabase
+        .from('usuarios')
+        .select('foto_url')
+        .eq('id', data.usuario_id)
+        .maybeSingle()
+      
+      if (usrData?.foto_url) fotoFinal = usrData.foto_url
+    }
+
+    setDirigente({ 
+      ...data, 
+      // Si hay foto, le agregamos el anti-caché para que el navegador no muestre la vieja
+      foto_url: fotoFinal ? `${fotoFinal}?t=${Date.now()}` : null 
+    })
     setForm({
       nombre: data.nombre || '',
       apellido: data.apellido || '',
@@ -199,6 +218,7 @@ export default function AdultoDetalle() {
     })
     setCargando(false)
   }
+  
     // =========================================================
   // Cargar datos de la cuenta de login vinculada
   // =========================================================

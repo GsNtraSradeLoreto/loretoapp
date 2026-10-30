@@ -150,33 +150,40 @@ export default function Layout({ children }: LayoutProps) {
       })
   }, [isSuperAdmin, isJefatura, esJefeDeRama])
 
-  // 🖼️ Cargar foto de perfil (busca en usuarios y si no, en dirigentes)
+      // 🖼️ Cargar foto de perfil
   React.useEffect(() => {
-    if (!profile?.id) return
-    
-    // Primero intentamos buscar la foto en la tabla de usuarios (donde se sube desde "Mi Perfil")
-    supabase
-      .from('usuarios')
-      .select('foto_url')
-      .eq('id', profile.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.foto_url) {
-          setFotoPerfil(data.foto_url)
-        } else {
-          // Si no tiene, buscamos en la tabla de dirigentes por si la subió desde la ficha de Adultos
-          supabase
-            .from('dirigentes')
-            .select('foto_url')
-            .eq('usuario_id', profile.id)
-            .maybeSingle()
-            .then(({ data: dirData }) => {
-              if (dirData?.foto_url) setFotoPerfil(dirData.foto_url)
-            })
-        }
-      })
-  }, [profile?.id, location.pathname]) // 👈 Se vuelve a ejecutar cada vez que cambiás de página
+    const cargarFoto = () => {
+      if (!profile?.id) return
+      
+      supabase
+        .from('dirigentes')
+        .select('foto_url')
+        .eq('usuario_id', profile.id)
+        .maybeSingle()
+        .then(({ data: dirData }) => {
+          if (dirData?.foto_url) {
+            setFotoPerfil(`${dirData.foto_url}?t=${Date.now()}`)
+          } else {
+            supabase
+              .from('usuarios')
+              .select('foto_url')
+              .eq('id', profile.id)
+              .maybeSingle()
+              .then(({ data: usrData }) => {
+                if (usrData?.foto_url) setFotoPerfil(`${usrData.foto_url}?t=${Date.now()}`)
+                else setFotoPerfil(null)
+              })
+          }
+        })
+    }
 
+    cargarFoto()
+
+    // 🔥 Escuchamos si la foto cambió en otra parte de la app
+    window.addEventListener('foto-perfil-cambiada', cargarFoto)
+    return () => window.removeEventListener('foto-perfil-cambiada', cargarFoto)
+  }, [profile?.id, location.pathname])
+  
   // 🪪 Cargar ID de mi ficha de dirigente (si tengo)
   React.useEffect(() => {
     if (!profile?.id) return
