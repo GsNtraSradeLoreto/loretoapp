@@ -27,6 +27,7 @@ const PermisoNuevo = lazy(() => import('./pages/PermisoNuevo'))
 const PermisoDetalle = lazy(() => import('./pages/PermisoDetalle'))
 const Adultos = lazy(() => import('./pages/Adultos'))
 const AdultoDetalle = lazy(() => import('./pages/AdultoDetalle'))
+const ViewerBloqueado = lazy(() => import('./pages/ViewerBloqueado'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -84,6 +85,11 @@ function AppRoutes() {
             <Layout>
               <Dashboard />
             </Layout>
+          </PrivateRoute>
+        } />
+                <Route path="/cuenta-en-revision" element={
+          <PrivateRoute>
+            <ViewerBloqueado />
           </PrivateRoute>
         } />
         <Route path="/perfil" element={

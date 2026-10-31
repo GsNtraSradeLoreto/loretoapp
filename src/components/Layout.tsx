@@ -16,6 +16,7 @@ export default function Layout({ children }: LayoutProps) {
   const { profile, signOut, isSuperAdmin, isJefatura, isAdministrador, getRolData } = useAuth()
   const rolData = getRolData()
   const ramaUsuario = rolData.rama
+  const esViewer = profile?.rol === 'viewer'
 
   // ¿Es jefe de alguna de las 4 ramas? (no subjefe, no ayudante)
   const esJefeDeRama = rolData.tipo === 'jefe'
@@ -59,6 +60,13 @@ export default function Layout({ children }: LayoutProps) {
       document.removeEventListener('touchstart', handleClickOutside)
     }
   }, [showMenu])
+
+    // 🔒 Si es viewer, lo mandamos a la pantalla de bloqueo
+  useEffect(() => {
+    if (esViewer && location.pathname !== '/cuenta-en-revision') {
+      navigate('/cuenta-en-revision', { replace: true })
+    }
+  }, [esViewer, location.pathname, navigate])
 
   const handleLogout = async () => {
     await signOut()

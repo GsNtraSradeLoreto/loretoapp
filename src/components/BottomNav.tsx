@@ -14,7 +14,7 @@ export default function BottomNav() {
     puedeHacer // 👈 Agregamos esto
   } = useAuth()
 
-  // 🚩 FLAG DE CONTROL: Cambiar a true cuando quieras que el botón se vea
+  // 🚩 FLAG DE CONTROL
   const MOSTRAR_ADULTOS_EN_BOTTOMNAV = true
   const rolData = getRolData()
   const ramaUsuario = rolData.rama
@@ -99,27 +99,26 @@ export default function BottomNav() {
     navItems.push({ id: 'beneficiarios', label: 'Beneficiarios', icon: '👥', path: '/dashboard' })
     navItems.push({ id: 'pagos', label: 'Pagos', icon: '💰', path: '/pagos' })
 
-    // 👥 Adultos (Preparado para el futuro)
-    if (MOSTRAR_ADULTOS_EN_BOTTOMNAV && (isSuperAdmin || puedeHacer('ver_adultos'))) {
+    // 👥 Adultos
+    if (MOSTRAR_ADULTOS_EN_BOTTOMNAV && (isSuperAdmin || isAdministrador || isTesorero || isJefatura || puedeHacer('ver_adultos'))) {
       navItems.push({ id: 'adultos', label: 'Adultos', icon: '👥', path: '/adultos' })
     }
 
     if (isSuperAdmin) {
       navItems.push({ id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' })
-      navItems.push({ id: 'campamentos', label: 'Campamentos', icon: '🏕️', path: '/campamentos' })
-      navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
+      navItems.push({ id: 'campamentos', label: 'Campamentos', icon: '⛺', path: '/campamentos' })
+      navItems.push({ id: 'auditoria', label: 'Historial', icon: '⏳', path: '/auditoria' })
       navItems.push({ id: 'planillas', label: 'Planillas', icon: '📊', path: '/planillas' })
     }
     // Jefatura: + Permisos, Historial, Planillas (SIN Campamentos)
     else if (isJefatura) {
       navItems.push({ id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' })
-      navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
+      navItems.push({ id: 'auditoria', label: 'Historial', icon: '⏳', path: '/auditoria' })
       navItems.push({ id: 'planillas', label: 'Planillas', icon: '📊', path: '/planillas' })
     }
-    // Administrador: + Permisos, Historial, Planillas
+    // Administrador: + Permisos, Planillas (SIN Historial)
     else if (isAdministrador) {
       navItems.push({ id: 'permisos', label: 'Permisos', icon: '📋', path: '/permisos' })
-      navItems.push({ id: 'auditoria', label: 'Historial', icon: '📋', path: '/auditoria' })
       navItems.push({ id: 'planillas', label: 'Planillas', icon: '📊', path: '/planillas' })
     }
     // Tesorero: + Planillas (SIN Permisos, SIN Campamentos)

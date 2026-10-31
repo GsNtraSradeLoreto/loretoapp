@@ -1334,7 +1334,7 @@ export default function AdultoDetalle() {
         {tab === 'pagos' && (
           <PagosDirigente
             dirigenteId={dirigente.id}
-            puedeEditar={isSuperAdmin || isAdministrador || puedeHacer('editar_pagos_adultos')}
+            puedeEditar={isSuperAdmin || puedeHacer('editar_pagos_adultos')}
           />
         )}
 

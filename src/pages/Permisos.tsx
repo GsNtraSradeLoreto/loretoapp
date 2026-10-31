@@ -7,6 +7,7 @@ interface Permiso {
   id: string
   creado_por: string | null
   creado_por_nombre: string | null
+  rama: string | null
   email_jefe: string
   emails_ayudantes: string[] | null
   fecha_salida: string | null
@@ -60,6 +61,16 @@ const formatFecha = (fecha: string | null) => {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+const getRamaStyle = (rama: string | null) => {
+  const colores: Record<string, { bg: string; border: string; text: string }> = {
+    'Manada': { bg: '#FFF9E0', border: '#F5C518', text: '#B8860B' },
+    'Unidad Scout': { bg: '#E8F5E9', border: '#2E7D32', text: '#1B5E20' },
+    'Caminantes': { bg: '#E1F5FE', border: '#03A9F4', text: '#01579B' },
+    'Rovers': { bg: '#FFEBEE', border: '#D32F2F', text: '#B71C1C' }
+  }
+  return colores[rama || ''] || null
+}
+
 export default function Permisos() {
   const navigate = useNavigate()
   const { isSuperAdmin, isJefatura, isAdministrador, getRolData, profile } = useAuth()
@@ -98,7 +109,7 @@ export default function Permisos() {
       setLoading(true)
       let query = supabase
         .from('permisos_salida')
-        .select('id, creado_por, creado_por_nombre, email_jefe, emails_ayudantes, fecha_salida, fecha_llegada, provincia, ciudad, direccion, pueblo_cercano, jefe_campo, estado, creado_en')
+        .select('id, creado_por, creado_por_nombre, rama, email_jefe, emails_ayudantes, fecha_salida, fecha_llegada, provincia, ciudad, direccion, pueblo_cercano, jefe_campo, estado, creado_en')
         .order('creado_en', { ascending: false })
 
       // ✅ Si NO ve todos (jefe o ayudante), filtrar por rama
@@ -428,11 +439,11 @@ export default function Permisos() {
               key={permiso.id}
               onClick={() => navigate(`/permisos/${permiso.id}`)}
               style={{
-                backgroundColor: 'white',
+                backgroundColor: getRamaStyle(permiso.rama)?.bg || 'white',
                 borderRadius: '12px',
                 padding: '14px',
-                border: `2px solid ${config.borde}`,
-                borderLeft: `6px solid ${config.borde}`,
+                border: `2px solid ${getRamaStyle(permiso.rama)?.border || config.borde}`,
+                borderLeft: `6px solid ${getRamaStyle(permiso.rama)?.border || config.borde}`,
                 cursor: 'pointer',
                 fontFamily: 'Oswald, sans-serif',
                 transition: 'all 0.2s'
@@ -503,7 +514,8 @@ export default function Permisos() {
                 color: '#A89E86',
                 marginTop: '8px',
                 paddingTop: '8px',
-                borderTop: '1px dashed #E8DEC4'
+                borderTop: '1px dashed #E8DEC4',
+                flexWrap: 'wrap'
               }}>
                 <span style={{
                   flex: 1,
@@ -514,6 +526,22 @@ export default function Permisos() {
                 }}>
                   👤 {permiso.creado_por_nombre || permiso.email_jefe}
                 </span>
+
+                {permiso.rama && getRamaStyle(permiso.rama) && (
+                  <span style={{
+                    fontSize: '10px',
+                    backgroundColor: getRamaStyle(permiso.rama)!.bg,
+                    color: getRamaStyle(permiso.rama)!.text,
+                    border: `1.5px solid ${getRamaStyle(permiso.rama)!.border}`,
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    fontWeight: '700',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {permiso.rama}
+                  </span>
+                )}
 
                 {puedeEliminar && (
                   <button
