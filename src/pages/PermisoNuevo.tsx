@@ -167,7 +167,7 @@ export default function PermisoNuevo() {
 
   const [transportes, setTransportes] = useState<Transporte[]>([])
 
-  const [programaArchivo, setProgramaArchivo] = useState<File | null>(null)
+  const [programaArchivos, setProgramaArchivos] = useState<File[]>([])
   const [programaLink, setProgramaLink] = useState('')
 
   useEffect(() => {
@@ -441,8 +441,8 @@ export default function PermisoNuevo() {
           rama: ramaAsignada,
           email_jefe: emailJefe.trim(),
           emails_ayudantes: emailsAyudantes.length > 0 ? emailsAyudantes : null,
-          fecha_salida: fechaSalida || null,
-          fecha_llegada: fechaLlegada || null,
+          fecha_salida: fechaSalida ? fechaSalida + ':00' : null,
+          fecha_llegada: fechaLlegada ? fechaLlegada + ':00' : null,
           es_en_sede: esEnSede,
           provincia: provincia || null,
           ciudad: ciudad || null,
@@ -513,41 +513,48 @@ export default function PermisoNuevo() {
         if (transError) throw transError
       }
 
-      const nombreCompleto = profile ? `${profile.nombre} ${profile.apellido || ''}`.trim() : null
+            const nombreCompleto = profile ? `${profile.nombre} ${profile.apellido || ''}`.trim() : null
 
-      if (programaArchivo) {
-        const ext = programaArchivo.name.split('.').pop()
-        const fileName = `original-${Date.now()}.${ext}`
-        const filePath = `${permiso.id}/${fileName}`
+      // Subir múltiples archivos
+      if (programaArchivos.length > 0) {
+        for (const archivo of programaArchivos) {
+          const ext = archivo.name.split('.').pop()
+          const fileName = `original-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`
+          const filePath = `${permiso.id}/${fileName}`
 
-        const { error: uploadError } = await supabase.storage
-          .from('permisos-programas')
-          .upload(filePath, programaArchivo, { cacheControl: '3600', upsert: true })
+          const { error: uploadError } = await supabase.storage
+            .from('permisos-programas')
+            .upload(filePath, archivo, { cacheControl: '3600', upsert: true })
 
-        if (uploadError) throw uploadError
+          if (uploadError) throw uploadError
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('permisos-programas')
-          .getPublicUrl(filePath)
+          const { data: { publicUrl } } = supabase.storage
+            .from('permisos-programas')
+            .getPublicUrl(filePath)
 
-        await supabase
-          .from('permisos_salida')
-          .update({
-            programa_original_url: publicUrl,
-            programa_original_nombre: programaArchivo.name
-          })
-          .eq('id', permiso.id)
+          // Solo guardamos la URL principal en la tabla permisos_salida (el primero)
+          if (archivo === programaArchivos[0]) {
+            await supabase
+              .from('permisos_salida')
+              .update({
+                programa_original_url: publicUrl,
+                programa_original_nombre: archivo.name
+              })
+              .eq('id', permiso.id)
+          }
 
-        await supabase
-          .from('permisos_archivos')
-          .insert({
-            permiso_id: permiso.id,
-            tipo: 'original',
-            storage_path: filePath,
-            nombre_archivo: programaArchivo.name,
-            subido_por: profile?.id,
-            subido_por_nombre: nombreCompleto
-          })
+          // Guardar todos los archivos en la tabla permisos_archivos
+          await supabase
+            .from('permisos_archivos')
+            .insert({
+              permiso_id: permiso.id,
+              tipo: 'original',
+              storage_path: filePath,
+              nombre_archivo: archivo.name,
+              subido_por: profile?.id,
+              subido_por_nombre: nombreCompleto
+            })
+        }
       } else if (programaLink) {
         await supabase
           .from('permisos_salida')
@@ -1074,45 +1081,94 @@ export default function PermisoNuevo() {
           </div>
         </div>
 
-        <div style={seccionStyle}>
+                <div style={seccionStyle}>
           <div style={seccionHeaderStyle}>📎 Programa de Actividades</div>
 
           <div style={{ fontSize: '11px', color: '#7A7364', marginBottom: '12px' }}>
-            Subí el archivo (Word, PDF, etc.) o pegá un link de Drive
+            Podés subir varios archivos (Word, PDF, etc.) o pegar un link de Drive
           </div>
 
           <div style={{ marginBottom: '14px' }}>
-            <label style={labelStyle}>Subir archivo</label>
-            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', border: '2px dashed #D1C9B4', borderRadius: '8px', cursor: 'pointer', backgroundColor: programaArchivo ? '#D1FAE5' : '#FAF8F4', fontSize: '12px', color: programaArchivo ? '#166534' : '#7A7364', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              {programaArchivo ? `📄 ${programaArchivo.name}` : '📎 Seleccionar archivo'}
+            <label style={labelStyle}>Subir archivos</label>
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              gap: '8px', padding: '12px',
+              border: '2px dashed #D1C9B4', borderRadius: '8px',
+              cursor: 'pointer',
+              backgroundColor: programaArchivos.length > 0 ? '#D1FAE5' : '#FAF8F4',
+              fontSize: '12px', color: programaArchivos.length > 0 ? '#166534' : '#7A7364',
+              fontFamily: 'Oswald, sans-serif',
+              textTransform: 'uppercase', letterSpacing: '0.5px'
+            }}>
+              {programaArchivos.length > 0
+                ? `📄 ${programaArchivos.length} archivo${programaArchivos.length !== 1 ? 's' : ''} seleccionado${programaArchivos.length !== 1 ? 's' : ''}`
+                : '📎 Seleccionar archivos'}
               <input
                 type="file"
+                multiple
                 accept=".doc,.docx,.pdf,.odt,.txt,image/*"
                 onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) {
+                  const files = Array.from(e.target.files || [])
+                  if (files.length === 0) return
+                  
+                  const archivosValidos: File[] = []
+                  for (const file of files) {
                     if (file.size > 10 * 1024 * 1024) {
-                      setMessage({ text: '⚠️ El archivo no debe superar 10 MB', type: 'warning' })
-                      return
+                      setMessage({ text: `⚠️ El archivo "${file.name}" supera los 10 MB y no se agregó.`, type: 'warning' })
+                      continue
                     }
-                    setProgramaArchivo(file)
-                    setProgramaLink('')
-                    setMessage({ text: '', type: '' })
+                    archivosValidos.push(file)
                   }
+                  
+                  setProgramaArchivos(prev => [...prev, ...archivosValidos])
+                  setProgramaLink('')
+                  setMessage({ text: '', type: '' })
                 }}
                 style={{ display: 'none' }}
               />
             </label>
-            {programaArchivo && (
-              <button type="button" onClick={() => setProgramaArchivo(null)} style={{ marginTop: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#BF4E30', fontSize: '11px', fontFamily: 'Oswald, sans-serif', textDecoration: 'underline' }}>
-                ✕ Quitar archivo
-              </button>
-            )}
           </div>
+
+          {/* Lista de archivos seleccionados */}
+          {programaArchivos.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
+              {programaArchivos.map((f, idx) => (
+                <div key={idx} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 12px', backgroundColor: '#F0F7F0',
+                  border: '1px solid #B8D4B8', borderRadius: '6px',
+                  fontSize: '12px', color: '#24352A'
+                }}>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    📄 {f.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setProgramaArchivos(prev => prev.filter((_, i) => i !== idx))}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: '#BF4E30', fontSize: '14px', padding: '2px 6px'
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div>
             <label style={labelStyle}>O link de Drive / externo</label>
-            <input type="url" value={programaLink} onChange={(e) => { setProgramaLink(e.target.value); if (e.target.value) setProgramaArchivo(null) }} placeholder="https://drive.google.com/..." style={inputStyle} />
+            <input
+              type="url"
+              value={programaLink}
+              onChange={(e) => {
+                setProgramaLink(e.target.value)
+                if (e.target.value) setProgramaArchivos([])
+              }}
+              placeholder="https://drive.google.com/..."
+              style={inputStyle}
+            />
           </div>
         </div>
 

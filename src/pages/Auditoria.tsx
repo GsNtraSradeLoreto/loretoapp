@@ -55,7 +55,7 @@ export default function Auditoria() {
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
 
-  const [detalle, setDetalle] = useState<AuditRow | null>(null)
+  const [detalleId, setDetalleId] = useState<number | null>(null)
   const [usuariosUnicos, setUsuariosUnicos] = useState<string[]>([])
   const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set())
 
@@ -542,93 +542,100 @@ useEffect(() => {
         </div>
       )}
 
-      {rows.map(r => {
+            {rows.map(r => {
         const estaSeleccionado = seleccionados.has(r.id)
-        return (
-          <div
-            key={r.id}
-            style={{
-              backgroundColor: estaSeleccionado ? '#F0E0C0' : '#F3ECD8',
-              border: '2px solid #D1C9B4',
-              borderLeft: `6px solid ${colorAccion(r.accion)}`,
-              borderRadius: '8px',
-              padding: '12px 14px',
-              marginBottom: '8px',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '10px'
-            }}
-          >
-            {isSuperAdmin && (
-              <div style={{ paddingTop: '4px' }}>
-                <input
-                  type="checkbox"
-                  checked={estaSeleccionado}
-                  onChange={() => toggleSeleccion(r.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                />
-              </div>
-            )}
+        const estaAbierto = detalleId === r.id
 
+        return (
+          <div key={r.id} style={{ marginBottom: '8px' }}>
             <div
-              style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-              onClick={() => setDetalle(r)}
+              style={{
+                backgroundColor: estaSeleccionado ? '#F0E0C0' : '#F3ECD8',
+                border: '2px solid #D1C9B4',
+                borderLeft: `6px solid ${colorAccion(r.accion)}`,
+                borderRadius: '8px',
+                padding: '12px 14px',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px',
+                cursor: 'pointer'
+              }}
+              onClick={() => setDetalleId(estaAbierto ? null : r.id)}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: '200px' }}>
-                  <div style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    <strong style={{ color: colorAccion(r.accion) }}>{labelAccion(r.accion)}</strong>
-                    {' · '}
-                    <span>{r.usuario_nombre || 'Usuario desconocido'}</span>
-                    {r.usuario_rol && <span style={{ color: '#A89E86' }}> ({r.usuario_rol})</span>}
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#24352A', marginTop: '4px', lineHeight: 1.35 }}>
-                    {r.descripcion}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#A89E86', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {r.entidad}
-                  </div>
+              {isSuperAdmin && (
+                <div style={{ paddingTop: '4px' }}>
+                  <input
+                    type="checkbox"
+                    checked={estaSeleccionado}
+                    onChange={() => toggleSeleccion(r.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
                 </div>
-                <div style={{ fontSize: '12px', color: '#7A7364', whiteSpace: 'nowrap' }}>
-                  {formatearFecha(r.created_at)}
+              )}
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '200px' }}>
+                    <div style={{ fontSize: '12px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <strong style={{ color: colorAccion(r.accion) }}>{labelAccion(r.accion)}</strong>
+                      {' · '}
+                      <span>{r.usuario_nombre || 'Usuario desconocido'}</span>
+                      {r.usuario_rol && <span style={{ color: '#A89E86' }}> ({r.usuario_rol})</span>}
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#24352A', marginTop: '4px', lineHeight: 1.35 }}>
+                      {r.descripcion}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#A89E86', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {r.entidad}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#7A7364', whiteSpace: 'nowrap' }}>
+                    {formatearFecha(r.created_at)}
+                  </div>
                 </div>
               </div>
+
+              {isSuperAdmin && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    borrarUno(r.id)
+                  }}
+                  title="Eliminar este registro"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: '32px', height: '32px',
+                    backgroundColor: 'transparent', color: '#B71C1C',
+                    border: '2px solid transparent', borderRadius: '8px',
+                    cursor: 'pointer', fontSize: '16px', flexShrink: 0, padding: 0
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#B71C1C'
+                    e.currentTarget.style.color = 'white'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                    e.currentTarget.style.color = '#B71C1C'
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
             </div>
 
-            {isSuperAdmin && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  borrarUno(r.id)
-                }}
-                title="Eliminar este registro"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '32px',
-                  height: '32px',
-                  backgroundColor: 'transparent',
-                  color: '#B71C1C',
-                  border: '2px solid transparent',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '16px',
-                  flexShrink: 0,
-                  padding: 0
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#B71C1C'
-                  e.currentTarget.style.color = 'white'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent'
-                  e.currentTarget.style.color = '#B71C1C'
-                }}
-              >
-                🗑️
-              </button>
+            {/* 🆕 Detalle inline expandible */}
+            {estaAbierto && (
+              <div style={{
+                backgroundColor: 'white',
+                border: '2px solid #D1C9B4',
+                borderTop: 'none',
+                borderRadius: '0 0 8px 8px',
+                padding: '16px',
+                marginTop: '-2px'
+              }}>
+                <DiffDatos anteriores={r.datos_anteriores} nuevos={r.datos_nuevos} />
+              </div>
             )}
           </div>
         )
@@ -639,75 +646,7 @@ useEffect(() => {
           <button onClick={cargarMas} style={btnSecondary}>Cargar más</button>
         </div>
       )}
-
-      {detalle && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 2147483647,
-            padding: '20px',
-            boxSizing: 'border-box'
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#F3ECD8',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '600px',
-              width: '100%',
-              maxHeight: '85vh',
-              overflowY: 'auto',
-              border: '3px solid #24352A',
-              boxSizing: 'border-box'
-            }}
-          >
-            <h2 style={{
-              fontSize: '18px',
-              color: '#24352A',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
-              margin: '0 0 16px 0'
-            }}>
-              📋 Detalle del registro
-            </h2>
-
-            <div style={{ fontSize: '14px', color: '#24352A', lineHeight: 1.6 }}>
-              <p><strong>Descripción:</strong> {detalle.descripcion}</p>
-              <p><strong>Usuario:</strong> {detalle.usuario_nombre} ({detalle.usuario_rol})</p>
-              <p><strong>Acción:</strong> {detalle.accion}</p>
-              <p><strong>Entidad:</strong> {detalle.entidad}</p>
-              <p><strong>Fecha:</strong> {formatearFecha(detalle.created_at)}</p>
-            </div>
-
-            {detalle.datos_anteriores && (
-              <div style={{ marginTop: '16px' }}>
-                <strong style={{ fontSize: '13px', textTransform: 'uppercase', color: '#7A7364' }}>Antes</strong>
-                <pre style={preStyle}>{JSON.stringify(detalle.datos_anteriores, null, 2)}</pre>
-              </div>
-            )}
-            {detalle.datos_nuevos && (
-              <div style={{ marginTop: '16px' }}>
-                <strong style={{ fontSize: '13px', textTransform: 'uppercase', color: '#7A7364' }}>Después</strong>
-                <pre style={preStyle}>{JSON.stringify(detalle.datos_nuevos, null, 2)}</pre>
-              </div>
-            )}
-
-            <div style={{ textAlign: 'right', marginTop: '20px' }}>
-              <button onClick={() => setDetalle(null)} style={btnPrimary}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
   )
 }
 
@@ -763,4 +702,89 @@ const preStyle: React.CSSProperties = {
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
   fontFamily: 'monospace'
+}
+
+// ============================================
+// COMPONENTE: Diff de datos (Antes vs Después)
+// ============================================
+function DiffDatos({ anteriores, nuevos }: { anteriores: any, nuevos: any }) {
+  if (!anteriores && !nuevos) {
+    return (
+      <div style={{ fontSize: '12px', color: '#7A7364', fontStyle: 'italic' }}>
+        Sin datos de comparación.
+      </div>
+    )
+  }
+
+  // Obtenemos todas las llaves de ambas tablas
+  const keysAntes = anteriores ? Object.keys(anteriores) : []
+  const keysNuevos = nuevos ? Object.keys(nuevos) : []
+  const todasLasKeys = Array.from(new Set([...keysAntes, ...keysNuevos]))
+    .filter(k => k !== 'id' && k !== 'created_at' && k !== 'updated_at' && k !== 'actualizado_en' && k !== 'creado_en')
+    .sort()
+
+  // Si no hay diferencias en ninguna llave
+  const hayDiferencias = todasLasKeys.some(key => {
+    const valA = anteriores?.[key]
+    const valN = nuevos?.[key]
+    return JSON.stringify(valA) !== JSON.stringify(valN)
+  })
+
+  if (!hayDiferencias) {
+    return (
+      <div style={{ fontSize: '12px', color: '#7A7364', fontStyle: 'italic' }}>
+        No hay cambios detectados en los datos.
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ fontSize: '12px', fontFamily: 'Oswald, sans-serif' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(100px, 1fr) 2fr 2fr',
+        gap: '8px',
+        padding: '8px',
+        backgroundColor: '#24352A',
+        color: '#F3ECD8',
+        borderRadius: '6px',
+        marginBottom: '8px',
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        fontSize: '11px'
+      }}>
+        <div>Campo</div>
+        <div>Antes</div>
+        <div>Después</div>
+      </div>
+
+      {todasLasKeys.map(key => {
+        const valA = anteriores?.[key]
+        const valN = nuevos?.[key]
+
+        // Si no cambió, no lo mostramos
+        if (JSON.stringify(valA) === JSON.stringify(valN)) return null
+
+        return (
+          <div key={key} style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(100px, 1fr) 2fr 2fr',
+            gap: '8px',
+            padding: '6px 8px',
+            borderBottom: '1px solid #E8DEC4',
+            alignItems: 'flex-start'
+          }}>
+            <div style={{ fontWeight: '600', color: '#24352A' }}>{key}</div>
+            <div style={{ color: '#BF4E30', wordBreak: 'break-word' }}>
+              {valA !== undefined && valA !== null ? String(valA) : <span style={{ color: '#A89E86', fontStyle: 'italic' }}>vacío</span>}
+            </div>
+            <div style={{ color: '#2E7D32', wordBreak: 'break-word' }}>
+              {valN !== undefined && valN !== null ? String(valN) : <span style={{ color: '#A89E86', fontStyle: 'italic' }}>vacío</span>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
