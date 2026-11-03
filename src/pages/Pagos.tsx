@@ -37,8 +37,6 @@ const ORDEN_RAMAS: Record<string, number> = {
 }
 
 const PAGE_SIZE = 20
-
-// 🆕 Etiquetas rápidas para observaciones
 const ETIQUETAS_OBSERVACIONES = ['Rendido Ok', 'Falta Recibito', 'No rendido']
 
 export default function Pagos() {
@@ -51,34 +49,31 @@ export default function Pagos() {
     getRolData,
     puedeHacer
   } = useAuth()
+  
   const [pagos, setPagos] = useState<Pago[]>([])
   const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([])
+  const [dirigentes, setDirigentes] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [anioActivo, setAnioActivo] = useState<number | null>(null)
 
-  // ✅ Form de CREAR (arriba)
+  // Form de CREAR
   const [showForm, setShowForm] = useState(false)
-
   const [message, setMessage] = useState({ text: '', type: '' })
   const [filterRama, setFilterRama] = useState('Todas')
   const [filterBeneficiario, setFilterBeneficiario] = useState('')
 
-  // ✅ ID del pago expandido (ver detalle)
+  // Detalle y edición
   const [pagoExpandido, setPagoExpandido] = useState<string | null>(null)
-
-  // 🆕 ID del pago ACTIVO (navegable con flechas)
   const [pagoActivo, setPagoActivo] = useState<string | null>(null)
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
-
-  // ✅ ID del pago en modo EDICIÓN INLINE
   const [editandoEnCard, setEditandoEnCard] = useState<string | null>(null)
 
-  // ✅ Paginación
+  // Paginación
   const [pagina, setPagina] = useState(1)
   const [hayMas, setHayMas] = useState(false)
   const [cargandoMas, setCargandoMas] = useState(false)
 
-  // ✅ Edición inline de observaciones
+  // Edición inline
   const [editandoInline, setEditandoInline] = useState<string | null>(null)
   const [valorInline, setValorInline] = useState('')
   const [guardandoInline, setGuardandoInline] = useState(false)
@@ -92,7 +87,7 @@ export default function Pagos() {
   const verTodas = isSuperAdmin || isJefatura || isAdministrador || isTesorero
   const esSuperAdmin = isSuperAdmin
 
-  // ✅ Form de CREAR (arriba)
+  // Estados del form
   const [formData, setFormData] = useState({
     beneficiario_id: '',
     recibo: '',
@@ -104,7 +99,12 @@ export default function Pagos() {
     observaciones: ''
   })
 
-  // ✅ Form de EDICIÓN INLINE
+  // Estados extra para Dirigentes y otros
+  const [tipoPagoDir, setTipoPagoDir] = useState<'dirigente' | 'otro'>('dirigente')
+  const [dirigenteSeleccionado, setDirigenteSeleccionado] = useState('')
+  const [nombreOtro, setNombreOtro] = useState('')
+
+  // Form de EDICIÓN INLINE
   const [editFormData, setEditFormData] = useState({
     beneficiario_id: '',
     recibo: '',
@@ -117,7 +117,6 @@ export default function Pagos() {
   })
   const [editLoading, setEditLoading] = useState(false)
   const [editMessage, setEditMessage] = useState({ text: '', type: '' })
-
   const [reciboOriginal, setReciboOriginal] = useState('')
 
   const categorias = [
@@ -127,7 +126,6 @@ export default function Pagos() {
     { value: 'C. ANUAL', label: 'Campamento Anual' },
     { value: 'OTRO', label: 'Otro' }
   ]
-
   const mediosPago = ['Efectivo', 'Mercadopago']
 
   const formatFecha = (fecha: string | null | undefined) => {
@@ -140,42 +138,26 @@ export default function Pagos() {
   const puedeEditarInline = (): boolean => isSuperAdmin || isTesorero
 
   const toggleExpandir = (pagoId: string) => {
-    // Si está en modo edición, no expandimos
     if (editandoEnCard === pagoId) return
     setPagoExpandido(prev => prev === pagoId ? null : pagoId)
   }
 
-  // 🆕 Agregar etiqueta a observaciones
   const agregarEtiqueta = (pagoId: string, etiqueta: string) => {
     const pago = pagos.find(p => p.id === pagoId)
     if (!pago) return
-
     const actual = pago.observaciones || ''
-    // Si ya tiene exactamente esa etiqueta, no hacer nada
     if (actual === etiqueta) return
 
-    // ✅ REEMPLAZA el contenido con la etiqueta
-    const nuevo = etiqueta
+    setPagos(prev => prev.map(p => p.id === pagoId ? { ...p, observaciones: etiqueta } : p))
 
-    setPagos(prev => prev.map(p =>
-      p.id === pagoId ? { ...p, observaciones: nuevo } : p
-    ))
-
-    supabase
-      .from('pagos')
-      .update({ observaciones: nuevo })
-      .eq('id', pagoId)
-      .then(({ error }) => {
-        if (error) {
-          console.error('Error al guardar etiqueta:', error)
-          setPagos(prev => prev.map(p =>
-            p.id === pagoId ? { ...p, observaciones: actual } : p
-          ))
-        }
-      })
+    supabase.from('pagos').update({ observaciones: etiqueta }).eq('id', pagoId).then(({ error }) => {
+      if (error) {
+        console.error('Error al guardar etiqueta:', error)
+        setPagos(prev => prev.map(p => p.id === pagoId ? { ...p, observaciones: actual } : p))
+      }
+    })
   }
 
-  // ✅ Carga inicial
   useEffect(() => {
     const cargarAnio = async () => {
       const anio = await getAnioActivo()
@@ -183,20 +165,18 @@ export default function Pagos() {
     }
     cargarAnio()
     loadBeneficiarios()
+    loadDirigentes()
   }, [])
 
-  // ✅ Este useEffect es el ÚNICO encargado de cargar los pagos
   useEffect(() => {
     if (anioActivo !== null) {
       cargarPagos(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterRama, filterBeneficiario, anioActivo])
+  }, [filterRama, filterBeneficiario, anioActivo, dirigentes])
 
   const loadBeneficiarios = async () => {
     try {
-      // Quitamos el setLoading(true) de acá para que no interfiera con la carga de pagos
-
       let beneficiariosQuery = supabase
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, tiene_hermanos, estado')
@@ -206,7 +186,6 @@ export default function Pagos() {
       }
 
       const { data: beneficiariosData, error: beneficiariosError } = await beneficiariosQuery
-
       if (beneficiariosError) throw beneficiariosError
 
       const beneficiariosOrdenados = (beneficiariosData || []).sort((a, b) => {
@@ -220,11 +199,25 @@ export default function Pagos() {
 
       setBeneficiarios(beneficiariosOrdenados)
       setLoading(false)
-
     } catch (error) {
       console.error('Error:', error)
       setMessage({ text: '❌ Error al cargar los datos', type: 'error' })
       setLoading(false)
+    }
+  }
+
+  const loadDirigentes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('dirigentes')
+        .select('id, nombre, apellido, tipo, activo')
+        .eq('activo', true)
+        .order('apellido', { ascending: true })
+
+      if (error) throw error
+      setDirigentes(data || [])
+    } catch (error) {
+      console.error('Error al cargar dirigentes:', error)
     }
   }
 
@@ -241,11 +234,7 @@ export default function Pagos() {
       const desde = (paginaActual - 1) * PAGE_SIZE
       const hasta = desde + PAGE_SIZE - 1
 
-      if (anioActivo === null) {
-        // Todavía no cargó el año activo, no hacemos la query
-        // No apagamos el loading acá, dejamos que el useEffect lo maneje
-        return
-      }
+      if (anioActivo === null) return
 
       let query = supabase
         .from('pagos')
@@ -258,12 +247,12 @@ export default function Pagos() {
             estado
           )
         `)
-        .eq('anio', anioActivo) // 👈 FILTRO POR AÑO ACTIVO
+        .eq('anio', anioActivo)
         .order('fecha_pago', { ascending: false })
         .order('id', { ascending: false })
         .range(desde, hasta)
 
-      if (filterRama !== 'Todas') {
+      if (filterRama !== 'Todas' && filterRama !== 'Dirigentes y otros') {
         query = query.eq('rama', filterRama)
       }
 
@@ -276,20 +265,53 @@ export default function Pagos() {
       }
 
       const { data: pagosData, error: pagosError } = await query
-
       if (pagosError) throw pagosError
 
       let pagosFiltrados = pagosData || []
+      
+      if (filterRama === 'Dirigentes y otros') {
+        pagosFiltrados = pagosFiltrados.filter((p: any) => p.rama === 'Dirigentes y otros')
+      } else if (filterRama !== 'Todas') {
+        pagosFiltrados = pagosFiltrados.filter((p: any) => p.rama !== 'Dirigentes y otros')
+      }
+      
       if (!esSuperAdmin) {
-        pagosFiltrados = pagosFiltrados.filter((pago: any) =>
-          pago.beneficiarios?.estado === 'activo'
-        )
+        pagosFiltrados = pagosFiltrados.filter((pago: any) => {
+          if (pago.rama === 'Dirigentes y otros') return true
+          return pago.beneficiarios?.estado === 'activo'
+        })
       }
 
       const pagosConNombres = pagosFiltrados.map((pago: any) => {
-        // Extraemos el número del recibo (ej: "U-101" → 101)
         const reciboLimpio = pago.recibo ? pago.recibo.replace(/^[A-Z]-/, '') : '0'
         const reciboNumero = parseInt(reciboLimpio, 10) || 0
+
+        if (pago.rama === 'Dirigentes y otros') {
+          const dir = dirigentes.find(d => d.id === pago.dirigente_id)
+          let nom = ''
+          let ape = ''
+          
+          if (dir) {
+            nom = dir.nombre
+            ape = dir.apellido
+          } else if (pago.nombre_libre) {
+            nom = pago.nombre_libre
+          } else if (pago.concepto) {
+            nom = pago.concepto
+          } else {
+            nom = 'Sin nombre'
+          }
+
+          return {
+            ...pago,
+            beneficiario_nombre: nom,
+            beneficiario_apellido: ape,
+            beneficiario_tiene_hermanos: false,
+            beneficiario_estado: 'activo',
+            reciboNumero
+          }
+        }
+
         return {
           ...pago,
           beneficiario_nombre: pago.beneficiarios?.nombre || '',
@@ -309,7 +331,6 @@ export default function Pagos() {
       }
 
       setHayMas(pagosData && pagosData.length === PAGE_SIZE)
-
     } catch (error) {
       console.error('Error:', error)
       setMessage({ text: '❌ Error al cargar los pagos', type: 'error' })
@@ -318,7 +339,7 @@ export default function Pagos() {
       setCargandoMas(false)
     }
   }
-  
+
   const cargarMas = () => {
     cargarPagos(false)
   }
@@ -331,16 +352,13 @@ export default function Pagos() {
                     beneficiario.rama === 'Unidad Scout' ? 'U' :
                     beneficiario.rama === 'Caminantes' ? 'C' : 'R'
 
-    if (anioActivo === null) {
-      console.warn('Año activo no cargado, usando fallback')
-      return `${prefijo}-01`
-    }
+    if (anioActivo === null) return `${prefijo}-01`
 
     const { data, error } = await supabase
       .from('pagos')
       .select('recibo')
       .ilike('recibo', `${prefijo}-%`)
-      .eq('anio', anioActivo) // 👈 FILTRO POR AÑO
+      .eq('anio', anioActivo)
 
     if (error) throw error
 
@@ -362,21 +380,12 @@ export default function Pagos() {
   }
 
   const verificarYResolverDuplicado = async (recibo: string, excludeId?: string): Promise<string> => {
-    let query = supabase
-      .from('pagos')
-      .select('recibo')
-      .eq('recibo', recibo)
-
-    if (excludeId) {
-      query = query.neq('id', excludeId)
-    }
+    let query = supabase.from('pagos').select('recibo').eq('recibo', recibo)
+    if (excludeId) query = query.neq('id', excludeId)
 
     const { data, error } = await query
     if (error) throw error
-
-    if (!data || data.length === 0) {
-      return recibo
-    }
+    if (!data || data.length === 0) return recibo
 
     const baseRecibo = recibo
     let maxSufijo = 0
@@ -402,9 +411,6 @@ export default function Pagos() {
     return nuevoSufijo === 1 ? baseRecibo : `${baseRecibo}-${nuevoSufijo}`
   }
 
-  // ============================================
-  // ✅ FORM CREAR (arriba) — handlers
-  // ============================================
   const handleBeneficiarioChange = async (beneficiarioId: string) => {
     setFormData({ ...formData, beneficiario_id: beneficiarioId })
 
@@ -427,16 +433,28 @@ export default function Pagos() {
     e.preventDefault()
     setMessage({ text: '', type: '' })
 
-    if (!formData.beneficiario_id) {
-      setMessage({ text: '⚠️ Seleccioná un beneficiario', type: 'warning' })
-      return
-    }
+    const esDir = filterRama === 'Dirigentes y otros'
 
-    if (esDirigente && ramaAsignada) {
-      const beneficiarioSeleccionado = beneficiarios.find(b => b.id === formData.beneficiario_id)
-      if (beneficiarioSeleccionado && beneficiarioSeleccionado.rama !== ramaAsignada) {
-        setMessage({ text: '⚠️ No tenés permisos para crear pagos en esta rama', type: 'warning' })
+    if (esDir) {
+      if (tipoPagoDir === 'dirigente' && !dirigenteSeleccionado) {
+        setMessage({ text: '⚠️ Seleccioná un dirigente', type: 'warning' })
         return
+      }
+      if (tipoPagoDir === 'otro' && !nombreOtro.trim()) {
+        setMessage({ text: '⚠️ Escribí el nombre/motivo del pago', type: 'warning' })
+        return
+      }
+    } else {
+      if (!formData.beneficiario_id) {
+        setMessage({ text: '⚠️ Seleccioná un beneficiario', type: 'warning' })
+        return
+      }
+      if (esDirigente && ramaAsignada) {
+        const beneficiarioSeleccionado = beneficiarios.find(b => b.id === formData.beneficiario_id)
+        if (beneficiarioSeleccionado && beneficiarioSeleccionado.rama !== ramaAsignada) {
+          setMessage({ text: '⚠️ No tenés permisos para crear pagos en esta rama', type: 'warning' })
+          return
+        }
       }
     }
 
@@ -485,43 +503,60 @@ export default function Pagos() {
     }
 
     try {
-      const beneficiario = beneficiarios.find(b => b.id === formData.beneficiario_id)
+      if (anioActivo === null) {
+        setMessage({ text: '⚠️ No se pudo determinar el período activo. Recargá la página.', type: 'warning' })
+        return
+      }
 
       let categoriaFinal = formData.categoria
       if (formData.categoria === 'OTRO') {
         categoriaFinal = formData.categoria_otro.trim().toUpperCase()
       }
 
-      if (anioActivo === null) {
-        setMessage({ text: '⚠️ No se pudo determinar el período activo. Recargá la página.', type: 'warning' })
-        return
+      let payload: any = {}
+
+      if (esDir) {
+        payload = {
+          dirigente_id: tipoPagoDir === 'dirigente' ? dirigenteSeleccionado : null,
+          nombre_libre: tipoPagoDir === 'otro' ? nombreOtro.trim() : null,
+          rama: 'Dirigentes y otros',
+          recibo: reciboFinal,
+          monto: monto,
+          fecha_pago: formData.fecha_pago,
+          categoria: categoriaFinal,
+          medio_pago: formData.medio_pago,
+          observaciones: formData.observaciones || null,
+          anio: anioActivo,
+          tipo_pago: tipoPagoDir,
+          registrado_por: profile?.id || null
+        }
+      } else {
+        const beneficiario = beneficiarios.find(b => b.id === formData.beneficiario_id)
+        payload = {
+          beneficiario_id: formData.beneficiario_id,
+          rama: beneficiario?.rama || '',
+          recibo: reciboFinal,
+          monto: monto,
+          fecha_pago: formData.fecha_pago,
+          categoria: categoriaFinal,
+          medio_pago: formData.medio_pago,
+          observaciones: formData.observaciones || null,
+          anio: anioActivo,
+          registrado_por: profile?.id || null
+        }
       }
 
-      const payload = {
-        beneficiario_id: formData.beneficiario_id,
-        rama: beneficiario?.rama || '',
-        recibo: reciboFinal,
-        monto: monto,
-        fecha_pago: formData.fecha_pago,
-        categoria: categoriaFinal,
-        medio_pago: formData.medio_pago,
-        observaciones: formData.observaciones || null,
-        anio: anioActivo // 👈 GUARDAMOS EL AÑO ACTIVO
-      }
-
-      const { error } = await supabase
-        .from('pagos')
-        .insert(payload)
-
+      const { error } = await supabase.from('pagos').insert(payload)
       if (error) throw error
+      
       setMessage({ text: `✅ Pago registrado correctamente (Recibo: ${reciboFinal})`, type: 'success' })
 
       resetForm()
       cargarPagos(true)
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error)
-      setMessage({ text: '❌ Error al guardar el pago', type: 'error' })
+      setMessage({ text: '❌ Error al guardar el pago: ' + error.message, type: 'error' })
     }
   }
 
@@ -538,17 +573,17 @@ export default function Pagos() {
       observaciones: ''
     })
     setReciboOriginal('')
+    setDirigenteSeleccionado('')
+    setNombreOtro('')
+    setTipoPagoDir('dirigente')
   }
 
-  // ============================================
-  // ✅ EDICIÓN INLINE — handlers
-  // ============================================
   const abrirEdicionEnCard = (pago: Pago) => {
     const categoriasEstandar = ['AFILIACION', 'CUOTAS', 'C. CORTO', 'C. ANUAL']
     const esOtro = !categoriasEstandar.includes(pago.categoria)
 
     setEditFormData({
-      beneficiario_id: pago.beneficiario_id,
+      beneficiario_id: pago.beneficiario_id || '',
       recibo: pago.recibo || '',
       monto: pago.monto?.toString() || '',
       fecha_pago: pago.fecha_pago || '',
@@ -580,11 +615,6 @@ export default function Pagos() {
   const handleSubmitEdicionEnCard = async (e: React.FormEvent, pagoId: string) => {
     e.preventDefault()
     setEditMessage({ text: '', type: '' })
-
-    if (!editFormData.beneficiario_id) {
-      setEditMessage({ text: '⚠️ Seleccioná un beneficiario', type: 'warning' })
-      return
-    }
 
     const monto = parseFloat(editFormData.monto)
     if (!monto || monto <= 0) {
@@ -633,28 +663,25 @@ export default function Pagos() {
     setEditLoading(true)
 
     try {
-      const beneficiario = beneficiarios.find(b => b.id === editFormData.beneficiario_id)
-
       let categoriaFinal = editFormData.categoria
       if (editFormData.categoria === 'OTRO') {
         categoriaFinal = editFormData.categoria_otro.trim().toUpperCase()
       }
 
-      if (anioActivo === null) {
-        setEditMessage({ text: '⚠️ No se pudo determinar el período activo. Recargá la página.', type: 'warning' })
-        return
-      }
-
-      const payload = {
-        beneficiario_id: editFormData.beneficiario_id,
-        rama: beneficiario?.rama || '',
+      let payload: any = {
         recibo: reciboFinal,
         monto: monto,
         fecha_pago: editFormData.fecha_pago,
         categoria: categoriaFinal,
         medio_pago: editFormData.medio_pago,
         observaciones: editFormData.observaciones || null,
-        anio: anioActivo // 👈 GUARDAMOS EL AÑO ACTIVO
+        anio: anioActivo
+      }
+
+      if (editFormData.beneficiario_id) {
+        const beneficiario = beneficiarios.find(b => b.id === editFormData.beneficiario_id)
+        payload.beneficiario_id = editFormData.beneficiario_id
+        payload.rama = beneficiario?.rama || ''
       }
 
       const { error } = await supabase
@@ -678,9 +705,6 @@ export default function Pagos() {
     }
   }
 
-  // ============================================
-  // ✅ Guardar observación inline
-  // ============================================
   const guardarObservacionInline = async (pagoId: string, nuevoValor: string) => {
     const valorLimpio = nuevoValor.trim() || null
 
@@ -697,24 +721,16 @@ export default function Pagos() {
 
     const valorAnterior = pagoActual.observaciones
 
-    setPagos(prev => prev.map(p =>
-      p.id === pagoId ? { ...p, observaciones: valorLimpio || '' } : p
-    ))
+    setPagos(prev => prev.map(p => p.id === pagoId ? { ...p, observaciones: valorLimpio || '' } : p))
     setEditandoInline(null)
     setGuardandoInline(true)
 
     try {
-      const { error } = await supabase
-        .from('pagos')
-        .update({ observaciones: valorLimpio })
-        .eq('id', pagoId)
-
+      const { error } = await supabase.from('pagos').update({ observaciones: valorLimpio }).eq('id', pagoId)
       if (error) throw error
     } catch (error) {
       console.error('Error al guardar observación:', error)
-      setPagos(prev => prev.map(p =>
-        p.id === pagoId ? { ...p, observaciones: valorAnterior || '' } : p
-      ))
+      setPagos(prev => prev.map(p => p.id === pagoId ? { ...p, observaciones: valorAnterior || '' } : p))
       setMessage({ text: '❌ Error al guardar la observación', type: 'error' })
       setTimeout(() => setMessage({ text: '', type: '' }), 3000)
     } finally {
@@ -726,11 +742,7 @@ export default function Pagos() {
     if (!confirm('¿Estás seguro de que querés eliminar este pago?')) return
 
     try {
-      const { error } = await supabase
-        .from('pagos')
-        .delete()
-        .eq('id', id)
-
+      const { error } = await supabase.from('pagos').delete().eq('id', id)
       if (error) throw error
       setMessage({ text: '✅ Pago eliminado correctamente', type: 'success' })
       setTimeout(() => setMessage({ text: '', type: '' }), 3000)
@@ -742,21 +754,11 @@ export default function Pagos() {
     }
   }
 
-  const canEdit = (pago: Pago): boolean => {
-    return puedeHacer('editar_pago')
-  }
+  const canEdit = (pago: Pago): boolean => puedeHacer('editar_pago')
+  const canDelete = (pago: Pago): boolean => puedeHacer('editar_pago')
+  const puedeCrearPagos = (): boolean => puedeHacer('crear_pago')
 
-  const canDelete = (pago: Pago): boolean => {
-    return puedeHacer('editar_pago') // Usamos el mismo permiso
-  }
-
-  const puedeCrearPagos = (): boolean => {
-    return puedeHacer('crear_pago')
-  }
-
-  const handleFilterByRama = (rama: string) => {
-    setFilterRama(rama)
-  }
+  const handleFilterByRama = (rama: string) => setFilterRama(rama)
 
   const handleLimpiarFiltros = () => {
     if (esDirigente && ramaAsignada) {
@@ -767,39 +769,24 @@ export default function Pagos() {
     setFilterBeneficiario('')
   }
 
-  // ✅ ORDEN FIJO: fecha DESC → reciboNumero DESC
   const pagosOrdenados = [...pagos].sort((a, b) => {
     const fechaA = a.fecha_pago || ''
     const fechaB = b.fecha_pago || ''
-    if (fechaA !== fechaB) {
-      return fechaB.localeCompare(fechaA)
-    }
+    if (fechaA !== fechaB) return fechaB.localeCompare(fechaA)
     const reciboA = a.reciboNumero || 0
     const reciboB = b.reciboNumero || 0
     return reciboB - reciboA
   })
 
-  // 🆕 NAVEGACIÓN CON FLECHAS (todos los usuarios, salvo cuando escriben)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
-        target.isContentEditable
-      ) {
-        return
-      }
-
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return
       if (editandoEnCard || editandoInline) return
       if (pagosOrdenados.length === 0) return
 
-      const indiceActual = pagoActivo
-        ? pagosOrdenados.findIndex(p => p.id === pagoActivo)
-        : -1
+      const indiceActual = pagoActivo ? pagosOrdenados.findIndex(p => p.id === pagoActivo) : -1
 
-      // Flechas ↑ o → → pago ANTERIOR
       if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
         e.preventDefault()
         const nuevoIndice = indiceActual <= 0 ? 0 : indiceActual - 1
@@ -808,20 +795,14 @@ export default function Pagos() {
         setPagoExpandido(nuevoPagoId)
       }
 
-      // Flechas ↓ o ← → pago SIGUIENTE
       if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
         e.preventDefault()
-        const nuevoIndice = indiceActual === -1
-          ? 0
-          : indiceActual >= pagosOrdenados.length - 1
-            ? pagosOrdenados.length - 1
-            : indiceActual + 1
+        const nuevoIndice = indiceActual === -1 ? 0 : indiceActual >= pagosOrdenados.length - 1 ? pagosOrdenados.length - 1 : indiceActual + 1
         const nuevoPagoId = pagosOrdenados[nuevoIndice].id
         setPagoActivo(nuevoPagoId)
         setPagoExpandido(nuevoPagoId)
       }
 
-      // Enter → abrir/cerrar el pago activo
       if (e.key === 'Enter' && pagoActivo) {
         e.preventDefault()
         setPagoExpandido(prev => prev === pagoActivo ? null : pagoActivo)
@@ -833,29 +814,19 @@ export default function Pagos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagosOrdenados, pagoActivo, editandoEnCard, editandoInline])
 
-  // 🆕 Scroll automático a la card activa
   useEffect(() => {
     if (!pagoActivo) return
-
     setTimeout(() => {
       const el = cardRefs.current[pagoActivo]
-      if (el) {
-        el.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
-        })
-      }
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 80)
   }, [pagoActivo])
 
   const getRamasMostrar = () => {
     const puedeVerDirigentes = isSuperAdmin || isJefatura || isAdministrador || isTesorero
-    
     if (verTodas) {
       const ramas = ['Todas', 'Manada', 'Unidad Scout', 'Caminantes', 'Rovers']
-      if (puedeVerDirigentes) {
-        ramas.push('Dirigentes y otros')
-      }
+      if (puedeVerDirigentes) ramas.push('Dirigentes y otros')
       return ramas
     } else if (esDirigente && ramaAsignada) {
       return [ramaAsignada]
@@ -866,7 +837,7 @@ export default function Pagos() {
   const ramasMostrar = getRamasMostrar()
 
   const beneficiariosUnicos = pagos.reduce((acc, pago) => {
-    const key = pago.beneficiario_id
+    const key = pago.beneficiario_id || pago.id
     if (!acc.find(b => b.id === key)) {
       acc.push({
         id: key,
@@ -893,62 +864,32 @@ export default function Pagos() {
       </div>
     )
   }
-    return (
+
+  return (
     <div>
       {/* Header */}
       <div style={{ marginBottom: '16px' }}>
-        <h1 style={{
-          fontFamily: 'Oswald, sans-serif',
-          fontWeight: '700',
-          fontSize: 'clamp(18px, 4vw, 24px)',
-          color: '#24352A',
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-          margin: 0
-        }}>
+        <h1 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: 'clamp(18px, 4vw, 24px)', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
           💰 Gestión de Pagos
         </h1>
-        <p style={{
-          fontFamily: 'Oswald, sans-serif',
-          fontWeight: '400',
-          fontSize: 'clamp(11px, 2.5vw, 14px)',
-          color: '#7A7364',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          margin: 0
-        }}>
+        <p style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '400', fontSize: 'clamp(11px, 2.5vw, 14px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
           {pagos.length} pagos • Total visible: ${totalMonto.toLocaleString()}
         </p>
       </div>
 
       {message.text && (
         <div style={{
-          padding: '10px 14px',
-          borderRadius: '8px',
-          marginBottom: '16px',
-          fontSize: 'clamp(11px, 2.5vw, 14px)',
-          border: '1px solid',
-          fontFamily: 'Oswald, sans-serif',
-          ...(message.type === 'error' ? {
-            backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA'
-          } : message.type === 'warning' ? {
-            backgroundColor: '#FEF3C7', color: '#C48A2A', borderColor: '#FDE68A'
-          } : {
-            backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0'
-          })
+          padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '1px solid', fontFamily: 'Oswald, sans-serif',
+          ...(message.type === 'error' ? { backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA' } : 
+              message.type === 'warning' ? { backgroundColor: '#FEF3C7', color: '#C48A2A', borderColor: '#FDE68A' } : 
+              { backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0' })
         }}>
           {message.text}
         </div>
       )}
 
       {/* FILTROS POR RAMA */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '6px',
-        marginBottom: '16px',
-        width: '100%'
-      }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '16px', width: '100%' }}>
         {ramasMostrar.map((rama) => {
           const esTodas = rama === 'Todas'
           const isActive = esTodas ? filterRama === 'Todas' : filterRama === rama
@@ -966,43 +907,14 @@ export default function Pagos() {
             <div
               key={rama}
               style={{
-                backgroundColor: isActive ? '#24352A' : 'white',
-                borderRadius: '8px',
-                padding: '8px 4px',
-                border: '2px solid #D1C9B4',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textAlign: 'center',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minHeight: '40px',
+                backgroundColor: isActive ? '#24352A' : 'white', borderRadius: '8px', padding: '8px 4px', border: '2px solid #D1C9B4', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '40px',
                 gridColumn: (esTodas || rama === 'Dirigentes y otros') ? '1 / -1' : 'auto'
               }}
               onClick={() => handleFilterByRama(rama)}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.borderColor = '#24352A'
-                  e.currentTarget.style.backgroundColor = '#F3ECD8'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.borderColor = '#D1C9B4'
-                  e.currentTarget.style.backgroundColor = 'white'
-                }
-              }}
+              onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.borderColor = '#24352A'; e.currentTarget.style.backgroundColor = '#F3ECD8' } }}
+              onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.borderColor = '#D1C9B4'; e.currentTarget.style.backgroundColor = 'white' } }}
             >
-              <p style={{
-                fontFamily: 'Oswald, sans-serif',
-                fontWeight: '700',
-                fontSize: rama === 'Dirigentes y otros' ? 'clamp(9px, 1.8vw, 13px)' : 'clamp(10px, 2vw, 15px)',
-                color: isActive ? 'white' : '#24352A',
-                margin: 0,
-                textTransform: 'uppercase',
-                letterSpacing: '0.3px',
-                lineHeight: 1.2
-              }}>
+              <p style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: rama === 'Dirigentes y otros' ? 'clamp(9px, 1.8vw, 13px)' : 'clamp(10px, 2vw, 15px)', color: isActive ? 'white' : '#24352A', margin: 0, textTransform: 'uppercase', letterSpacing: '0.3px', lineHeight: 1.2 }}>
                 {getLabel()}
               </p>
             </div>
@@ -1010,291 +922,178 @@ export default function Pagos() {
         })}
       </div>
 
-      {/* BOTÓN NUEVO PAGO (form arriba, solo para CREAR) */}
+      {/* BOTÓN NUEVO PAGO */}
       {puedeCrearPagos() && (
         <button
           onClick={() => setShowForm(!showForm)}
-          style={{
-            backgroundColor: '#24352A',
-            color: 'white',
-            padding: '8px 20px',
-            borderRadius: '6px',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: 'clamp(12px, 2.5vw, 14px)',
-            fontFamily: 'Oswald, sans-serif',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            marginBottom: '16px',
-            width: '100%'
-          }}
+          style={{ backgroundColor: '#24352A', color: 'white', padding: '8px 20px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: 'clamp(12px, 2.5vw, 14px)', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px', width: '100%' }}
         >
           {showForm ? '✕ Cancelar' : '+ Nuevo Pago'}
         </button>
       )}
 
-      {/* FORM CREAR (arriba) */}
+      {/* FORM CREAR */}
       {showForm && (
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          padding: '16px',
-          border: '2px solid #D1C9B4',
-          marginBottom: '20px'
-        }}>
-          <h3 style={{
-            fontFamily: 'Oswald, sans-serif',
-            fontWeight: '600',
-            fontSize: 'clamp(13px, 3vw, 16px)',
-            color: '#24352A',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            margin: '0 0 16px 0'
-          }}>
+        <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '16px', border: '2px solid #D1C9B4', marginBottom: '20px' }}>
+          <h3 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '600', fontSize: 'clamp(13px, 3vw, 16px)', color: '#24352A', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 16px 0' }}>
             📝 Nuevo Pago
           </h3>
 
           <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                Beneficiario *
-              </label>
-              <select
-                value={formData.beneficiario_id}
-                onChange={(e) => handleBeneficiarioChange(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  border: '2px solid #D1C9B4',
-                  borderRadius: '6px',
-                  outline: 'none',
-                  fontFamily: 'Oswald, sans-serif',
-                  backgroundColor: 'white'
-                }}
-                required
-              >
-                <option value="">Seleccionar beneficiario</option>
-                {beneficiarios
-                  .filter(b => {
-                    if (esDirigente && ramaAsignada) {
-                      return b.rama === ramaAsignada
-                    }
-                    return true
-                  })
-                  .map(b => (
-                    <option key={b.id} value={b.id}>
-                      {formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)} ({b.rama})
-                    </option>
-                  ))}
-              </select>
+            {filterRama === 'Dirigentes y otros' ? (
+              <>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                    ¿Es un dirigente o un "Otro"? *
+                  </label>
+                  <select
+                    value={tipoPagoDir}
+                    onChange={(e) => setTipoPagoDir(e.target.value as 'dirigente' | 'otro')}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                  >
+                    <option value="dirigente">Dirigente</option>
+                    <option value="otro">Otro (Colaboración, etc.)</option>
+                  </select>
+                </div>
+
+                {tipoPagoDir === 'dirigente' ? (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                      Dirigente *
+                    </label>
+                    <select
+                      value={dirigenteSeleccionado}
+                      onChange={async (e) => {
+                        setDirigenteSeleccionado(e.target.value)
+                        if (e.target.value) {
+                          // Buscamos TODOS los recibos D- del año para contar cuántos hay
+                          const { data } = await supabase.from('pagos').select('recibo').eq('anio', anioActivo).ilike('recibo', 'D-%')
+                          let maxNum = 0
+                          if (data) {
+                            data.forEach(p => {
+                              const match = p.recibo?.match(/D-(\d+)/)
+                              if (match) {
+                                const num = parseInt(match[1], 10)
+                                if (num > maxNum) maxNum = num
+                              }
+                            })
+                          }
+                          const sig = maxNum + 1
+                          setFormData(prev => ({ ...prev, recibo: `D-${String(sig).padStart(2, '0')}` }))
+                        }
+                      }}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                      required={tipoPagoDir === 'dirigente'}
+                    >
+                      <option value="">Seleccionar dirigente</option>
+                      {dirigentes.map(d => (
+                        <option key={d.id} value={d.id}>{d.apellido}, {d.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                      Nombre / Motivo *
+                    </label>
+                    <input
+                      type="text"
+                      value={nombreOtro}
+                      onChange={async (e) => {
+                        setNombreOtro(e.target.value)
+                        if (e.target.value) {
+                          const { data } = await supabase.from('pagos').select('recibo').eq('anio', anioActivo).ilike('recibo', 'O-%')
+                          let maxNum = 0
+                          if (data) {
+                            data.forEach(p => {
+                              const match = p.recibo?.match(/O-(\d+)/)
+                              if (match) {
+                                const num = parseInt(match[1], 10)
+                                if (num > maxNum) maxNum = num
+                              }
+                            })
+                          }
+                          const sig = maxNum + 1
+                          setFormData(prev => ({ ...prev, recibo: `O-${String(sig).padStart(2, '0')}` }))
+                        }
+                      }}
+                      placeholder="Ej: Garrafa, Colaboración Manada"
+                      style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                      required={tipoPagoDir === 'otro'}
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
+                  Beneficiario *
+                </label>
+                <select
+                  value={formData.beneficiario_id}
+                  onChange={(e) => handleBeneficiarioChange(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }}
+                  required
+                >
+                  <option value="">Seleccionar beneficiario</option>
+                  {beneficiarios
+                    .filter(b => {
+                      if (esDirigente && ramaAsignada) return b.rama === ramaAsignada
+                      return true
+                    })
+                    .map(b => (
+                      <option key={b.id} value={b.id}>{formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)} ({b.rama})</option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Recibo *</label>
+              <input type="text" value={formData.recibo} onChange={(e) => handleReciboChange(e.target.value)} style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: '#F3F4F6' }} placeholder="Se genera automáticamente" />
             </div>
 
             <div>
-              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                Recibo *
-              </label>
-              <input
-                type="text"
-                value={formData.recibo}
-                onChange={(e) => handleReciboChange(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  border: '2px solid #D1C9B4',
-                  borderRadius: '6px',
-                  outline: 'none',
-                  fontFamily: 'Oswald, sans-serif',
-                  backgroundColor: '#F3F4F6'
-                }}
-                placeholder="Se genera automáticamente"
-              />
+              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Monto *</label>
+              <input type="number" step="0.01" value={formData.monto} onChange={(e) => setFormData({ ...formData, monto: e.target.value })} placeholder="0.00" style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required />
             </div>
 
             <div>
-              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                Monto *
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.monto}
-                onChange={(e) => setFormData({ ...formData, monto: e.target.value })}
-                placeholder="0.00"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  border: '2px solid #D1C9B4',
-                  borderRadius: '6px',
-                  outline: 'none',
-                  fontFamily: 'Oswald, sans-serif',
-                  backgroundColor: 'white'
-                }}
-                required
-              />
+              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Fecha *</label>
+              <input type="date" value={formData.fecha_pago} onChange={(e) => setFormData({ ...formData, fecha_pago: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required />
             </div>
 
             <div>
-              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                Fecha *
-              </label>
-              <input
-                type="date"
-                value={formData.fecha_pago}
-                onChange={(e) => setFormData({ ...formData, fecha_pago: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  border: '2px solid #D1C9B4',
-                  borderRadius: '6px',
-                  outline: 'none',
-                  fontFamily: 'Oswald, sans-serif',
-                  backgroundColor: 'white'
-                }}
-                required
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                Categoría *
-              </label>
-              <select
-                value={formData.categoria}
-                onChange={(e) => setFormData({ ...formData, categoria: e.target.value, categoria_otro: e.target.value !== 'OTRO' ? '' : formData.categoria_otro })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  border: '2px solid #D1C9B4',
-                  borderRadius: '6px',
-                  outline: 'none',
-                  fontFamily: 'Oswald, sans-serif',
-                  backgroundColor: 'white'
-                }}
-                required
-              >
+              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Categoría *</label>
+              <select value={formData.categoria} onChange={(e) => setFormData({ ...formData, categoria: e.target.value, categoria_otro: e.target.value !== 'OTRO' ? '' : formData.categoria_otro })} style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required>
                 <option value="">Seleccionar categoría</option>
-                {categorias.map(cat => (
-                  <option key={cat.value} value={cat.value}>{cat.label}</option>
-                ))}
+                {categorias.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
               </select>
             </div>
 
             {formData.categoria === 'OTRO' && (
               <div>
-                <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                  Especificar *
-                </label>
-                <input
-                  type="text"
-                  value={formData.categoria_otro}
-                  onChange={(e) => setFormData({ ...formData, categoria_otro: e.target.value })}
-                  placeholder="Ej: Pañuelo, Insignias"
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    fontSize: 'clamp(11px, 2.5vw, 14px)',
-                    border: '2px solid #D1C9B4',
-                    borderRadius: '6px',
-                    outline: 'none',
-                    fontFamily: 'Oswald, sans-serif',
-                    backgroundColor: 'white'
-                  }}
-                  required={formData.categoria === 'OTRO'}
-                />
+                <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Especificar *</label>
+                <input type="text" value={formData.categoria_otro} onChange={(e) => setFormData({ ...formData, categoria_otro: e.target.value })} placeholder="Ej: Pañuelo, Insignias" style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required={formData.categoria === 'OTRO'} />
               </div>
             )}
 
             <div>
-              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                Medio *
-              </label>
-              <select
-                value={formData.medio_pago}
-                onChange={(e) => setFormData({ ...formData, medio_pago: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  border: '2px solid #D1C9B4',
-                  borderRadius: '6px',
-                  outline: 'none',
-                  fontFamily: 'Oswald, sans-serif',
-                  backgroundColor: 'white'
-                }}
-                required
-              >
+              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Medio *</label>
+              <select value={formData.medio_pago} onChange={(e) => setFormData({ ...formData, medio_pago: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required>
                 <option value="">Seleccionar</option>
-                {mediosPago.map(mp => (
-                  <option key={mp} value={mp}>{mp}</option>
-                ))}
+                {mediosPago.map(mp => <option key={mp} value={mp}>{mp}</option>)}
               </select>
             </div>
 
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>
-                Observaciones
-              </label>
-              <input
-                type="text"
-                value={formData.observaciones}
-                onChange={(e) => setFormData({ ...formData, observaciones: e.target.value })}
-                placeholder="Observaciones..."
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  border: '2px solid #D1C9B4',
-                  borderRadius: '6px',
-                  outline: 'none',
-                  fontFamily: 'Oswald, sans-serif',
-                  backgroundColor: 'white'
-                }}
-              />
+              <label style={{ fontSize: 'clamp(9px, 2vw, 12px)', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Observaciones</label>
+              <input type="text" value={formData.observaciones} onChange={(e) => setFormData({ ...formData, observaciones: e.target.value })} placeholder="Observaciones..." style={{ width: '100%', padding: '8px 12px', fontSize: 'clamp(11px, 2.5vw, 14px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} />
             </div>
 
             <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button
-                type="submit"
-                style={{
-                  backgroundColor: '#24352A',
-                  color: 'white',
-                  padding: '8px 24px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  fontFamily: 'Oswald, sans-serif',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  flex: 1
-                }}
-              >
-                Guardar
-              </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                style={{
-                  backgroundColor: '#E8DEC4',
-                  color: '#24352A',
-                  padding: '8px 24px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: 'clamp(11px, 2.5vw, 14px)',
-                  fontFamily: 'Oswald, sans-serif',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  flex: 1
-                }}
-              >
-                Cancelar
-              </button>
+              <button type="submit" style={{ backgroundColor: '#24352A', color: 'white', padding: '8px 24px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: 'clamp(11px, 2.5vw, 14px)', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', flex: 1 }}>Guardar</button>
+              <button type="button" onClick={resetForm} style={{ backgroundColor: '#E8DEC4', color: '#24352A', padding: '8px 24px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: 'clamp(11px, 2.5vw, 14px)', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', flex: 1 }}>Cancelar</button>
             </div>
           </form>
         </div>
@@ -1302,718 +1101,157 @@ export default function Pagos() {
 
       {/* FILTRO BENEFICIARIO */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-        <select
-          value={filterBeneficiario}
-          onChange={(e) => setFilterBeneficiario(e.target.value)}
-          style={{
-            padding: '6px 12px',
-            fontSize: 'clamp(10px, 2vw, 13px)',
-            border: '2px solid #D1C9B4',
-            borderRadius: '6px',
-            outline: 'none',
-            fontFamily: 'Oswald, sans-serif',
-            backgroundColor: 'white',
-            cursor: 'pointer',
-            flex: 1,
-            minWidth: '140px'
-          }}
-        >
+        <select value={filterBeneficiario} onChange={(e) => setFilterBeneficiario(e.target.value)} style={{ padding: '6px 12px', fontSize: 'clamp(10px, 2vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', cursor: 'pointer', flex: 1, minWidth: '140px' }}>
           <option value="">Todos los beneficiarios</option>
           {beneficiariosUnicos.map(b => (
-            <option key={b.id} value={b.id}>
-              {formatearNombreConH(b.nombre, b.apellido, false)} ({b.rama})
-            </option>
+            <option key={b.id} value={b.id}>{formatearNombreConH(b.nombre, b.apellido, false)} ({b.rama})</option>
           ))}
         </select>
 
         {filterRama !== 'Todas' && (
-          <button
-            onClick={handleLimpiarFiltros}
-            style={{
-              padding: '6px 12px',
-              fontSize: 'clamp(10px, 2vw, 12px)',
-              border: '2px solid #BF4E30',
-              borderRadius: '6px',
-              backgroundColor: 'transparent',
-              color: '#BF4E30',
-              cursor: 'pointer',
-              fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}
-          >
-            ✕ Limpiar
-          </button>
+          <button onClick={handleLimpiarFiltros} style={{ padding: '6px 12px', fontSize: 'clamp(10px, 2vw, 12px)', border: '2px solid #BF4E30', borderRadius: '6px', backgroundColor: 'transparent', color: '#BF4E30', cursor: 'pointer', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>✕ Limpiar</button>
         )}
       </div>
 
-      {/* 📋 LISTA DE PAGOS (cards mobile-first) */}
+      {/* 📋 LISTA DE PAGOS */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {pagosOrdenados.map((pago) => {
-          const nombreCompleto = formatearNombreConH(
-            pago.beneficiario_nombre || '',
-            pago.beneficiario_apellido || '',
-            pago.beneficiario_tiene_hermanos || false
-          )
+          const nombreCompleto = (pago.rama === 'Dirigentes y otros' && !pago.beneficiario_apellido)
+            ? (pago.beneficiario_nombre || 'Sin nombre') 
+            : formatearNombreConH(pago.beneficiario_nombre || '', pago.beneficiario_apellido || '', pago.beneficiario_tiene_hermanos || false)
           const estaEditandoInline = editandoInline === pago.id
           const estaExpandido = pagoExpandido === pago.id
           const estaEditando = editandoEnCard === pago.id
           const estaActivo = pagoActivo === pago.id
 
-return (
-            <div
-              key={pago.id}
-              ref={(el) => { cardRefs.current[pago.id] = el }}
-              style={{
-                transition: 'all 0.2s',
-                transform: estaActivo ? 'scale(1.02)' : 'scale(1)',
-                transformOrigin: 'center top'
-              }}
-            >
-              {/* ============================================ */}
-              {/* MODO EDICIÓN INLINE */}
-              {/* ============================================ */}
+          return (
+            <div key={pago.id} ref={(el) => { cardRefs.current[pago.id] = el }} style={{ transition: 'all 0.2s', transform: estaActivo ? 'scale(1.02)' : 'scale(1)', transformOrigin: 'center top' }}>
+              
               {estaEditando ? (
-                <div style={{
-                  backgroundColor: 'white',
-                  borderRadius: '12px',
-                  padding: '14px 12px',
-                  border: '2px solid #24352A',
-                  fontFamily: 'Oswald, sans-serif'
-                }}>
-                  <h3 style={{
-                    fontFamily: 'Oswald, sans-serif',
-                    fontWeight: '700',
-                    fontSize: 'clamp(12px, 2.8vw, 14px)',
-                    color: '#24352A',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px',
-                    margin: '0 0 12px 0',
-                    borderBottom: '2px solid #E8DEC4',
-                    paddingBottom: '8px'
-                  }}>
+                <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '14px 12px', border: '2px solid #24352A', fontFamily: 'Oswald, sans-serif' }}>
+                  <h3 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: 'clamp(12px, 2.8vw, 14px)', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 12px 0', borderBottom: '2px solid #E8DEC4', paddingBottom: '8px' }}>
                     ✏️ Editando {pago.recibo}
                   </h3>
 
                   {editMessage.text && (
-                    <div style={{
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      marginBottom: '10px',
-                      fontSize: 'clamp(10px, 2.2vw, 12px)',
-                      border: '1px solid',
-                      fontFamily: 'Oswald, sans-serif',
-                      ...(editMessage.type === 'error' ? {
-                        backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA'
-                      } : editMessage.type === 'warning' ? {
-                        backgroundColor: '#FEF3C7', color: '#C48A2A', borderColor: '#FDE68A'
-                      } : {
-                        backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0'
-                      })
-                    }}>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', marginBottom: '10px', fontSize: 'clamp(10px, 2.2vw, 12px)', border: '1px solid', fontFamily: 'Oswald, sans-serif', ...(editMessage.type === 'error' ? { backgroundColor: '#FEE2E2', color: '#BF4E30', borderColor: '#FECACA' } : editMessage.type === 'warning' ? { backgroundColor: '#FEF3C7', color: '#C48A2A', borderColor: '#FDE68A' } : { backgroundColor: '#D1FAE5', color: '#5C7A5E', borderColor: '#A7F3D0' }) }}>
                       {editMessage.text}
                     </div>
                   )}
 
-                  <form
-                    onSubmit={(e) => handleSubmitEdicionEnCard(e, pago.id)}
-                    style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}
-                  >
+                  <form onSubmit={(e) => handleSubmitEdicionEnCard(e, pago.id)} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div style={{ gridColumn: '1 / -1' }}>
-                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>
-                        Beneficiario *
-                      </label>
-                      <select
-                        value={editFormData.beneficiario_id}
-                        onChange={(e) => setEditFormData({ ...editFormData, beneficiario_id: e.target.value })}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          border: '2px solid #D1C9B4',
-                          borderRadius: '6px',
-                          outline: 'none',
-                          fontFamily: 'Oswald, sans-serif',
-                          backgroundColor: 'white'
-                        }}
-                        required
-                        disabled={editLoading}
-                      >
+                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>Beneficiario *</label>
+                      <select value={editFormData.beneficiario_id} onChange={(e) => setEditFormData({ ...editFormData, beneficiario_id: e.target.value })} style={{ width: '100%', padding: '6px 10px', fontSize: 'clamp(11px, 2.5vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} disabled={editLoading}>
                         <option value="">Seleccionar beneficiario</option>
-                        {beneficiarios
-                          .filter(b => {
-                            if (esDirigente && ramaAsignada) {
-                              return b.rama === ramaAsignada
-                            }
-                            return true
-                          })
-                          .map(b => (
-                            <option key={b.id} value={b.id}>
-                              {formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)} ({b.rama})
-                            </option>
-                          ))}
+                        {beneficiarios.filter(b => { if (esDirigente && ramaAsignada) return b.rama === ramaAsignada; return true }).map(b => <option key={b.id} value={b.id}>{formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)} ({b.rama})</option>)}
                       </select>
                     </div>
 
                     <div>
-                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>
-                        Recibo *
-                      </label>
-                      <input
-                        type="text"
-                        value={editFormData.recibo}
-                        onChange={(e) => setEditFormData({ ...editFormData, recibo: e.target.value })}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          border: '2px solid #D1C9B4',
-                          borderRadius: '6px',
-                          outline: 'none',
-                          fontFamily: 'Oswald, sans-serif',
-                          backgroundColor: '#F3F4F6'
-                        }}
-                        disabled={editLoading}
-                      />
+                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>Recibo *</label>
+                      <input type="text" value={editFormData.recibo} onChange={(e) => setEditFormData({ ...editFormData, recibo: e.target.value })} style={{ width: '100%', padding: '6px 10px', fontSize: 'clamp(11px, 2.5vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: '#F3F4F6' }} disabled={editLoading} />
                     </div>
 
                     <div>
-                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>
-                        Monto *
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editFormData.monto}
-                        onChange={(e) => setEditFormData({ ...editFormData, monto: e.target.value })}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          border: '2px solid #D1C9B4',
-                          borderRadius: '6px',
-                          outline: 'none',
-                          fontFamily: 'Oswald, sans-serif',
-                          backgroundColor: 'white'
-                        }}
-                        required
-                        disabled={editLoading}
-                      />
+                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>Monto *</label>
+                      <input type="number" step="0.01" value={editFormData.monto} onChange={(e) => setEditFormData({ ...editFormData, monto: e.target.value })} style={{ width: '100%', padding: '6px 10px', fontSize: 'clamp(11px, 2.5vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required disabled={editLoading} />
                     </div>
 
                     <div>
-                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>
-                        Fecha *
-                      </label>
-                      <input
-                        type="date"
-                        value={editFormData.fecha_pago}
-                        onChange={(e) => setEditFormData({ ...editFormData, fecha_pago: e.target.value })}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          border: '2px solid #D1C9B4',
-                          borderRadius: '6px',
-                          outline: 'none',
-                          fontFamily: 'Oswald, sans-serif',
-                          backgroundColor: 'white'
-                        }}
-                        required
-                        disabled={editLoading}
-                      />
+                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>Fecha *</label>
+                      <input type="date" value={editFormData.fecha_pago} onChange={(e) => setEditFormData({ ...editFormData, fecha_pago: e.target.value })} style={{ width: '100%', padding: '6px 10px', fontSize: 'clamp(11px, 2.5vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required disabled={editLoading} />
                     </div>
 
                     <div>
-                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>
-                        Categoría *
-                      </label>
-                      <select
-                        value={editFormData.categoria}
-                        onChange={(e) => setEditFormData({ ...editFormData, categoria: e.target.value, categoria_otro: e.target.value !== 'OTRO' ? '' : editFormData.categoria_otro })}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          border: '2px solid #D1C9B4',
-                          borderRadius: '6px',
-                          outline: 'none',
-                          fontFamily: 'Oswald, sans-serif',
-                          backgroundColor: 'white'
-                        }}
-                        required
-                        disabled={editLoading}
-                      >
+                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>Categoría *</label>
+                      <select value={editFormData.categoria} onChange={(e) => setEditFormData({ ...editFormData, categoria: e.target.value, categoria_otro: e.target.value !== 'OTRO' ? '' : editFormData.categoria_otro })} style={{ width: '100%', padding: '6px 10px', fontSize: 'clamp(11px, 2.5vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required disabled={editLoading}>
                         <option value="">Seleccionar</option>
-                        {categorias.map(cat => (
-                          <option key={cat.value} value={cat.value}>{cat.label}</option>
-                        ))}
+                        {categorias.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
                       </select>
                     </div>
 
                     {editFormData.categoria === 'OTRO' && (
                       <div style={{ gridColumn: '1 / -1' }}>
-                        <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>
-                          Especificar *
-                        </label>
-                        <input
-                          type="text"
-                          value={editFormData.categoria_otro}
-                          onChange={(e) => setEditFormData({ ...editFormData, categoria_otro: e.target.value })}
-                          placeholder="Ej: Pañuelo, Insignias"
-                          style={{
-                            width: '100%',
-                            padding: '6px 10px',
-                            fontSize: 'clamp(11px, 2.5vw, 13px)',
-                            border: '2px solid #D1C9B4',
-                            borderRadius: '6px',
-                            outline: 'none',
-                            fontFamily: 'Oswald, sans-serif',
-                            backgroundColor: 'white'
-                          }}
-                          required={editFormData.categoria === 'OTRO'}
-                          disabled={editLoading}
-                        />
+                        <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>Especificar *</label>
+                        <input type="text" value={editFormData.categoria_otro} onChange={(e) => setEditFormData({ ...editFormData, categoria_otro: e.target.value })} placeholder="Ej: Pañuelo, Insignias" style={{ width: '100%', padding: '6px 10px', fontSize: 'clamp(11px, 2.5vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required={editFormData.categoria === 'OTRO'} disabled={editLoading} />
                       </div>
                     )}
 
                     <div>
-                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>
-                        Medio *
-                      </label>
-                      <select
-                        value={editFormData.medio_pago}
-                        onChange={(e) => setEditFormData({ ...editFormData, medio_pago: e.target.value })}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          border: '2px solid #D1C9B4',
-                          borderRadius: '6px',
-                          outline: 'none',
-                          fontFamily: 'Oswald, sans-serif',
-                          backgroundColor: 'white'
-                        }}
-                        required
-                        disabled={editLoading}
-                      >
+                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>Medio *</label>
+                      <select value={editFormData.medio_pago} onChange={(e) => setEditFormData({ ...editFormData, medio_pago: e.target.value })} style={{ width: '100%', padding: '6px 10px', fontSize: 'clamp(11px, 2.5vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} required disabled={editLoading}>
                         <option value="">Seleccionar</option>
-                        {mediosPago.map(mp => (
-                          <option key={mp} value={mp}>{mp}</option>
-                        ))}
+                        {mediosPago.map(mp => <option key={mp} value={mp}>{mp}</option>)}
                       </select>
                     </div>
 
                     <div style={{ gridColumn: '1 / -1' }}>
-                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>
-                        Observaciones
-                      </label>
-                      <input
-                        type="text"
-                        value={editFormData.observaciones}
-                        onChange={(e) => setEditFormData({ ...editFormData, observaciones: e.target.value })}
-                        placeholder="Observaciones..."
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          border: '2px solid #D1C9B4',
-                          borderRadius: '6px',
-                          outline: 'none',
-                          fontFamily: 'Oswald, sans-serif',
-                          backgroundColor: 'white'
-                        }}
-                        disabled={editLoading}
-                      />
+                      <label style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '3px' }}>Observaciones</label>
+                      <input type="text" value={editFormData.observaciones} onChange={(e) => setEditFormData({ ...editFormData, observaciones: e.target.value })} placeholder="Observaciones..." style={{ width: '100%', padding: '6px 10px', fontSize: 'clamp(11px, 2.5vw, 13px)', border: '2px solid #D1C9B4', borderRadius: '6px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white' }} disabled={editLoading} />
                     </div>
 
                     <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', marginTop: '6px' }}>
-                      <button
-                        type="button"
-                        onClick={cancelarEdicionEnCard}
-                        disabled={editLoading}
-                        style={{
-                          flex: 1,
-                          backgroundColor: '#E8DEC4',
-                          color: '#24352A',
-                          padding: '8px 14px',
-                          borderRadius: '6px',
-                          border: 'none',
-                          cursor: editLoading ? 'not-allowed' : 'pointer',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          fontFamily: 'Oswald, sans-serif',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          fontWeight: 600,
-                          opacity: editLoading ? 0.5 : 1
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={editLoading}
-                        style={{
-                          flex: 1,
-                          backgroundColor: '#24352A',
-                          color: 'white',
-                          padding: '8px 14px',
-                          borderRadius: '6px',
-                          border: 'none',
-                          cursor: editLoading ? 'wait' : 'pointer',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          fontFamily: 'Oswald, sans-serif',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          fontWeight: 600,
-                          opacity: editLoading ? 0.5 : 1
-                        }}
-                      >
-                        {editLoading ? 'Guardando...' : '💾 Guardar'}
-                      </button>
+                      <button type="button" onClick={cancelarEdicionEnCard} disabled={editLoading} style={{ flex: 1, backgroundColor: '#E8DEC4', color: '#24352A', padding: '8px 14px', borderRadius: '6px', border: 'none', cursor: editLoading ? 'not-allowed' : 'pointer', fontSize: 'clamp(11px, 2.5vw, 13px)', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600, opacity: editLoading ? 0.5 : 1 }}>Cancelar</button>
+                      <button type="submit" disabled={editLoading} style={{ flex: 1, backgroundColor: '#24352A', color: 'white', padding: '8px 14px', borderRadius: '6px', border: 'none', cursor: editLoading ? 'wait' : 'pointer', fontSize: 'clamp(11px, 2.5vw, 13px)', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600, opacity: editLoading ? 0.5 : 1 }}>{editLoading ? 'Guardando...' : '💾 Guardar'}</button>
                     </div>
                   </form>
                 </div>
               ) : (
                 <>
-                  {/* ============================================ */}
-                  {/* CARD NORMAL (colapsada o expandida) */}
-                  {/* ============================================ */}
-                  <div
-                    onClick={() => {
-                      setPagoActivo(pago.id)
-                      toggleExpandir(pago.id)
-                    }}
-                    style={{
-                      backgroundColor: 'white',
-                      borderRadius: estaExpandido ? '12px 12px 0 0' : '12px',
-                      padding: estaActivo ? '14px 16px' : '10px 12px',
-                      borderTop: '2px solid #24352A',
-                      borderLeft: estaActivo ? '5px solid #C48A2A' : '2px solid #24352A',
-                      borderRight: '2px solid #24352A',
-                      borderBottom: estaExpandido ? 'none' : '2px solid #24352A',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      fontFamily: 'Oswald, sans-serif'
-                    }}
-                  >
-                    {/* Fila 1: Recibo + Monto */}
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'baseline',
-                      gap: '10px',
-                      marginBottom: '6px'
-                    }}>
-                      <span style={{
-                        fontFamily: 'Oswald, sans-serif',
-                        fontSize: 'clamp(12px, 3vw, 15px)',
-                        fontWeight: '700',
-                        color: '#24352A',
-                        letterSpacing: '0.5px'
-                      }}>
-                        {pago.recibo || '-'}
-                      </span>
-                      <span style={{
-                        fontFamily: 'Oswald, sans-serif',
-                        fontSize: 'clamp(13px, 3.2vw, 16px)',
-                        fontWeight: '700',
-                        color: '#24352A'
-                      }}>
-                        ${(pago.monto || 0).toLocaleString()}
-                      </span>
+                  <div onClick={() => { setPagoActivo(pago.id); toggleExpandir(pago.id) }} style={{ backgroundColor: 'white', borderRadius: estaExpandido ? '12px 12px 0 0' : '12px', padding: estaActivo ? '14px 16px' : '10px 12px', borderTop: '2px solid #24352A', borderLeft: estaActivo ? '5px solid #C48A2A' : '2px solid #24352A', borderRight: '2px solid #24352A', borderBottom: estaExpandido ? 'none' : '2px solid #24352A', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'Oswald, sans-serif' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', marginBottom: '6px' }}>
+                      <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(12px, 3vw, 15px)', fontWeight: '700', color: '#24352A', letterSpacing: '0.5px' }}>{pago.recibo || '-'}</span>
+                      <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(13px, 3.2vw, 16px)', fontWeight: '700', color: '#24352A' }}>${(pago.monto || 0).toLocaleString()}</span>
                     </div>
 
-                    {/* Fila 2: Beneficiario */}
-                    <div style={{
-                      fontFamily: 'Oswald, sans-serif',
-                      fontSize: 'clamp(11px, 2.5vw, 13px)',
-                      color: '#24352A',
-                      fontWeight: '600',
-                      marginBottom: '3px',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}>
-                      {nombreCompleto || 'Sin nombre'}
+                    <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(11px, 2.5vw, 13px)', color: '#24352A', fontWeight: '600', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nombreCompleto || 'Sin nombre'}</div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                      <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(9px, 2.2vw, 11px)', color: '#7A7364' }}>📅 {formatFecha(pago.fecha_pago)}</span>
+                      <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: '4px', fontSize: 'clamp(8px, 2vw, 10px)', fontFamily: 'Oswald, sans-serif', fontWeight: '600', backgroundColor: pago.categoria === 'C. ANUAL' ? '#FEF3C7' : pago.categoria === 'C. CORTO' ? '#D1FAE5' : pago.categoria === 'AFILIACION' ? '#E0E7FF' : pago.categoria === 'CUOTAS' ? '#F3E8FF' : '#F3F4F6', color: '#24352A' }}>{pago.categoria}</span>
                     </div>
 
-                    {/* Fila 3: Fecha + Categoría */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      flexWrap: 'wrap',
-                      marginBottom: '6px'
-                    }}>
-                      <span style={{
-                        fontFamily: 'Oswald, sans-serif',
-                        fontSize: 'clamp(9px, 2.2vw, 11px)',
-                        color: '#7A7364'
-                      }}>
-                        📅 {formatFecha(pago.fecha_pago)}
-                      </span>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '1px 6px',
-                        borderRadius: '4px',
-                        fontSize: 'clamp(8px, 2vw, 10px)',
-                        fontFamily: 'Oswald, sans-serif',
-                        fontWeight: '600',
-                        backgroundColor: pago.categoria === 'C. ANUAL' ? '#FEF3C7' :
-                                      pago.categoria === 'C. CORTO' ? '#D1FAE5' :
-                                      pago.categoria === 'AFILIACION' ? '#E0E7FF' :
-                                      pago.categoria === 'CUOTAS' ? '#F3E8FF' :
-                                      '#F3F4F6',
-                        color: '#24352A'
-                      }}>
-                        {pago.categoria}
-                      </span>
-                    </div>
-
-                    {/* Fila 4: Observaciones + Iconos */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}>
-                      <div
-                        onClick={(e) => {
-                          if (puedeEditarInline() && !estaEditandoInline) {
-                            e.stopPropagation()
-                            setEditandoInline(pago.id)
-                            setValorInline(pago.observaciones || '')
-                          }
-                        }}
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          fontFamily: 'Oswald, sans-serif',
-                          fontSize: 'clamp(10px, 2.2vw, 12px)',
-                          color: pago.observaciones ? '#24352A' : '#A89E86',
-                          cursor: puedeEditarInline() ? 'text' : 'inherit',
-                          padding: '4px 6px',
-                          borderRadius: '6px',
-                          backgroundColor: '#F9F6EE',
-                          minHeight: '24px',
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}
-                      >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div onClick={(e) => { if (puedeEditarInline() && !estaEditandoInline) { e.stopPropagation(); setEditandoInline(pago.id); setValorInline(pago.observaciones || '') } }} style={{ flex: 1, minWidth: 0, fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(10px, 2.2vw, 12px)', color: pago.observaciones ? '#24352A' : '#A89E86', cursor: puedeEditarInline() ? 'text' : 'inherit', padding: '4px 6px', borderRadius: '6px', backgroundColor: '#F9F6EE', minHeight: '24px', display: 'flex', alignItems: 'center' }}>
                         {estaEditandoInline ? (
-                          <input
-                            type="text"
-                            value={valorInline}
-                            onChange={(e) => setValorInline(e.target.value)}
-                            onBlur={() => guardarObservacionInline(pago.id, valorInline)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.currentTarget.blur()
-                              } else if (e.key === 'Escape') {
-                                setEditandoInline(null)
-                              }
-                            }}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                              width: '100%',
-                              padding: '3px 5px',
-                              fontSize: 'clamp(10px, 2.2vw, 12px)',
-                              border: '2px solid #24352A',
-                              borderRadius: '4px',
-                              outline: 'none',
-                              fontFamily: 'Oswald, sans-serif',
-                              backgroundColor: 'white',
-                              boxSizing: 'border-box'
-                            }}
-                          />
+                          <input type="text" value={valorInline} onChange={(e) => setValorInline(e.target.value)} onBlur={() => guardarObservacionInline(pago.id, valorInline)} onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } else if (e.key === 'Escape') { setEditandoInline(null) } }} autoFocus onClick={(e) => e.stopPropagation()} style={{ width: '100%', padding: '3px 5px', fontSize: 'clamp(10px, 2.2vw, 12px)', border: '2px solid #24352A', borderRadius: '4px', outline: 'none', fontFamily: 'Oswald, sans-serif', backgroundColor: 'white', boxSizing: 'border-box' }} />
                         ) : (
-                          <span style={{
-                            fontStyle: pago.observaciones ? 'normal' : 'italic',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }}>
-                            {pago.observaciones || 'Sin observaciones'}
-                          </span>
+                          <span style={{ fontStyle: pago.observaciones ? 'normal' : 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pago.observaciones || 'Sin observaciones'}</span>
                         )}
                       </div>
 
-                      {canEdit(pago) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            abrirEdicionEnCard(pago)
-                          }}
-                          title="Editar pago"
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            padding: 0,
-                            backgroundColor: '#F3ECD8',
-                            color: '#24352A',
-                            border: '1.5px solid #D1C9B4',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '14px',
-                            flexShrink: 0,
-                            fontFamily: 'Oswald, sans-serif'
-                          }}
-                        >
-                          ✏️
-                        </button>
-                      )}
-                      {canDelete(pago) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDelete(pago.id)
-                          }}
-                          title="Eliminar pago"
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            padding: 0,
-                            backgroundColor: '#FEE2E2',
-                            color: '#BF4E30',
-                            border: '1.5px solid #FECACA',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '14px',
-                            flexShrink: 0,
-                            fontFamily: 'Oswald, sans-serif'
-                          }}
-                        >
-                          🗑️
-                        </button>
-                      )}
+                      {canEdit(pago) && <button onClick={(e) => { e.stopPropagation(); abrirEdicionEnCard(pago) }} title="Editar pago" style={{ width: '32px', height: '32px', padding: 0, backgroundColor: '#F3ECD8', color: '#24352A', border: '1.5px solid #D1C9B4', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0, fontFamily: 'Oswald, sans-serif' }}>✏️</button>}
+                      {canDelete(pago) && <button onClick={(e) => { e.stopPropagation(); handleDelete(pago.id) }} title="Eliminar pago" style={{ width: '32px', height: '32px', padding: 0, backgroundColor: '#FEE2E2', color: '#BF4E30', border: '1.5px solid #FECACA', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0, fontFamily: 'Oswald, sans-serif' }}>🗑️</button>}
                     </div>
                   </div>
 
-                  {/* ============================================ */}
-                  {/* PANEL EXPANDIDO (detalle) */}
-                  {/* ============================================ */}
                   {estaExpandido && (
-                    <div style={{
-                      backgroundColor: '#F9F6EE',
-                      borderRadius: '0 0 12px 12px',
-                      borderTop: 'none',
-                      borderRight: '2px solid #24352A',
-                      borderBottom: '2px solid #24352A',
-                      borderLeft: estaActivo ? '5px solid #C48A2A' : '2px solid #24352A',
-                      padding: '12px',
-                      fontFamily: 'Oswald, sans-serif'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '10px',
-                        borderBottom: '2px solid #E8DEC4',
-                        paddingBottom: '8px'
-                      }}>
-                        <h3 style={{
-                          fontFamily: 'Oswald, sans-serif',
-                          fontWeight: '700',
-                          fontSize: 'clamp(11px, 2.6vw, 13px)',
-                          color: '#24352A',
-                          textTransform: 'uppercase',
-                          letterSpacing: '1px',
-                          margin: 0
-                        }}>
-                          💰 Detalle del Pago
-                        </h3>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setPagoExpandido(null)
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontSize: '16px',
-                            color: '#7A7364',
-                            padding: '2px 6px'
-                          }}
-                        >
-                          ✕
-                        </button>
+                    <div style={{ backgroundColor: '#F9F6EE', borderRadius: '0 0 12px 12px', borderTop: 'none', borderRight: '2px solid #24352A', borderBottom: '2px solid #24352A', borderLeft: estaActivo ? '5px solid #C48A2A' : '2px solid #24352A', padding: '12px', fontFamily: 'Oswald, sans-serif' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '2px solid #E8DEC4', paddingBottom: '8px' }}>
+                        <h3 style={{ fontFamily: 'Oswald, sans-serif', fontWeight: '700', fontSize: 'clamp(11px, 2.6vw, 13px)', color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>💰 Detalle del Pago</h3>
+                        <button onClick={(e) => { e.stopPropagation(); setPagoExpandido(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#7A7364', padding: '2px 6px' }}>✕</button>
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <div>
                           <p style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Rama</p>
-                          <p style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: '#24352A', margin: '2px 0 0 0', fontWeight: '600' }}>
-                            {pago.rama}
-                          </p>
+                          <p style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: '#24352A', margin: '2px 0 0 0', fontWeight: '600' }}>{pago.rama}</p>
                         </div>
                         <div>
                           <p style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>Medio de Pago</p>
-                          <p style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: '#24352A', margin: '2px 0 0 0', fontWeight: '600' }}>
-                            {pago.medio_pago}
-                          </p>
+                          <p style={{ fontSize: 'clamp(11px, 2.5vw, 13px)', color: '#24352A', margin: '2px 0 0 0', fontWeight: '600' }}>{pago.medio_pago}</p>
                         </div>
                       </div>
 
-                      {/* 🆕 Chips de observaciones (solo tesorero/superadmin) */}
                       {(isSuperAdmin || isTesorero) && (
                         <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '2px dashed #E8DEC4' }}>
-                          <p style={{
-                            fontSize: '9px',
-                            color: '#7A7364',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            margin: '0 0 6px 0',
-                            fontWeight: '600'
-                          }}>
-                            Etiquetas rápidas
-                          </p>
+                          <p style={{ fontSize: '9px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 6px 0', fontWeight: '600' }}>Etiquetas rápidas</p>
                           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                             {ETIQUETAS_OBSERVACIONES.map((etq) => {
                               const yaEsta = (pago.observaciones || '').includes(etq)
                               return (
-                                <button
-                                  key={etq}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    if (!yaEsta) agregarEtiqueta(pago.id, etq)
-                                  }}
-                                  disabled={yaEsta}
-                                  style={{
-                                    padding: '4px 10px',
-                                    fontSize: 'clamp(9px, 2vw, 11px)',
-                                    fontFamily: 'Oswald, sans-serif',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.3px',
-                                    fontWeight: '600',
-                                    backgroundColor: yaEsta ? '#D1FAE5' : '#F3ECD8',
-                                    color: yaEsta ? '#5C7A5E' : '#24352A',
-                                    border: `1.5px solid ${yaEsta ? '#A7F3D0' : '#D1C9B4'}`,
-                                    borderRadius: '14px',
-                                    cursor: yaEsta ? 'not-allowed' : 'pointer',
-                                    opacity: yaEsta ? 0.7 : 1,
-                                    transition: 'all 0.15s'
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!yaEsta) {
-                                      e.currentTarget.style.backgroundColor = '#24352A'
-                                      e.currentTarget.style.color = 'white'
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!yaEsta) {
-                                      e.currentTarget.style.backgroundColor = '#F3ECD8'
-                                      e.currentTarget.style.color = '#24352A'
-                                    }
-                                  }}
-                                >
+                                <button key={etq} onClick={(e) => { e.stopPropagation(); if (!yaEsta) agregarEtiqueta(pago.id, etq) }} disabled={yaEsta} style={{ padding: '4px 10px', fontSize: 'clamp(9px, 2vw, 11px)', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.3px', fontWeight: '600', backgroundColor: yaEsta ? '#D1FAE5' : '#F3ECD8', color: yaEsta ? '#5C7A5E' : '#24352A', border: `1.5px solid ${yaEsta ? '#A7F3D0' : '#D1C9B4'}`, borderRadius: '14px', cursor: yaEsta ? 'not-allowed' : 'pointer', opacity: yaEsta ? 0.7 : 1, transition: 'all 0.15s' }} onMouseEnter={(e) => { if (!yaEsta) { e.currentTarget.style.backgroundColor = '#24352A'; e.currentTarget.style.color = 'white' } }} onMouseLeave={(e) => { if (!yaEsta) { e.currentTarget.style.backgroundColor = '#F3ECD8'; e.currentTarget.style.color = '#24352A' } }}>
                                   {yaEsta ? '✓ ' : '+ '}{etq}
                                 </button>
                               )
@@ -2031,15 +1269,7 @@ return (
       </div>
 
       {pagosOrdenados.length === 0 && !loading && (
-        <div style={{
-          textAlign: 'center',
-          padding: '32px 0',
-          fontFamily: 'Oswald, sans-serif',
-          color: '#7A7364',
-          fontSize: 'clamp(11px, 2.5vw, 14px)',
-          textTransform: 'uppercase',
-          letterSpacing: '1px'
-        }}>
+        <div style={{ textAlign: 'center', padding: '32px 0', fontFamily: 'Oswald, sans-serif', color: '#7A7364', fontSize: 'clamp(11px, 2.5vw, 14px)', textTransform: 'uppercase', letterSpacing: '1px' }}>
           No hay pagos registrados
         </div>
       )}
@@ -2047,24 +1277,7 @@ return (
       {/* BOTÓN "VER MÁS" */}
       {hayMas && pagosOrdenados.length > 0 && (
         <div style={{ textAlign: 'center', marginTop: '16px' }}>
-          <button
-            onClick={cargarMas}
-            disabled={cargandoMas}
-            style={{
-              padding: '10px 24px',
-              fontSize: 'clamp(11px, 2.5vw, 13px)',
-              backgroundColor: 'transparent',
-              border: '2px solid #24352A',
-              borderRadius: '8px',
-              color: '#24352A',
-              fontFamily: 'Oswald, sans-serif',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              cursor: cargandoMas ? 'wait' : 'pointer',
-              fontWeight: 600,
-              opacity: cargandoMas ? 0.5 : 1
-            }}
-          >
+          <button onClick={cargarMas} disabled={cargandoMas} style={{ padding: '10px 24px', fontSize: 'clamp(11px, 2.5vw, 13px)', backgroundColor: 'transparent', border: '2px solid #24352A', borderRadius: '8px', color: '#24352A', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', cursor: cargandoMas ? 'wait' : 'pointer', fontWeight: 600, opacity: cargandoMas ? 0.5 : 1 }}>
             {cargandoMas ? 'Cargando...' : '⬇️ Ver más'}
           </button>
         </div>

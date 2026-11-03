@@ -85,7 +85,7 @@ export default function PagosDirigente({
   const cargarPagos = async () => {
     setCargando(true)
     const { data, error: err } = await supabase
-      .from('pagos_dirigentes')
+      .from('pagos')
       .select('*')
       .eq('dirigente_id', dirigenteId)
       .order('fecha_pago', { ascending: false })
@@ -162,7 +162,7 @@ export default function PagosDirigente({
         categoriaFinal = categoriaOtro.trim().toUpperCase()
       }
 
-      const { error: err } = await supabase.from('pagos_dirigentes').insert({
+      const { error: err } = await supabase.from('pagos').insert({
         dirigente_id: dirigenteId,
         recibo: reciboGenerado,
         monto: parseFloat(monto),
@@ -198,7 +198,7 @@ export default function PagosDirigente({
 
   const eliminarPago = async (id: string) => {
     if (!confirm('¿Eliminar este pago? Esta acción no se puede deshacer.')) return
-    const { error: err } = await supabase.from('pagos_dirigentes').delete().eq('id', id)
+    const { error: err } = await supabase.from('pagos').delete().eq('id', id)
     if (err) setMensaje({ texto: '❌ Error al eliminar: ' + err.message, tipo: 'error' })
     else {
       setMensaje({ texto: '✅ Pago eliminado', tipo: 'ok' })
@@ -215,7 +215,7 @@ export default function PagosDirigente({
 
     setPagos(prev => prev.map(p => p.id === pagoId ? { ...p, observaciones: etiqueta } : p))
 
-    supabase.from('pagos_dirigentes').update({ observaciones: etiqueta }).eq('id', pagoId).then(({ error }) => {
+    supabase.from('pagos').update({ observaciones: etiqueta }).eq('id', pagoId).then(({ error }) => {
       if (error) {
         console.error('Error al guardar etiqueta:', error)
         setPagos(prev => prev.map(p => p.id === pagoId ? { ...p, observaciones: actual } : p))
@@ -246,7 +246,7 @@ export default function PagosDirigente({
       categoriaFinal = editCategoriaOtro.trim().toUpperCase()
     }
 
-    const { error: err } = await supabase.from('pagos_dirigentes').update({
+    const { error: err } = await supabase.from('pagos').update({
       monto: parseFloat(editMonto),
       fecha_pago: editFecha,
       categoria: categoriaFinal,
@@ -288,7 +288,7 @@ export default function PagosDirigente({
           <button
             onClick={() => {
               if (anioActivo) {
-                supabase.from('pagos_dirigentes').select('recibo').eq('anio', anioActivo).order('recibo', { ascending: false }).limit(1).then(({ data }) => {
+                supabase.from('pagos').select('recibo').eq('anio', anioActivo).order('recibo', { ascending: false }).limit(1).then(({ data }) => {
                   let sig = 1
                   if (data && data.length > 0 && data[0].recibo) {
                     const match = data[0].recibo.match(/D-(\d+)/)
