@@ -849,8 +849,14 @@ export default function Pagos() {
   }, [pagoActivo])
 
   const getRamasMostrar = () => {
+    const puedeVerDirigentes = isSuperAdmin || isJefatura || isAdministrador || isTesorero
+    
     if (verTodas) {
-      return ['Todas', 'Manada', 'Unidad Scout', 'Caminantes', 'Rovers']
+      const ramas = ['Todas', 'Manada', 'Unidad Scout', 'Caminantes', 'Rovers']
+      if (puedeVerDirigentes) {
+        ramas.push('Dirigentes y otros')
+      }
+      return ramas
     } else if (esDirigente && ramaAsignada) {
       return [ramaAsignada]
     }
@@ -952,6 +958,7 @@ export default function Pagos() {
             if (rama === 'Unidad Scout') return 'UNIDAD'
             if (rama === 'Caminantes') return 'CAMINANTES'
             if (rama === 'Rovers') return 'ROVERS'
+            if (rama === 'Dirigentes y otros') return 'DIRIGENTES Y OTROS'
             return rama
           }
 
@@ -970,7 +977,7 @@ export default function Pagos() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 minHeight: '40px',
-                gridColumn: esTodas ? '1 / -1' : 'auto'
+                gridColumn: (esTodas || rama === 'Dirigentes y otros') ? '1 / -1' : 'auto'
               }}
               onClick={() => handleFilterByRama(rama)}
               onMouseEnter={(e) => {
@@ -989,7 +996,7 @@ export default function Pagos() {
               <p style={{
                 fontFamily: 'Oswald, sans-serif',
                 fontWeight: '700',
-                fontSize: 'clamp(10px, 2vw, 15px)',
+                fontSize: rama === 'Dirigentes y otros' ? 'clamp(9px, 1.8vw, 13px)' : 'clamp(10px, 2vw, 15px)',
                 color: isActive ? 'white' : '#24352A',
                 margin: 0,
                 textTransform: 'uppercase',

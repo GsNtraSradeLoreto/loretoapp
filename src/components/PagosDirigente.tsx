@@ -13,11 +13,11 @@ interface Pago {
   fecha_pago: string
   comprobante_url: string | null
   observaciones: string | null
-  registrado_por: string | null
+  medio_pago: string | null
+  creado_por: string | null
   creado_en: string
-  recibo: string | null
+  numero_recibo: string | null
   anio: number | null
-  categoria: string | null
 }
 
 export default function PagosDirigente({
