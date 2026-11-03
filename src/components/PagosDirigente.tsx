@@ -369,22 +369,6 @@ export default function PagosDirigente({
             <input type="text" value={observaciones} onChange={e => setObservaciones(e.target.value)} placeholder="Opcional" style={inputStyle} />
           </div>
           
-          <div style={{ marginBottom: '14px' }}>
-            <label style={labelStyle}>Comprobante</label>
-            {comprobanteUrl ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#D1FAE5', padding: '6px 10px', borderRadius: '6px', border: '2px solid #A7F3D0' }}>
-                <span>📄</span>
-                <a href={comprobanteUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#24352A', fontSize: '12px', fontWeight: '600' }}>Ver comprobante</a>
-                <button onClick={() => setComprobanteUrl(null)} style={{ border: 'none', background: 'transparent', color: '#BF4E30', cursor: 'pointer', marginLeft: 'auto', fontWeight: 'bold' }}>✕</button>
-              </div>
-            ) : (
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px dashed #D1C9B4', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#7A7364' }}>
-                {subiendoComprobante ? 'Subiendo...' : '📎 Adjuntar comprobante'}
-                <input type="file" accept="image/*,.pdf" onChange={handleSubirComprobante} style={{ display: 'none' }} disabled={subiendoComprobante} />
-              </label>
-            )}
-          </div>
-
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <button onClick={() => setAgregando(false)} disabled={guardando} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: '#E8DEC4', color: '#24352A', cursor: 'pointer', fontWeight: '600' }}>Cancelar</button>
             <button onClick={guardarPago} disabled={guardando || subiendoComprobante} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: '#24352A', color: 'white', cursor: 'pointer', fontWeight: '600' }}>
