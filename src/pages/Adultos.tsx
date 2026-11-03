@@ -4,6 +4,29 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { ROLES_OPCIONES, getRolLabel } from '../lib/rolesLabels'
 import { formatFechaHora } from '../utils/formatFecha'
+// Formatea el último acceso restando 3 horas (de UTC a Argentina)
+const formatUltimoAcceso = (fecha: string | null | undefined): string => {
+  if (!fecha) return 'Sin acceso'
+
+  // El valor viene de la base de datos en UTC (ej: "2026-11-03 14:44:03.418")
+  // Lo parseamos como UTC y lo mostramos en hora de Argentina
+  const fechaUTC = fecha.includes('Z') || fecha.includes('+')
+    ? fecha
+    : fecha + 'Z'
+
+  const d = new Date(fechaUTC)
+  if (isNaN(d.getTime())) return 'Sin acceso'
+
+  return d.toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+}
 
 // ============================================
 // TIPOS
@@ -833,7 +856,7 @@ export default function Adultos() {
                             letterSpacing: '0.5px', fontWeight: '500',
                             border: '1px solid #D1C9B4'
                           }}>
-                            🕒 {formatFechaHora(u.ultimo_acceso)}
+                            🕒 {formatUltimoAcceso(u.ultimo_acceso)}
                           </span>
                         )}
                       </div>
@@ -990,7 +1013,7 @@ export default function Adultos() {
                           letterSpacing: '0.5px', fontWeight: '500',
                           border: '1px solid #D1C9B4'
                         }}>
-                          🕒 {formatFechaHora(d.cuenta_ultimo_acceso)}
+                          🕒 {formatUltimoAcceso(d.cuenta_ultimo_acceso)}
                         </span>
                       )}
                     </div>

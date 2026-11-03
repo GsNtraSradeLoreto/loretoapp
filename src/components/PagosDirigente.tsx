@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatFecha } from '../utils/formatFecha'
+import { getAnioActivo } from '../lib/getAnioActivo'
+
+const ETIQUETAS_OBSERVACIONES = ['Rendido Ok', 'Falta Recibito', 'No rendido']
 
 interface Pago {
   id: string
@@ -10,10 +13,11 @@ interface Pago {
   fecha_pago: string
   comprobante_url: string | null
   observaciones: string | null
-  creado_por: string | null
+  registrado_por: string | null
   creado_en: string
-  numero_recibo: string | null
+  recibo: string | null
   anio: number | null
+  categoria: string | null
 }
 
 export default function PagosDirigente({
@@ -31,18 +35,50 @@ export default function PagosDirigente({
 
   // Formulario
   const [agregando, setAgregando] = useState(false)
-  const [concepto, setConcepto] = useState('')
   const [monto, setMonto] = useState('')
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0])
   const [observaciones, setObservaciones] = useState('')
   const [subiendoComprobante, setSubiendoComprobante] = useState(false)
   const [comprobanteUrl, setComprobanteUrl] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
+  const [anioActivo, setAnioActivo] = useState<number | null>(null)
+  
+  const [categoria, setCategoria] = useState('')
+  const [categoriaOtro, setCategoriaOtro] = useState('')
+  const [medioPago, setMedioPago] = useState('')
+  const [reciboGenerado, setReciboGenerado] = useState('')
+
+  // Edición inline
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [editMonto, setEditMonto] = useState('')
+  const [editFecha, setEditFecha] = useState('')
+  const [editCategoria, setEditCategoria] = useState('')
+  const [editCategoriaOtro, setEditCategoriaOtro] = useState('')
+  const [editMedioPago, setEditMedioPago] = useState('')
+  const [editObservaciones, setEditObservaciones] = useState('')
+  const [editGuardando, setEditGuardando] = useState(false)
+
+  const categorias = [
+    { value: 'AFILIACION', label: 'Afiliación' },
+    { value: 'CUOTAS', label: 'Cuotas' },
+    { value: 'C. CORTO', label: 'Campamento Corto' },
+    { value: 'C. ANUAL', label: 'Campamento Anual' },
+    { value: 'OTRO', label: 'Otro' }
+  ]
+  const mediosPago = ['Efectivo', 'Mercadopago']
 
   useEffect(() => {
-    if (dirigenteId) cargarPagos()
+    if (dirigenteId) {
+      cargarAnioActivo()
+      cargarPagos()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirigenteId])
+
+  const cargarAnioActivo = async () => {
+    const anio = await getAnioActivo()
+    setAnioActivo(anio)
+  }
 
   const cargarPagos = async () => {
     setCargando(true)
@@ -81,7 +117,7 @@ export default function PagosDirigente({
       const filePath = `pagos-dirigentes/${fileName}`
 
       const { error: uploadError } = await supabase.storage
-        .from('beneficiarios') // Reutilizamos el bucket
+        .from('beneficiarios')
         .upload(filePath, file, { cacheControl: '3600', upsert: true })
 
       if (uploadError) throw uploadError
@@ -100,8 +136,12 @@ export default function PagosDirigente({
   }
 
   const guardarPago = async () => {
-    if (!concepto.trim() || !monto || !fechaPago) {
-      setMensaje({ texto: '❌ Completá concepto, monto y fecha', tipo: 'error' })
+    if (!categoria || !monto || !fechaPago || !medioPago) {
+      setMensaje({ texto: '❌ Completá todos los campos obligatorios', tipo: 'error' })
+      return
+    }
+    if (categoria === 'OTRO' && !categoriaOtro.trim()) {
+      setMensaje({ texto: '❌ Especificá el concepto "Otro"', tipo: 'error' })
       return
     }
 
@@ -109,50 +149,43 @@ export default function PagosDirigente({
     setMensaje(null)
 
     try {
-      // 1) Calcular el año del pago
-      const anioPago = new Date(fechaPago).getFullYear()
-
-      // 2) Buscar el último recibo de este año (GLOBAL para todos los dirigentes)
-      const { data: ultimos, error: errUlt } = await supabase
-        .from('pagos_dirigentes')
-        .select('numero_recibo')
-        .eq('anio', anioPago)
-        .order('numero_recibo', { ascending: false })
-        .limit(1)
-
-      if (errUlt) throw errUlt
-
-      let siguienteNumero = 1
-      if (ultimos && ultimos.length > 0 && ultimos[0].numero_recibo) {
-        // Extrae el número de "D-05" → 5
-        const match = ultimos[0].numero_recibo.match(/D-(\d+)/)
-        if (match) siguienteNumero = parseInt(match[1], 10) + 1
+      if (anioActivo === null) {
+        setMensaje({ texto: '❌ No se pudo determinar el período activo.', tipo: 'error' })
+        setGuardando(false)
+        return
       }
 
-      const numeroRecibo = `D-${String(siguienteNumero).padStart(2, '0')}`
+      let categoriaFinal = categoria
+      if (categoria === 'OTRO') {
+        categoriaFinal = categoriaOtro.trim().toUpperCase()
+      }
 
-      // 3) Insertar el pago con el número de recibo
       const { error: err } = await supabase.from('pagos_dirigentes').insert({
         dirigente_id: dirigenteId,
-        concepto: concepto.trim(),
+        recibo: reciboGenerado,
         monto: parseFloat(monto),
         fecha_pago: fechaPago,
-        comprobante_url: comprobanteUrl,
         observaciones: observaciones.trim() || null,
-        creado_por: profile?.id || null,
-        numero_recibo: numeroRecibo,
-        anio: anioPago
+        registrado_por: profile?.id || null,
+        anio: anioActivo,
+        tipo_pago: 'dirigente',
+        rama: 'Dirigentes y otros',
+        categoria: categoriaFinal,
+        medio_pago: medioPago,
+        comprobante_url: comprobanteUrl
       })
 
       if (err) throw err
 
-      setMensaje({ texto: `✅ Pago registrado con recibo ${numeroRecibo}`, tipo: 'ok' })
+      setMensaje({ texto: `✅ Pago registrado con recibo ${reciboGenerado}`, tipo: 'ok' })
       setAgregando(false)
-      setConcepto('')
       setMonto('')
       setFechaPago(new Date().toISOString().split('T')[0])
       setObservaciones('')
       setComprobanteUrl(null)
+      setCategoria('')
+      setCategoriaOtro('')
+      setMedioPago('')
       await cargarPagos()
     } catch (err: any) {
       setMensaje({ texto: '❌ Error al guardar: ' + err.message, tipo: 'error' })
@@ -171,7 +204,63 @@ export default function PagosDirigente({
     }
   }
 
-  const totalPagado = pagos.reduce((sum, p) => sum + p.monto, 0)
+  const agregarEtiqueta = async (pagoId: string, etiqueta: string) => {
+    const pago = pagos.find(p => p.id === pagoId)
+    if (!pago) return
+
+    const actual = pago.observaciones || ''
+    if (actual === etiqueta) return
+
+    setPagos(prev => prev.map(p => p.id === pagoId ? { ...p, observaciones: etiqueta } : p))
+
+    supabase.from('pagos_dirigentes').update({ observaciones: etiqueta }).eq('id', pagoId).then(({ error }) => {
+      if (error) {
+        console.error('Error al guardar etiqueta:', error)
+        setPagos(prev => prev.map(p => p.id === pagoId ? { ...p, observaciones: actual } : p))
+      }
+    })
+  }
+
+  const abrirEdicion = (pago: Pago) => {
+    const categoriasEstandar = ['AFILIACION', 'CUOTAS', 'C. CORTO', 'C. ANUAL']
+    const esOtro = !categoriasEstandar.includes(pago.categoria || '')
+    
+    setEditandoId(pago.id)
+    setEditMonto(pago.monto.toString())
+    setEditFecha(pago.fecha_pago)
+    setEditCategoria(esOtro ? 'OTRO' : (pago.categoria || ''))
+    setEditCategoriaOtro(esOtro ? (pago.categoria || '') : '')
+    setEditMedioPago(pago.medio_pago || 'Efectivo')
+    setEditObservaciones(pago.observaciones || '')
+  }
+
+  const guardarEdicion = async (id: string) => {
+    if (!editMonto || !editFecha || !editCategoria || !editMedioPago) return
+    if (editCategoria === 'OTRO' && !editCategoriaOtro.trim()) return
+
+    setEditGuardando(true)
+    let categoriaFinal = editCategoria
+    if (editCategoria === 'OTRO') {
+      categoriaFinal = editCategoriaOtro.trim().toUpperCase()
+    }
+
+    const { error: err } = await supabase.from('pagos_dirigentes').update({
+      monto: parseFloat(editMonto),
+      fecha_pago: editFecha,
+      categoria: categoriaFinal,
+      medio_pago: editMedioPago,
+      observaciones: editObservaciones.trim() || null
+    }).eq('id', id)
+
+    if (!err) {
+      setMensaje({ texto: '✅ Pago actualizado', tipo: 'ok' })
+      await cargarPagos()
+      setEditandoId(null)
+    } else {
+      setMensaje({ texto: '❌ Error: ' + err.message, tipo: 'error' })
+    }
+    setEditGuardando(false)
+  }
 
   if (cargando) {
     return <div style={{ padding: '20px', textAlign: 'center', color: '#7A7364', fontFamily: 'Oswald' }}>Cargando pagos...</div>
@@ -191,39 +280,44 @@ export default function PagosDirigente({
         </div>
       )}
 
-      {/* Resumen */}
-      <div style={{
-        backgroundColor: '#F3ECD8', padding: '14px', borderRadius: '12px',
-        border: '2px solid #D1C9B4', marginBottom: '16px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px'
-      }}>
-        <div>
-          <div style={{ fontSize: '11px', color: '#7A7364', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Pagado</div>
-          <div style={{ fontSize: '22px', fontWeight: '700', color: '#24352A' }}>${totalPagado.toLocaleString('es-AR')}</div>
-        </div>
-        {puedeEditar && !agregando && (
+      {/* Botón Nuevo Pago */}
+      {puedeEditar && !agregando && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
           <button
-            onClick={() => setAgregando(true)}
+            onClick={() => {
+              if (anioActivo) {
+                supabase.from('pagos_dirigentes').select('recibo').eq('anio', anioActivo).order('recibo', { ascending: false }).limit(1).then(({ data }) => {
+                  let sig = 1
+                  if (data && data.length > 0 && data[0].recibo) {
+                    const match = data[0].recibo.match(/D-(\d+)/)
+                    if (match) sig = parseInt(match[1], 10) + 1
+                  }
+                  setReciboGenerado(`D-${String(sig).padStart(2, '0')}`)
+                })
+              }
+              setAgregando(true)
+            }}
             style={{
-              backgroundColor: '#C48A2A', color: 'white', padding: '8px 16px',
-              borderRadius: '8px', border: 'none', cursor: 'pointer',
-              fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
-              letterSpacing: '0.5px', fontSize: '12px', fontWeight: '600'
+              backgroundColor: '#24352A', color: 'white', padding: '6px 14px',
+              borderRadius: '6px', border: 'none', cursor: 'pointer',
+              fontSize: '11px', fontFamily: 'Oswald, sans-serif',
+              textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600
             }}
           >
-            ➕ Registrar Pago
+            + Nuevo Pago
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Formulario Inline */}
+      {/* Formulario Inline (Crear) */}
       {agregando && (
         <div style={{ backgroundColor: 'white', border: '2px solid #24352A', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
           <h4 style={{ fontSize: '13px', color: '#24352A', margin: '0 0 12px 0', textTransform: 'uppercase' }}>Nuevo Pago</h4>
+          
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px' }}>
             <div>
-              <label style={labelStyle}>Concepto *</label>
-              <input type="text" value={concepto} onChange={e => setConcepto(e.target.value)} placeholder="Ej: Campamento Invierno" style={inputStyle} />
+              <label style={labelStyle}>Recibo</label>
+              <input type="text" value={reciboGenerado} readOnly style={{ ...inputStyle, backgroundColor: '#F3F4F6' }} />
             </div>
             <div>
               <label style={labelStyle}>Monto *</label>
@@ -234,6 +328,42 @@ export default function PagosDirigente({
               <input type="date" value={fechaPago} onChange={e => setFechaPago(e.target.value)} style={inputStyle} />
             </div>
           </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+            <div>
+              <label style={labelStyle}>Concepto *</label>
+              <select
+                value={categoria}
+                onChange={(e) => {
+                  setCategoria(e.target.value)
+                  if (e.target.value !== 'OTRO') setCategoriaOtro('')
+                }}
+                style={inputStyle}
+              >
+                <option value="">Seleccionar...</option>
+                {categorias.map(cat => (
+                  <option key={cat.value} value={cat.value}>{cat.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Medio de Pago *</label>
+              <select value={medioPago} onChange={e => setMedioPago(e.target.value)} style={inputStyle}>
+                <option value="">Seleccionar...</option>
+                {mediosPago.map(mp => (
+                  <option key={mp} value={mp}>{mp}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {categoria === 'OTRO' && (
+            <div style={{ marginBottom: '10px' }}>
+              <label style={labelStyle}>Especificar Concepto *</label>
+              <input type="text" value={categoriaOtro} onChange={e => setCategoriaOtro(e.target.value)} placeholder="Ej: Garrafa, Colaboración" style={inputStyle} />
+            </div>
+          )}
+
           <div style={{ marginBottom: '10px' }}>
             <label style={labelStyle}>Observaciones</label>
             <input type="text" value={observaciones} onChange={e => setObservaciones(e.target.value)} placeholder="Opcional" style={inputStyle} />
@@ -270,43 +400,115 @@ export default function PagosDirigente({
           No hay pagos registrados.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {pagos.map(p => (
-            <div key={p.id} style={{ backgroundColor: 'white', border: '2px solid #E8DEC4', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {p.numero_recibo && (
-                    <span style={{
-                      backgroundColor: '#24352A', color: 'white',
-                      padding: '2px 8px', borderRadius: '6px',
-                      fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px'
-                    }}>
-                      {p.numero_recibo}
-                    </span>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {pagos.map((pago) => {
+            const estaEditando = editandoId === pago.id
+
+            if (estaEditando) {
+              return (
+                <div key={pago.id} style={{ backgroundColor: '#F9F6EE', borderBottom: '1px solid #E8DEC4', padding: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <label style={labelStyle}>Monto</label>
+                      <input type="number" value={editMonto} onChange={e => setEditMonto(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Fecha</label>
+                      <input type="date" value={editFecha} onChange={e => setEditFecha(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Concepto</label>
+                      <select value={editCategoria} onChange={e => {
+                        setEditCategoria(e.target.value)
+                        if (e.target.value !== 'OTRO') setEditCategoriaOtro('')
+                      }} style={inputStyle}>
+                        <option value="">Seleccionar...</option>
+                        {categorias.map(cat => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Medio</label>
+                      <select value={editMedioPago} onChange={e => setEditMedioPago(e.target.value)} style={inputStyle}>
+                        {mediosPago.map(mp => <option key={mp} value={mp}>{mp}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {editCategoria === 'OTRO' && (
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={labelStyle}>Especificar</label>
+                      <input type="text" value={editCategoriaOtro} onChange={e => setEditCategoriaOtro(e.target.value)} style={inputStyle} />
+                    </div>
                   )}
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#24352A' }}>
-                    {p.concepto}
+                  <div style={{ marginBottom: '10px' }}>
+                    <label style={labelStyle}>Observaciones</label>
+                    <input type="text" value={editObservaciones} onChange={e => setEditObservaciones(e.target.value)} style={inputStyle} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button onClick={() => setEditandoId(null)} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#E8DEC4', color: '#24352A', fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
+                    <button onClick={() => guardarEdicion(pago.id)} disabled={editGuardando} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#24352A', color: 'white', fontWeight: 600, cursor: 'pointer' }}>💾 Guardar</button>
                   </div>
                 </div>
-                <div style={{ fontSize: '12px', color: '#7A7364', marginTop: '2px' }}>
-                  {formatFecha(p.fecha_pago)} {p.observaciones && `· ${p.observaciones}`}
+              )
+            }
+
+            return (
+              <div
+                key={pago.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  borderBottom: '1px solid #E8DEC4',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <div style={{ flex: 1, minWidth: '120px' }}>
+                  <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(12px, 3vw, 14px)', color: '#24352A', fontWeight: '600' }}>
+                    {pago.recibo || '-'} · ${(pago.monto || 0).toLocaleString()}
+                  </div>
+                  <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 'clamp(10px, 2.5vw, 12px)', color: '#7A7364', marginTop: '2px' }}>
+                    {formatFecha(pago.fecha_pago)} · {pago.categoria || 'Sin concepto'}
+                    {pago.observaciones && ` · ${pago.observaciones}`}
+                  </div>
+                  
+                  {puedeEditar && (
+                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
+                      {ETIQUETAS_OBSERVACIONES.map(etq => {
+                        const yaEsta = (pago.observaciones || '') === etq
+                        return (
+                          <button
+                            key={etq}
+                            onClick={() => !yaEsta && agregarEtiqueta(pago.id, etq)}
+                            disabled={yaEsta}
+                            style={{
+                              padding: '2px 8px', fontSize: '9px', fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase',
+                              backgroundColor: yaEsta ? '#D1FAE5' : '#F3ECD8', color: yaEsta ? '#5C7A5E' : '#24352A',
+                              border: `1px solid ${yaEsta ? '#A7F3D0' : '#D1C9B4'}`, borderRadius: '10px', cursor: yaEsta ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            {yaEsta ? '✓ ' : '+ '}{etq}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div style={{ fontSize: '16px', fontWeight: '700', color: '#5C7A5E' }}>
-                  ${p.monto.toLocaleString('es-AR')}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  {p.comprobante_url && (
-                    <a href={p.comprobante_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', fontSize: '18px' }} title="Ver comprobante">📄</a>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {pago.comprobante_url && (
+                    <a href={pago.comprobante_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', fontSize: '16px' }} title="Ver comprobante">📄</a>
                   )}
                   {puedeEditar && (
-                    <button onClick={() => eliminarPago(p.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', opacity: 0.6 }} title="Eliminar pago">🗑️</button>
+                    <>
+                      <button onClick={() => abrirEdicion(pago)} style={{ background: '#F3ECD8', border: '1px solid #D1C9B4', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '14px' }} title="Editar pago">✏️</button>
+                      <button onClick={() => eliminarPago(pago.id)} style={{ background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '14px' }} title="Eliminar pago">🗑️</button>
+                    </>
                   )}
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

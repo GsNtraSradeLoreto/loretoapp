@@ -121,9 +121,20 @@ const TIPO_ARCHIVO_CONFIG: Record<string, { label: string; emoji: string; color:
 // ============================================
 const formatFecha = (fecha: string | null) => {
   if (!fecha) return '-'
-  const d = new Date(fecha)
+  
+  const fechaUTC = fecha.includes('Z') || fecha.includes('+')
+    ? fecha
+    : fecha + 'Z'
+  
+  const d = new Date(fechaUTC)
   if (isNaN(d.getTime())) return '-'
-  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  
+  return d.toLocaleDateString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
 }
 
 // ============================================
