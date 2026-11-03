@@ -14,6 +14,8 @@ interface Pago {
   comprobante_url: string | null
   observaciones: string | null
   medio_pago: string | null
+  categoria: string | null
+  recibo: string | null
   creado_por: string | null
   creado_en: string
   numero_recibo: string | null
