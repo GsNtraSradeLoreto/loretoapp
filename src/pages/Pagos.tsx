@@ -756,7 +756,8 @@ export default function Pagos() {
 
   const canEdit = (pago: Pago): boolean => puedeHacer('editar_pago')
   const canDelete = (pago: Pago): boolean => puedeHacer('editar_pago')
-    const puedeCrearPagos = (): boolean => {
+  
+  const puedeCrearPagos = (): boolean => {
     if (filterRama === 'Dirigentes y otros') {
       return isSuperAdmin || puedeHacer('crear_pago_dirigente')
     }
