@@ -756,8 +756,12 @@ export default function Pagos() {
 
   const canEdit = (pago: Pago): boolean => puedeHacer('editar_pago')
   const canDelete = (pago: Pago): boolean => puedeHacer('editar_pago')
-  const puedeCrearPagos = (): boolean => puedeHacer('crear_pago')
-
+    const puedeCrearPagos = (): boolean => {
+    if (filterRama === 'Dirigentes y otros') {
+      return isSuperAdmin || puedeHacer('crear_pago_dirigente')
+    }
+    return puedeHacer('crear_pago')
+  }
   const handleFilterByRama = (rama: string) => setFilterRama(rama)
 
   const handleLimpiarFiltros = () => {
@@ -823,7 +827,8 @@ export default function Pagos() {
   }, [pagoActivo])
 
   const getRamasMostrar = () => {
-    const puedeVerDirigentes = isSuperAdmin || isJefatura || isAdministrador || isTesorero
+    // Ahora usa los permisos de la Matriz + los roles fijos por las dudas
+    const puedeVerDirigentes = isSuperAdmin || isJefatura || isAdministrador || isTesorero || puedeHacer('ver_pagos_dirigentes')
     if (verTodas) {
       const ramas = ['Todas', 'Manada', 'Unidad Scout', 'Caminantes', 'Rovers']
       if (puedeVerDirigentes) ramas.push('Dirigentes y otros')

@@ -20,8 +20,11 @@ const PERMISOS_DISPONIBLES = [
   {
     grupo: 'Pagos y Finanzas',
     items: [
-      { id: 'crear_pago', label: 'Agregar Pagos' },
-      { id: 'editar_pago', label: 'Editar Pagos' },
+      { id: 'crear_pago', label: 'Agregar Pagos de Beneficiarios' },
+      { id: 'editar_pago', label: 'Editar Pagos de Beneficiarios' },
+      { id: 'ver_pagos_dirigentes', label: 'Ver Pagos de Dirigentes y Otros' },
+      { id: 'crear_pago_dirigente', label: 'Agregar Pagos de Dirigentes y Otros' },
+      { id: 'editar_pago_dirigente', label: 'Editar Pagos de Dirigentes y Otros' },
       { id: 'editar_planilla', label: 'Editar Celdas y Asistencia en Planillas (Tesorero)' },
       { id: 'editar_obs_planilla', label: 'Editar Observaciones en Planillas' },
     ]

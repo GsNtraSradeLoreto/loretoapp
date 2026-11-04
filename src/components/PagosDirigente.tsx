@@ -81,7 +81,27 @@ export default function PagosDirigente({
     const anio = await getAnioActivo()
     setAnioActivo(anio)
   }
-
+  const generarProximoRecibo = async () => {
+    if (anioActivo === null) return
+    const { data } = await supabase
+      .from('pagos')
+      .select('recibo')
+      .eq('anio', anioActivo)
+      .ilike('recibo', 'D-%') // Filtramos solo los de dirigentes
+    
+    let maxNum = 0
+    if (data) {
+      data.forEach(p => {
+        const match = p.recibo?.match(/D-(\d+)/)
+        if (match) {
+          const num = parseInt(match[1], 10)
+          if (num > maxNum) maxNum = num
+        }
+      })
+    }
+    const sig = maxNum + 1
+    setReciboGenerado(`D-${String(sig).padStart(2, '0')}`)
+  }
   const cargarPagos = async () => {
     setCargando(true)
     const { data, error: err } = await supabase
@@ -287,16 +307,7 @@ export default function PagosDirigente({
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
           <button
             onClick={() => {
-              if (anioActivo) {
-                supabase.from('pagos').select('recibo').eq('anio', anioActivo).order('recibo', { ascending: false }).limit(1).then(({ data }) => {
-                  let sig = 1
-                  if (data && data.length > 0 && data[0].recibo) {
-                    const match = data[0].recibo.match(/D-(\d+)/)
-                    if (match) sig = parseInt(match[1], 10) + 1
-                  }
-                  setReciboGenerado(`D-${String(sig).padStart(2, '0')}`)
-                })
-              }
+              generarProximoRecibo()
               setAgregando(true)
             }}
             style={{
