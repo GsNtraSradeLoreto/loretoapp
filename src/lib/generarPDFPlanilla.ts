@@ -143,7 +143,7 @@ const getValorCampPDF = (
 // GENERAR PDF
 // ============================================
 export function generarPDFPlanilla({
-  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, anioActual
+  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, anioActual, listaDirigentes = []
 }: {
   concepto: Concepto
   rama: Rama
@@ -153,6 +153,7 @@ export function generarPDFPlanilla({
   asistencias?: Asistencia[]
   config: any
   anioActual?: number
+  listaDirigentes?: any[]
 }) {
   const anio = anioActual || config?.anio_actual || 2026
   const asistenciasData = asistencias || []
@@ -173,7 +174,13 @@ export function generarPDFPlanilla({
   const minColumnasFijas = concepto === 'camp_anual' ? 5 : concepto === 'camp_corto' ? 3 : 2
   const maxPagosPorBenef = new Map<string, number>()
   beneficiarios.forEach(b => {
-    const count = movimientos.filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo').length
+    const esLibre = b.id.startsWith('libre-')
+    const nombreLibre = esLibre ? b.id.replace('libre-', '') : undefined
+    const count = movimientos.filter(m => 
+      (esLibre ? m.nombre_libre === nombreLibre : m.beneficiario_id === b.id) 
+      && m.pagado_por !== 'grupo'
+      && m.monto > 0
+    ).length
     maxPagosPorBenef.set(b.id, count)
   })
   const maxPagos = Math.max(minColumnasFijas, ...Array.from(maxPagosPorBenef.values()))
@@ -196,20 +203,47 @@ export function generarPDFPlanilla({
   }
 
   // ====== SEPARAR ACTIVOS E INACTIVOS ======
-  const activos = beneficiarios.filter(b => b.estado === 'activo')
-  const inactivos = beneficiarios.filter(b => b.estado === 'inactivo')
-  const ordenados = [...activos, ...inactivos]
+  const esInactivoDe = (benef: Beneficiario): boolean => {
+    if (rama === 'Dirigentes y otros') {
+      const nombreDir = benef.nombre.replace(/^,\s*/, '')
+      const dir = listaDirigentes.find(d => `${d.apellido}, ${d.nombre}` === nombreDir)
+      return dir ? dir.activo === false : false
+    }
+    return benef.estado === 'inactivo'
+  }
+  const activos = beneficiarios.filter(b => !esInactivoDe(b))
+  const inactivos = beneficiarios.filter(b => esInactivoDe(b))
+  const sortAlfabetico = (a: Beneficiario, b: Beneficiario) => {
+    const nombreA = rama === 'Dirigentes y otros' ? a.nombre : `${a.apellido} ${a.nombre}`
+    const nombreB = rama === 'Dirigentes y otros' ? b.nombre : `${b.apellido} ${b.nombre}`
+    return nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' })
+  }
+  const activosOrdenados = [...activos].sort(sortAlfabetico)
+  const inactivosOrdenados = [...inactivos].sort(sortAlfabetico)
+  const ordenados = [...activosOrdenados, ...inactivosOrdenados]
 
   // ====== TOTALES PARA EL BANNER ======
   const totalPagos = movimientos.filter(m => !m.no_aplica).reduce((sum, m) => sum + m.monto, 0)
 
   const totalFaltan = ordenados.reduce((sum, b) => {
     if (!esCamp) return sum
-    const asist = asistenciasData.find(a => a.beneficiario_id === b.id)
+    const esLibre = b.id.startsWith('libre-')
+    const nombreLibre = esLibre ? b.id.replace('libre-', '') : undefined
+    const asist = asistenciasData.find(a => esLibre ? a.nombre_libre === nombreLibre : a.beneficiario_id === b.id)
     const estadoAsiste = asist?.asiste || 'no_se_sabe'
-    if (estadoAsiste !== 'si' || b.estado === 'inactivo') return sum
-    const valorCamp = getValorCampPDF(concepto, b, config, anio)
-    const pagado = movimientos.filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo').reduce((s, m) => s + m.monto, 0)
+    if (estadoAsiste !== 'si' || esInactivoDe(b)) return sum
+    
+    let valorCamp = 0
+    if (rama === 'Dirigentes y otros') {
+      const anioStr = concepto === 'camp_anual' ? (anio + 1).toString() : anio.toString()
+      valorCamp = concepto === 'camp_corto' 
+        ? (config?.camp_corto?.[anioStr]?.dirigente || 0)
+        : (config?.camp_anual?.[anioStr]?.dirigente || 0)
+    } else {
+      valorCamp = getValorCampPDF(concepto, b, config, anio)
+    }
+
+    const pagado = movimientos.filter(m => (esLibre ? m.nombre_libre === nombreLibre : m.beneficiario_id === b.id) && m.pagado_por !== 'grupo').reduce((s, m) => s + m.monto, 0)
     return sum + Math.max(0, valorCamp - pagado)
   }, 0)
 
@@ -217,14 +251,22 @@ export function generarPDFPlanilla({
 
   // ====== ARMAR FILAS ======
   const rows: any[][] = ordenados.map(b => {
-    const movsBenef = movimientos.filter(m => m.beneficiario_id === b.id).sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
-    const movsFamilia = movsBenef.filter(m => m.pagado_por !== 'grupo')
+    const esLibre = b.id.startsWith('libre-')
+    const nombreLibre = esLibre ? b.id.replace('libre-', '') : undefined
+
+    const matchea = (item: { beneficiario_id: string | null; nombre_libre: string | null }) =>
+      esLibre ? item.nombre_libre === nombreLibre : item.beneficiario_id === b.id
+
+    const movsBenef = movimientos.filter(matchea).sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
+    const movsFamilia = movsBenef.filter(m => m.pagado_por !== 'grupo' && m.monto > 0)
     const pagoGrupo = movsBenef.find(m => m.pagado_por === 'grupo')
-    const obs = observaciones.find(o => o.beneficiario_id === b.id)
-    const asistencia = asistenciasData.find(a => a.beneficiario_id === b.id)
+    const obs = observaciones.find(matchea)
+    const asistencia = asistenciasData.find(matchea)
     const asiste = asistencia?.asiste || 'no_se_sabe'
-    const esInactivo = b.estado === 'inactivo'
-    const nombre = formatearNombre(b.nombre, b.apellido, b.tiene_hermanos) + (esInactivo ? ' (Ex miembro)' : '')
+    const esInactivo = esInactivoDe(b)
+    const nombre = (rama === 'Dirigentes y otros'
+      ? b.nombre.replace(/^,\s*/, '')
+      : formatearNombre(b.nombre, b.apellido, b.tiene_hermanos)) + (esInactivo ? ' (Ex miembro)' : '')
 
     const fila: any[] = [nombre]
 
@@ -262,20 +304,27 @@ export function generarPDFPlanilla({
       const totalBenef = movsFamilia.filter(m => !m.no_aplica).reduce((sum, m) => sum + m.monto, 0)
       fila.push(totalBenef > 0 ? formatMonto(totalBenef) : '—')
     } else if (esAfiliacion) {
-      for (let i = 0; i < maxPagos; i++) fila.push(movsFamilia[i] ? ' ' : '-')
+      for (let i = 0; i < maxPagos; i++) fila.push(movsFamilia[i] && movsFamilia[i].monto > 0 ? ' ' : '-')
       fila.push(obs?.observacion || '')
       fila.push(pagoGrupo ? ' ' : '-')
     } else if (esCamp) {
-      for (let i = 0; i < maxPagos; i++) fila.push(movsFamilia[i] ? ' ' : '-')
+      for (let i = 0; i < maxPagos; i++) fila.push(movsFamilia[i] && movsFamilia[i].monto > 0 ? ' ' : '-')
       const totalFamilia = movsFamilia.reduce((sum, m) => sum + m.monto, 0)
       fila.push(totalFamilia > 0 ? formatMonto(totalFamilia) : '—')
       
-      const valorCamp = getValorCampPDF(concepto, b, config, anio)
+      let valorCamp = 0
+      if (rama === 'Dirigentes y otros') {
+        const anioStr = concepto === 'camp_anual' ? (anio + 1).toString() : anio.toString()
+        valorCamp = concepto === 'camp_corto' 
+          ? (config?.camp_corto?.[anioStr]?.dirigente || 0)
+          : (config?.camp_anual?.[anioStr]?.dirigente || 0)
+      } else {
+        valorCamp = getValorCampPDF(concepto, b, config, anio)
+      }
       
       const debeComputarFaltan = asiste === 'si' && !esInactivo
       if (debeComputarFaltan) {
         const falta = Math.max(0, valorCamp - totalFamilia)
-        // Si falta 0, mostramos $0
         fila.push(falta === 0 ? '$0' : formatMonto(falta))
       } else {
         fila.push('—')
@@ -399,7 +448,14 @@ export function generarPDFPlanilla({
       }
       if (data.section === 'body' && data.column.index > 0 && data.column.index <= numColumnasPago) {
         const beneficiario = ordenados[data.row.index]
-        const movsFamilia = movimientos.filter(m => m.beneficiario_id === beneficiario.id && m.pagado_por !== 'grupo').sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
+        const esLibreRow = beneficiario.id.startsWith('libre-')
+        const nombreLibreRow = esLibreRow ? beneficiario.id.replace('libre-', '') : undefined
+        const movsFamilia = movimientos.filter(m => 
+          (esLibreRow ? m.nombre_libre === nombreLibreRow : m.beneficiario_id === beneficiario.id) 
+          && m.pagado_por !== 'grupo'
+          && m.monto > 0
+        ).sort((x, y) => x.fecha_pago.localeCompare(y.fecha_pago))
+        
         if (esCuotas) {
           const mes = MESES_CUOTAS[data.column.index - 1]
           const movAsignado = movsFamilia.find(m => m.mes_inicio && m.mes_fin && mes.key >= m.mes_inicio && mes.key <= m.mes_fin)
@@ -416,7 +472,12 @@ export function generarPDFPlanilla({
       }
       if (colGrupoIndex > 0 && data.section === 'body' && data.column.index === colGrupoIndex) {
         const beneficiario = ordenados[data.row.index]
-        const pagoGrupo = movimientos.find(m => m.beneficiario_id === beneficiario.id && m.pagado_por === 'grupo')
+        const pagoGrupo = movimientos.find(m => 
+          (beneficiario.id.startsWith('libre-') 
+            ? m.nombre_libre === beneficiario.id.replace('libre-', '') 
+            : m.beneficiario_id === beneficiario.id) 
+          && m.pagado_por === 'grupo'
+        )
         if (pagoGrupo) data.cell.styles.fillColor = [127, 183, 126]
       }
     },
@@ -439,7 +500,13 @@ export function generarPDFPlanilla({
 
       if (data.column.index > 0 && data.column.index <= numColumnasPago) {
         const beneficiario = ordenados[data.row.index]
-        const movsFamilia = movimientos.filter(m => m.beneficiario_id === beneficiario.id && m.pagado_por !== 'grupo').sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
+        const esLibreRow = beneficiario.id.startsWith('libre-')
+        const nombreLibreRow = esLibreRow ? beneficiario.id.replace('libre-', '') : undefined
+        const movsFamilia = movimientos.filter(m => 
+          (esLibreRow ? m.nombre_libre === nombreLibreRow : m.beneficiario_id === beneficiario.id) 
+          && m.pagado_por !== 'grupo'
+          && m.monto > 0
+        ).sort((x, y) => x.fecha_pago.localeCompare(y.fecha_pago))
 
         let movAsignado: Movimiento | undefined
         if (esCuotas) {
@@ -453,7 +520,15 @@ export function generarPDFPlanilla({
         // 🔥 ACÁ ESTÁ EL FIX DE LOS CAMPAMENTOS
         // ============================================
         if (esCamp) {
-          const valorCamp = getValorCampPDF(concepto, beneficiario, config, anio)
+          let valorCamp = 0
+          if (rama === 'Dirigentes y otros') {
+            const anioStr = concepto === 'camp_anual' ? (anio + 1).toString() : anio.toString()
+            valorCamp = concepto === 'camp_corto' 
+              ? (config?.camp_corto?.[anioStr]?.dirigente || 0)
+              : (config?.camp_anual?.[anioStr]?.dirigente || 0)
+          } else {
+            valorCamp = getValorCampPDF(concepto, beneficiario, config, anio)
+          }
           const totalFamilia = movsFamilia.reduce((sum, m) => sum + m.monto, 0)
           const estaCompleto = totalFamilia >= valorCamp && valorCamp > 0
 
@@ -512,7 +587,12 @@ export function generarPDFPlanilla({
 
       if (colGrupoIndex > 0 && data.column.index === colGrupoIndex) {
         const beneficiario = ordenados[data.row.index]
-        const pagoGrupo = movimientos.find(m => m.beneficiario_id === beneficiario.id && m.pagado_por === 'grupo')
+        const pagoGrupo = movimientos.find(m => 
+          (beneficiario.id.startsWith('libre-') 
+            ? m.nombre_libre === beneficiario.id.replace('libre-', '') 
+            : m.beneficiario_id === beneficiario.id) 
+          && m.pagado_por === 'grupo'
+        )
         if (pagoGrupo) {
           const fecha = formatFecha(pagoGrupo.fecha_pago)
           const monto = formatMonto(pagoGrupo.monto)

@@ -321,8 +321,8 @@ export default function Planillas() {
     }
     cargarConfig()
     
-    // Cargar lista de dirigentes para el select
-    supabase.from('dirigentes').select('id, nombre, apellido').eq('activo', true).order('apellido').then(({ data }) => {
+    // Cargar lista de dirigentes para el select (activos e inactivos)
+    supabase.from('dirigentes').select('id, nombre, apellido, activo').order('apellido').then(({ data }) => {
       if (data) setListaDirigentes(data)
     })
   }, [])
@@ -406,17 +406,13 @@ export default function Planillas() {
 
       if (errObs) throw errObs
 
-      let queryAsis = supabase
+      const { data: asis, error: errAsis } = await supabase
         .from('planilla_asistencia')
         .select('*')
         .eq('anio', anioActivo)
         .eq('rama', rama)
+        .eq('concepto', concepto)
 
-      if (rama !== 'Dirigentes y otros') {
-        queryAsis = queryAsis.eq('concepto', concepto)
-      }
-
-      const { data: asis, error: errAsis } = await queryAsis
       if (errAsis) throw errAsis
 
       // Si es Dirigentes y otros, buscamos los nombres SOLO del concepto actual
@@ -574,9 +570,28 @@ export default function Planillas() {
         ...prev,
         [key]: [...(prev[key] || []), nuevoMov]
       }))
+
+      // Si es dirigente nuevo, lo agregamos visualmente al instante
+      if (rama === 'Dirigentes y otros') {
+        setBeneficiarios(prev => {
+          const listaActual = prev[key] || []
+          const yaExiste = listaActual.some(b => b.id === `libre-${nombreParaGuardar}`)
+          if (yaExiste || !nombreParaGuardar) return prev
+          
+          return {
+            ...prev,
+            [key]: [...listaActual, {
+              id: `libre-${nombreParaGuardar}`,
+              nombre: nombreParaGuardar,
+              apellido: '',
+              rama: 'Dirigentes y otros',
+              estado: 'activo',
+              tiene_hermanos: false
+            }]
+          }
+        })
+      }
       
-      // Refrescar para que no desaparezcan los nombres
-      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al crear movimiento:', error)
       alert('Error al guardar el pago')
@@ -611,7 +626,7 @@ export default function Planillas() {
         [key]: (prev[key] || []).map(m => m.id === id ? movActualizado : m)
       }))
       
-      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
+ 
     } catch (error) {
       console.error('Error al actualizar:', error)
       alert('Error al guardar')
@@ -628,8 +643,11 @@ export default function Planillas() {
         ...prev,
         [key]: (prev[key] || []).filter(m => m.id !== id)
       }))
-      
+
+      // Si es dirigente, recargamos para actualizar los nombres visibles
       if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
+      
+ 
     } catch (error) {
       console.error('Error al eliminar:', error)
       alert('Error al eliminar')
@@ -695,7 +713,6 @@ export default function Planillas() {
         }))
       }
       
-      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al guardar observación:', error)
       alert('Error al guardar observación')
@@ -737,29 +754,58 @@ export default function Planillas() {
           [key]: (prev[key] || []).map(a => a.id === asistenciaId ? asistActualizada : a)
         }))
       } else {
-        const { data: nuevaAsist, error } = await supabase
-          .from('planilla_asistencia')
-          .insert({
-            anio: anioActivo,
-            rama,
-            concepto,
-            beneficiario_id: idReal,
-            nombre_libre: nombreParaGuardar || null,
-            asiste: nuevoEstado,
-            actualizado_por: profile?.id
-          })
-          .select()
-          .single()
+        // CHEQUEAMOS SI YA EXISTE ANTES DE INSERTAR (Para evitar duplicados)
+        let queryExiste = supabase.from('planilla_asistencia').select('id')
+          .eq('anio', anioActivo).eq('rama', rama).eq('concepto', concepto)
+        
+        if (idReal) {
+          queryExiste = queryExiste.eq('beneficiario_id', idReal)
+        } else {
+          queryExiste = queryExiste.eq('nombre_libre', nombreParaGuardar)
+        }
 
-        if (error) throw error
+        const { data: existeData } = await queryExiste
+        const existe = Array.isArray(existeData) ? existeData[0] : existeData
 
-        setAsistencias(prev => ({
-          ...prev,
-          [key]: [...(prev[key] || []), nuevaAsist]
-        }))
+        if (existe) {
+          // Si ya existía (porque falló el update o quedó cruzado), lo actualizamos
+          const { data: asistActualizada, error } = await supabase
+            .from('planilla_asistencia')
+            .update({ asiste: nuevoEstado, actualizado_por: profile?.id })
+            .eq('id', existe.id)
+            .select()
+            .single()
+          if (error) throw error
+          
+          setAsistencias(prev => ({
+            ...prev,
+            [key]: (prev[key] || []).map(a => a.id === existe.id ? asistActualizada : a)
+          }))
+        } else {
+          // Si no existe, lo creamos
+          const { data: nuevaAsist, error } = await supabase
+            .from('planilla_asistencia')
+            .insert({
+              anio: anioActivo,
+              rama,
+              concepto,
+              beneficiario_id: idReal,
+              nombre_libre: nombreParaGuardar || null,
+              asiste: nuevoEstado,
+              actualizado_por: profile?.id
+            })
+            .select()
+            .single()
+
+          if (error) throw error
+
+          setAsistencias(prev => ({
+            ...prev,
+            [key]: [...(prev[key] || []), nuevaAsist]
+          }))
+        }
       }
       
-      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al guardar asistencia:', error)
       alert('Error al guardar asistencia')
@@ -1068,7 +1114,7 @@ export default function Planillas() {
                                             <option value="">Seleccionar dirigente...</option>
                                             {listaDirigentes.map(d => (
                                               <option key={d.id} value={`${d.apellido}, ${d.nombre}`}>
-                                                {d.apellido}, {d.nombre}
+                                                {d.apellido}, {d.nombre} {!d.activo ? '(Inactivo)' : ''}
                                               </option>
                                             ))}
                                           </select>
@@ -1105,15 +1151,17 @@ export default function Planillas() {
                                   }}>
                                     <button
                                       onClick={() => {
-                                        generarPDFPlanilla({
-                                          concepto: key,
-                                          rama,
-                                          beneficiarios: beneficiarios[ramaKey] || [],
-                                          movimientos: movimientos[ramaKey] || [],
-                                          observaciones: observaciones[ramaKey] || [],
-                                          asistencias: asistencias[ramaKey] || [],
-                                          config
-                                        })
+                                       generarPDFPlanilla({
+  concepto: key,
+  rama,
+  beneficiarios: beneficiarios[ramaKey] || [],
+  movimientos: movimientos[ramaKey] || [],
+  observaciones: observaciones[ramaKey] || [],
+  asistencias: asistencias[ramaKey] || [],
+  config,
+  anioActual: anioActivo ?? new Date().getFullYear(),
+  listaDirigentes
+}) 
                                       }}
                                       style={{
                                         padding: isMobile ? '14px 20px' : '10px 16px',
@@ -1201,23 +1249,24 @@ export default function Planillas() {
 
                                       {/* Tabla */}
                                       <TablaPlanilla
-                                        concepto={key}
-                                        rama={rama}
-                                        beneficiarios={beneficiarios[ramaKey] || []}
-                                        movimientos={movimientos[ramaKey] || []}
-                                        observaciones={observaciones[ramaKey] || []}
-                                        asistencias={asistencias[ramaKey] || []}
-                                        config={config}
-                                        puedeEditarCeldas={puedeEditarCeldas}
-                                        puedeEditarObservaciones={puedeEditarObservaciones}
-                                        anioActual={anioActivo ?? new Date().getFullYear()}
-                                        onCrear={crearMovimiento}
-                                        onActualizar={actualizarMovimiento}
-                                        onEliminar={eliminarMovimiento}
-                                        onGuardarObservacion={guardarObservacion}
-                                        onGuardarAsistencia={guardarAsistencia}
-                                        onOcultar={(id, esLibre) => handleOcultar(key, rama, id, !esLibre, 'movimientos')}
-                                      />
+  concepto={key}
+  rama={rama}
+  beneficiarios={beneficiarios[ramaKey] || []}
+  movimientos={movimientos[ramaKey] || []}
+  observaciones={observaciones[ramaKey] || []}
+  asistencias={asistencias[ramaKey] || []}
+  config={config}
+  puedeEditarCeldas={puedeEditarCeldas}
+  puedeEditarObservaciones={puedeEditarObservaciones}
+  anioActual={anioActivo ?? new Date().getFullYear()}
+  listaDirigentes={listaDirigentes}
+  onCrear={crearMovimiento}
+  onActualizar={actualizarMovimiento}
+  onEliminar={eliminarMovimiento}
+  onGuardarObservacion={guardarObservacion}
+  onGuardarAsistencia={guardarAsistencia}
+  onOcultar={(id, esLibre) => handleOcultar(key, rama, id, !esLibre, 'movimientos')}
+/>
 
                                       {/* Banner leyenda recibos */}
                                       <div style={{
@@ -1260,7 +1309,7 @@ export default function Planillas() {
 // TABLA PLANILLA
 // ============================================
 function TablaPlanilla({
-  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, puedeEditarCeldas, puedeEditarObservaciones, anioActual,
+  concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, puedeEditarCeldas, puedeEditarObservaciones, anioActual, listaDirigentes,
   onCrear, onActualizar, onEliminar, onGuardarObservacion, onGuardarAsistencia, onOcultar
 }: {
   concepto: Concepto
@@ -1273,6 +1322,7 @@ function TablaPlanilla({
   puedeEditarCeldas: boolean
   puedeEditarObservaciones: boolean
   anioActual: number
+  listaDirigentes: any[]
   onCrear: (concepto: Concepto, rama: Rama, benefId: string | null, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean, nombreLibre?: string, categoria?: string, mesInicio?: string, mesFin?: string, noAplica?: boolean) => void
   onActualizar: (concepto: Concepto, rama: Rama, id: string, fecha: string, monto: number, pagadoPor?: string, reciboEntregado?: boolean) => void
   onEliminar: (concepto: Concepto, rama: Rama, id: string) => void
@@ -1367,19 +1417,33 @@ function TablaPlanilla({
     return ordenDireccion === 'asc' ? ' ▲' : ' ▼'
   }
 
-  const activos = beneficiarios.filter(b => b.estado === 'activo')
-  const inactivos = beneficiarios.filter(b => b.estado === 'inactivo')
-  const ordenadosBase = [...activos, ...inactivos]
+  const ordenadosBase = beneficiarios
+
+  const esInactivoDe = (benef: Beneficiario): boolean => {
+    if (rama === 'Dirigentes y otros') {
+      const nombreDir = benef.nombre.replace(/^,\s*/, '')
+      const dirigenteMatch = listaDirigentes.find(d => 
+        `${d.apellido}, ${d.nombre}` === nombreDir
+      )
+      return dirigenteMatch ? dirigenteMatch.activo === false : false
+    }
+    return benef.estado === 'inactivo'
+  }
 
   const ordenados = [...ordenadosBase].sort((a, b) => {
     if (ordenColumna === 'beneficiario') {
-      const esInactivoA = a.estado === 'inactivo'
-      const esInactivoB = b.estado === 'inactivo'
+      const esInactivoA = esInactivoDe(a)
+      const esInactivoB = esInactivoDe(b)
       if (esInactivoA !== esInactivoB) {
         if (ordenDireccion === 'asc') return esInactivoA ? 1 : -1
         else return esInactivoA ? -1 : 1
       }
-      const cmp = a.apellido.localeCompare(b.apellido, 'es', { sensitivity: 'base' })
+      
+      // Si es Dirigentes, ordenamos por nombre. Si es beneficiario, por apellido.
+      const nombreA = rama === 'Dirigentes y otros' ? a.nombre : `${a.apellido} ${a.nombre}`
+      const nombreB = rama === 'Dirigentes y otros' ? b.nombre : `${b.apellido} ${b.nombre}`
+      
+      const cmp = nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' })
       return ordenDireccion === 'asc' ? cmp : -cmp
     }
 
@@ -1633,9 +1697,20 @@ function TablaPlanilla({
             const totalFamilia = movsFamilia
               .filter(m => !m.no_aplica)
               .reduce((sum, m) => sum + m.monto, 0)
-            const esInactivo = b.estado === 'inactivo'
             const bgFila = idx % 2 === 0 ? 'white' : '#FAF8F4'
-            
+
+            // Detectar si el dirigente es inactivo cruzando el nombre con listaDirigentes
+            let esInactivo = false
+            if (rama === 'Dirigentes y otros') {
+              const nombreDir = b.nombre.replace(/^,\s*/, '')
+              const dirigenteMatch = listaDirigentes.find(d => 
+                `${d.apellido}, ${d.nombre}` === nombreDir
+              )
+              esInactivo = dirigenteMatch ? dirigenteMatch.activo === false : false
+            } else {
+              esInactivo = b.estado === 'inactivo'
+            }
+
             const nombreFormateado = rama === 'Dirigentes y otros' 
               ? b.nombre.replace(/^,\s*/, '')
               : formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
