@@ -81,8 +81,6 @@ const MESES_CUOTAS = [
   { key: '12', label: 'DIC' }
 ]
 
-// (borrado: ahora es dinámico desde configuracion_grupo)
-
 const COLORES = {
   verdeScout: '#24352A',
   terracota: '#BF4E30',
@@ -205,6 +203,24 @@ const getValorCamp = (
   return 0
 }
 
+const getValorCampDirigente = (
+  concepto: Concepto,
+  config: any,
+  anio: number
+): number => {
+  if (!config) return 0
+  if (concepto === 'camp_corto') {
+    const c = config.camp_corto?.[anio.toString()]
+    return c?.dirigente || 0
+  }
+  if (concepto === 'camp_anual') {
+    const anioCamp = (anio + 1).toString()
+    const c = config.camp_anual?.[anioCamp]
+    return c?.dirigente || 0
+  }
+  return 0
+}
+
 // ============================================
 // COMPONENTE PRINCIPAL
 // ============================================
@@ -252,26 +268,29 @@ export default function Planillas() {
   const [asistencias, setAsistencias] = useState<Record<string, Asistencia[]>>({})
   const [beneficiarios, setBeneficiarios] = useState<Record<string, Beneficiario[]>>({})
   const [cargando, setCargando] = useState<Set<string>>(new Set())
-
+  const [agregandoPersona, setAgregandoPersona] = useState<string | null>(null)
+  const [listaDirigentes, setListaDirigentes] = useState<any[]>([])
+  const [nuevaPersona, setNuevaPersona] = useState({ nombre: '', montoInicial: '' })
   const rolData = getRolData()
   const esDirigente = rolData.tipo === 'jefe' || rolData.tipo === 'subjefe' || rolData.tipo === 'ayudante'
   const ramaAsignada = rolData.rama as Rama | null
 
   const puedeVerTodo = isSuperAdmin || isJefatura || isAdministrador || isTesorero
   
-  // ✅ Permiso para editar Celdas, Asistencia y Montos (Tesorero/SuperAdmin)
   const puedeEditarCeldas = puedeHacer('editar_planilla')
-  
-  // ✅ Permiso para editar SOLO la columna de Observaciones (Jefe de Rama, etc)
   const puedeEditarObservaciones = puedeHacer('editar_obs_planilla')
-
+  // Permiso para ver la página completa
+  // Admin/Jefatura/Tesorero siempre ven. Los dirigentes de rama también ven su rama.
+  const puedeVerPlanillas = isSuperAdmin || isJefatura || isAdministrador || isTesorero || esDirigente || puedeHacer('ver_planillas')
+  // Si es dirigente de una rama (Jefe, SubJefe, Ayudante), ve su rama.
+  // Si es admin/jefatura/tesorero, ve todo.
+  // Si no es ninguno, no ve nada.
   const ramasVisibles: Rama[] = puedeVerTodo
     ? RAMAS
     : (esDirigente && ramaAsignada && ramaAsignada !== 'Dirigentes y otros')
       ? [ramaAsignada]
       : []
 
-  // Cargar config + año activo
   useEffect(() => {
     const cargarConfig = async () => {
       try {
@@ -301,11 +320,14 @@ export default function Planillas() {
       }
     }
     cargarConfig()
+    
+    // Cargar lista de dirigentes para el select
+    supabase.from('dirigentes').select('id, nombre, apellido').eq('activo', true).order('apellido').then(({ data }) => {
+      if (data) setListaDirigentes(data)
+    })
   }, [])
 
-  // ✅ ÚNICO useEffect: si un dirigente arranca con ramas abiertas, precargar sus datos
   useEffect(() => {
-    // 👇 Esperamos a que el año esté cargado antes de buscar datos
     if (ramasAbiertas.size === 0 || anioActivo === null) return 
     ramasAbiertas.forEach(key => {
       let concepto: Concepto | null = null
@@ -332,9 +354,8 @@ export default function Planillas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anioActivo])
 
-  // Carga de datos
   const cargarDatos = async (concepto: Concepto, rama: Rama, forzar = false) => {
-    if (anioActivo === null) return  // ⏳ esperar a que cargue la config
+    if (anioActivo === null) return
 
     const key = `${concepto}-${rama}`
     if (!forzar && movimientos[key] !== undefined) return
@@ -350,15 +371,29 @@ export default function Planillas() {
           .eq('rama', rama)
 
         if (errBenef) throw errBenef
-        beneficiariosCargados = ordenarListaBeneficiarios(benef || []) as Beneficiario[]
+        
+        // Traer la lista de ocultos para esta planilla
+        const { data: ocultos } = await supabase
+          .from('planilla_ocultos')
+          .select('beneficiario_id')
+          .eq('anio', anioActivo)
+          .eq('rama', rama)
+          .eq('concepto', concepto)
+
+        const idsOcultos = new Set((ocultos || []).map(o => o.beneficiario_id))
+        
+        const beneficiariosVisibles = (benef || []).filter(b => !idsOcultos.has(b.id))
+        beneficiariosCargados = ordenarListaBeneficiarios(beneficiariosVisibles) as Beneficiario[]
       }
 
+      // 1) Traemos los movimientos SOLO del concepto actual (para que no se mezclen los pagos)
       const { data: mov, error: errMov } = await supabase
         .from('planilla_movimientos')
         .select('*')
         .eq('anio', anioActivo)
         .eq('rama', rama)
         .eq('concepto', concepto)
+        .eq('oculto', false)
 
       if (errMov) throw errMov
 
@@ -371,14 +406,41 @@ export default function Planillas() {
 
       if (errObs) throw errObs
 
-      const { data: asis, error: errAsis } = await supabase
+      let queryAsis = supabase
         .from('planilla_asistencia')
         .select('*')
         .eq('anio', anioActivo)
         .eq('rama', rama)
-        .eq('concepto', concepto)
 
+      if (rama !== 'Dirigentes y otros') {
+        queryAsis = queryAsis.eq('concepto', concepto)
+      }
+
+      const { data: asis, error: errAsis } = await queryAsis
       if (errAsis) throw errAsis
+
+      // Si es Dirigentes y otros, buscamos los nombres SOLO del concepto actual
+      if (rama === 'Dirigentes y otros') {
+        const { data: todosLosNombres } = await supabase
+          .from('planilla_movimientos')
+          .select('nombre_libre')
+          .eq('anio', anioActivo)
+          .eq('rama', rama)
+          .eq('concepto', concepto)
+          .eq('oculto', false)
+          .not('nombre_libre', 'is', null)
+
+        const nombresUnicos = Array.from(new Set((todosLosNombres || []).map(m => m.nombre_libre)))
+        
+        beneficiariosCargados = nombresUnicos.map(nom => ({
+          id: `libre-${nom}`,
+          nombre: nom || '',
+          apellido: '',
+          rama: 'Dirigentes y otros',
+          estado: 'activo',
+          tiene_hermanos: false
+        }))
+      }
 
       setBeneficiarios(prev => ({ ...prev, [key]: beneficiariosCargados }))
       setMovimientos(prev => ({ ...prev, [key]: mov || [] }))
@@ -419,8 +481,55 @@ export default function Planillas() {
       return nuevo
     })
   }
+  const handleCrearPersona = async (concepto: Concepto) => {
+    if (!nuevaPersona.nombre.trim()) return
+    const rama = 'Dirigentes y otros'
+    
+    try {
+      await supabase.from('planilla_movimientos').insert({
+        anio: anioActivo,
+        rama,
+        concepto,
+        nombre_libre: nuevaPersona.nombre.trim(),
+        categoria: 'dirigente',
+        fecha_pago: new Date().toISOString().split('T')[0],
+        monto: 0,
+        pagado_por: 'familia',
+        recibo_entregado: true,
+        creado_por: profile?.id
+      })
+      
+      setNuevaPersona({ nombre: '', montoInicial: '' })
+      setAgregandoPersona(null)
+      cargarDatos(concepto, rama, true)
+    } catch (error) {
+      console.error('Error al crear persona:', error)
+      alert('Error al agregar persona')
+    }
+  }
+    const handleOcultar = async (concepto: Concepto, rama: Rama, id: string, esBeneficiarioReal: boolean, tabla: 'movimientos' | 'asistencia' | 'observaciones') => {
+    if (!confirm('¿Ocultar esta persona de esta planilla?')) return
+    
+    try {
+      if (esBeneficiarioReal) {
+        // Si es beneficiario real, lo guardamos en la tabla de ocultos
+        await supabase.from('planilla_ocultos').insert({
+          anio: anioActivo, rama, concepto,
+          beneficiario_id: id,
+          creado_por: profile?.id
+        })
+      } else {
+        // Es un nombre libre. Buscamos los movimientos con ese nombre libre y los marcamos como ocultos
+        await supabase.from('planilla_movimientos').update({ oculto: true }).eq('anio', anioActivo).eq('rama', rama).eq('concepto', concepto).eq('nombre_libre', id.replace('libre-', ''))
+      }
+      
+      cargarDatos(concepto, rama, true)
+    } catch (error) {
+      console.error('Error al ocultar:', error)
+      alert('Error al ocultar')
+    }
+  }
 
-  // CRUD
   const crearMovimiento = async (
     concepto: Concepto, rama: Rama, beneficiarioId: string | null,
     fecha: string, monto: number, pagadoPor?: string,
@@ -435,12 +544,17 @@ export default function Planillas() {
     }
 
     try {
+      // Si el ID es falso (nombre libre), lo pasamos a null
+      const esLibre = beneficiarioId?.startsWith('libre-')
+      const idReal = esLibre ? null : beneficiarioId
+      const nombreParaGuardar = esLibre ? beneficiarioId?.replace('libre-', '') : nombreLibre
+
       const { data: nuevoMov, error } = await supabase
         .from('planilla_movimientos')
         .insert({
           anio: anioActivo, rama, concepto,
-          beneficiario_id: beneficiarioId,
-          nombre_libre: nombreLibre || null,
+          beneficiario_id: idReal,
+          nombre_libre: nombreParaGuardar || null,
           categoria: categoria || 'beneficiario',
           fecha_pago: fecha, monto,
           pagado_por: pagadoPor || 'familia',
@@ -460,6 +574,9 @@ export default function Planillas() {
         ...prev,
         [key]: [...(prev[key] || []), nuevoMov]
       }))
+      
+      // Refrescar para que no desaparezcan los nombres
+      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al crear movimiento:', error)
       alert('Error al guardar el pago')
@@ -493,6 +610,8 @@ export default function Planillas() {
         ...prev,
         [key]: (prev[key] || []).map(m => m.id === id ? movActualizado : m)
       }))
+      
+      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al actualizar:', error)
       alert('Error al guardar')
@@ -509,6 +628,8 @@ export default function Planillas() {
         ...prev,
         [key]: (prev[key] || []).filter(m => m.id !== id)
       }))
+      
+      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al eliminar:', error)
       alert('Error al eliminar')
@@ -551,12 +672,16 @@ export default function Planillas() {
           }))
         }
       } else if (texto.trim() !== '') {
+        const esLibre = beneficiarioId?.startsWith('libre-')
+        const idReal = esLibre ? null : beneficiarioId
+        const nombreParaGuardar = esLibre ? beneficiarioId?.replace('libre-', '') : nombreLibre
+
         const { data: nuevaObs, error } = await supabase
           .from('planilla_observaciones')
           .insert({
             anio: anioActivo, rama, concepto,
-            beneficiario_id: beneficiarioId,
-            nombre_libre: nombreLibre || null,
+            beneficiario_id: idReal,
+            nombre_libre: nombreParaGuardar || null,
             observacion: texto,
             actualizado_por: profile?.id
           })
@@ -569,6 +694,8 @@ export default function Planillas() {
           [key]: [...(prev[key] || []), nuevaObs]
         }))
       }
+      
+      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al guardar observación:', error)
       alert('Error al guardar observación')
@@ -585,6 +712,11 @@ export default function Planillas() {
   ) => {
     try {
       const key = `${concepto}-${rama}`
+      
+      // Si el ID es falso (nombre libre), lo pasamos a null
+      const esLibre = beneficiarioId?.startsWith('libre-')
+      const idReal = esLibre ? null : beneficiarioId
+      const nombreParaGuardar = esLibre ? beneficiarioId?.replace('libre-', '') : nombreLibre
 
       if (asistenciaId) {
         const { data: asistActualizada, error } = await supabase
@@ -611,8 +743,8 @@ export default function Planillas() {
             anio: anioActivo,
             rama,
             concepto,
-            beneficiario_id: beneficiarioId,
-            nombre_libre: nombreLibre || null,
+            beneficiario_id: idReal,
+            nombre_libre: nombreParaGuardar || null,
             asiste: nuevoEstado,
             actualizado_por: profile?.id
           })
@@ -626,6 +758,8 @@ export default function Planillas() {
           [key]: [...(prev[key] || []), nuevaAsist]
         }))
       }
+      
+      if (rama === 'Dirigentes y otros') cargarDatos(concepto, rama, true)
     } catch (error) {
       console.error('Error al guardar asistencia:', error)
       alert('Error al guardar asistencia')
@@ -678,7 +812,6 @@ export default function Planillas() {
     return ''
   }
 
-  // RENDER
   if (loadingConfig || anioActivo === null) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
@@ -689,7 +822,8 @@ export default function Planillas() {
     )
   }
 
-  if (ramasVisibles.length === 0) {
+  // Si no tiene permiso para ver planillas (ni es admin/jefe/tesorero), lo rebotamos
+  if (!puedeVerPlanillas || ramasVisibles.length === 0) {
     return (
       <div style={{ padding: '48px 20px', textAlign: 'center', fontFamily: 'Oswald, sans-serif', color: COLORES.terracota }}>
         ⚠️ No tenés permisos para ver las planillas
@@ -803,19 +937,55 @@ export default function Planillas() {
 
                       const totalPagos = movsEstaRama.reduce((sum, m) => sum + m.monto, 0)
 
-                      const totalFaltan = bensEstaRama.reduce((sum, b) => {
-                        const asist = asistenciasEstaRama.find(a => a.beneficiario_id === b.id)
-                        const estadoAsiste = asist?.asiste || 'no_se_sabe'
-                        const esActivo = b.estado === 'activo'
-                        if (estadoAsiste !== 'si' || !esActivo) return sum
-                        const valorCamp = getValorCamp(key, b, config, anioActivo ?? new Date().getFullYear())
-                        const pagado = movsEstaRama
-                          .filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo')
-                          .reduce((s, m) => s + m.monto, 0)
-                        return sum + Math.max(0, valorCamp - pagado)
-                      }, 0)
+                      let totalFaltan = 0
+                      let cantAsisten = 0
 
-                      const cantAsisten = asistenciasEstaRama.filter(a => a.asiste === 'si').length
+                      if (rama === 'Dirigentes y otros') {
+                        // Calculamos la plata que falta para los dirigentes
+                        totalFaltan = bensEstaRama.reduce((sum, b) => {
+                          const esLibre = b.id.startsWith('libre-')
+                          const nombreLibre = esLibre ? b.id.replace('libre-', '') : undefined
+                          
+                          const asist = asistenciasEstaRama.find(a => 
+                            esLibre ? a.nombre_libre === nombreLibre : a.beneficiario_id === b.id
+                          )
+                          const estadoAsiste = asist?.asiste || 'no_se_sabe'
+                          
+                          if (estadoAsiste !== 'si') return sum
+                          
+                          const valorDirigente = getValorCampDirigente(key, config, anioActivo ?? new Date().getFullYear())
+                          const pagado = movsEstaRama
+                            .filter(m => esLibre ? m.nombre_libre === nombreLibre : m.beneficiario_id === b.id)
+                            .reduce((s, m) => s + m.monto, 0)
+                            
+                          return sum + Math.max(0, valorDirigente - pagado)
+                        }, 0)
+
+                        // Contamos a los que asisten
+                        cantAsisten = bensEstaRama.filter(b => {
+                          const esLibre = b.id.startsWith('libre-')
+                          const nombreLibre = esLibre ? b.id.replace('libre-', '') : undefined
+                          const asist = asistenciasEstaRama.find(a => 
+                            esLibre ? a.nombre_libre === nombreLibre : a.beneficiario_id === b.id
+                          )
+                          return asist?.asiste === 'si'
+                        }).length
+                      } else {
+                        // Para beneficiarios, calculamos la plata que falta normal
+                        totalFaltan = bensEstaRama.reduce((sum, b) => {
+                          const asist = asistenciasEstaRama.find(a => a.beneficiario_id === b.id)
+                          const estadoAsiste = asist?.asiste || 'no_se_sabe'
+                          const esActivo = b.estado === 'activo'
+                          if (estadoAsiste !== 'si' || !esActivo) return sum
+                          const valorCamp = getValorCamp(key, b, config, anioActivo ?? new Date().getFullYear())
+                          const pagado = movsEstaRama
+                            .filter(m => m.beneficiario_id === b.id && m.pagado_por !== 'grupo')
+                            .reduce((s, m) => s + m.monto, 0)
+                          return sum + Math.max(0, valorCamp - pagado)
+                        }, 0)
+
+                        cantAsisten = asistenciasEstaRama.filter(a => a.asiste === 'si').length
+                      }
 
                       return (
                         <div
@@ -859,6 +1029,68 @@ export default function Planillas() {
                                 </div>
                               ) : (
                                 <>
+                                  {/* Botón Agregar Persona (Solo Dirigentes y otros) */}
+                                  {rama === 'Dirigentes y otros' && puedeEditarCeldas && (
+                                    <div style={{ marginBottom: '12px' }}>
+                                      {agregandoPersona !== key ? (
+                                        <button
+                                          onClick={() => setAgregandoPersona(key)}
+                                          style={{
+                                            width: '100%', padding: '10px',
+                                            backgroundColor: COLORES.verdeScout, color: 'white',
+                                            border: 'none', borderRadius: '6px',
+                                            cursor: 'pointer', fontFamily: 'Oswald, sans-serif',
+                                            fontSize: '13px', textTransform: 'uppercase',
+                                            letterSpacing: '0.5px', fontWeight: '600'
+                                          }}
+                                        >
+                                          ➕ Agregar Persona
+                                        </button>
+                                      ) : (
+                                        <div style={{
+                                          padding: '12px', backgroundColor: '#F3ECD8',
+                                          border: '2px solid #D1C9B4', borderRadius: '6px',
+                                          display: 'flex', flexDirection: 'column', gap: '8px'
+                                        }}>
+                                          <label style={{ fontSize: '11px', color: COLORES.textoSecundario, textTransform: 'uppercase', fontWeight: '600' }}>
+                                            Nombre de la persona
+                                          </label>
+                                          <select
+                                            value={nuevaPersona.nombre}
+                                            onChange={(e) => setNuevaPersona({ ...nuevaPersona, nombre: e.target.value })}
+                                            autoFocus
+                                            style={{
+                                              padding: '8px', borderRadius: '4px',
+                                              border: '1px solid #D1C9B4',
+                                              fontFamily: 'Oswald, sans-serif', fontSize: '13px'
+                                            }}
+                                          >
+                                            <option value="">Seleccionar dirigente...</option>
+                                            {listaDirigentes.map(d => (
+                                              <option key={d.id} value={`${d.apellido}, ${d.nombre}`}>
+                                                {d.apellido}, {d.nombre}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button
+                                              onClick={() => setAgregandoPersona(null)}
+                                              style={{ flex: 1, padding: '8px', backgroundColor: '#E8DEC4', color: '#24352A', border: 'none', borderRadius: '4px', cursor: 'pointer', fontFamily: 'Oswald', fontWeight: 'bold' }}
+                                            >
+                                              Cancelar
+                                            </button>
+                                            <button
+                                              onClick={() => handleCrearPersona(key)}
+                                              style={{ flex: 1, padding: '8px', backgroundColor: '#5C7A5E', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontFamily: 'Oswald', fontWeight: 'bold' }}
+                                            >
+                                              Guardar
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
                                   {/* Botón PDF */}
                                   <div style={{
                                     backgroundColor: '#FEF9EC',
@@ -984,6 +1216,7 @@ export default function Planillas() {
                                         onEliminar={eliminarMovimiento}
                                         onGuardarObservacion={guardarObservacion}
                                         onGuardarAsistencia={guardarAsistencia}
+                                        onOcultar={(id, esLibre) => handleOcultar(key, rama, id, !esLibre, 'movimientos')}
                                       />
 
                                       {/* Banner leyenda recibos */}
@@ -1028,7 +1261,7 @@ export default function Planillas() {
 // ============================================
 function TablaPlanilla({
   concepto, rama, beneficiarios, movimientos, observaciones, asistencias, config, puedeEditarCeldas, puedeEditarObservaciones, anioActual,
-  onCrear, onActualizar, onEliminar, onGuardarObservacion, onGuardarAsistencia
+  onCrear, onActualizar, onEliminar, onGuardarObservacion, onGuardarAsistencia, onOcultar
 }: {
   concepto: Concepto
   rama: Rama
@@ -1045,6 +1278,7 @@ function TablaPlanilla({
   onEliminar: (concepto: Concepto, rama: Rama, id: string) => void
   onGuardarObservacion: (concepto: Concepto, rama: Rama, benefId: string | null, texto: string, obsId?: string, nombreLibre?: string) => void
   onGuardarAsistencia: (concepto: Concepto, rama: Rama, benefId: string | null, nuevoEstado: 'si' | 'no' | 'no_se_sabe', nombreLibre?: string, asistenciaId?: string) => void
+  onOcultar: (id: string, esLibre: boolean) => void
 }) {
   const esCuotas = concepto === 'cuotas'
   const esCamp = concepto === 'camp_corto' || concepto === 'camp_anual'
@@ -1161,12 +1395,14 @@ function TablaPlanilla({
 
     if (ordenColumna === 'faltan') {
       const calcFaltan = (benef: Beneficiario) => {
-        const asist = asistencias.find(x => x.beneficiario_id === benef.id)
+        const esLibre = benef.id.startsWith('libre-')
+        const nombreLibre = esLibre ? benef.id.replace('libre-', '') : undefined
+        const asist = asistencias.find(x => esLibre ? x.nombre_libre === nombreLibre : x.beneficiario_id === benef.id)
         const estadoAsiste = asist?.asiste || 'no_se_sabe'
         if (estadoAsiste !== 'si' || benef.estado === 'inactivo') return 0
-        const valorCamp = getValorCamp(concepto, benef, config, anioActual)
+        const valorCamp = esLibre ? getValorCampDirigente(concepto, config, anioActual) : getValorCamp(concepto, benef, config, anioActual)
         const pagado = movimientos
-          .filter(m => m.beneficiario_id === benef.id && m.pagado_por !== 'grupo')
+          .filter(m => esLibre ? m.nombre_libre === nombreLibre : m.beneficiario_id === benef.id)
           .reduce((s, m) => s + m.monto, 0)
         return Math.max(0, valorCamp - pagado)
       }
@@ -1177,9 +1413,12 @@ function TablaPlanilla({
 
     if (ordenColumna === 'asiste') {
       const orden: Record<string, number> = { 'si': 0, 'no_se_sabe': 1, 'no': 2 }
-      const asistA = asistencias.find(x => x.beneficiario_id === a.id)?.asiste || 'no_se_sabe'
-      const asistB = asistencias.find(x => x.beneficiario_id === b.id)?.asiste || 'no_se_sabe'
-      const cmp = orden[asistA] - orden[asistB]
+      const getAsiste = (benef: Beneficiario) => {
+        const esLibre = benef.id.startsWith('libre-')
+        const nombreLibre = esLibre ? benef.id.replace('libre-', '') : undefined
+        return asistencias.find(x => esLibre ? x.nombre_libre === nombreLibre : x.beneficiario_id === benef.id)?.asiste || 'no_se_sabe'
+      }
+      const cmp = orden[getAsiste(a)] - orden[getAsiste(b)]
       return ordenDireccion === 'asc' ? cmp : -cmp
     }
 
@@ -1228,7 +1467,7 @@ function TablaPlanilla({
                 userSelect: 'none'
               }}
             >
-              Beneficiario{getIcono('beneficiario')}
+              {rama === 'Dirigentes y otros' ? 'Dirigente / Otro' : 'Beneficiario'}{getIcono('beneficiario')}
             </th>
 
             {esCuotas ? (
@@ -1377,15 +1616,18 @@ function TablaPlanilla({
         </thead>
         <tbody>
           {ordenados.map((b, idx) => {
+            const esLibre = b.id.startsWith('libre-')
+            const nombreLibre = esLibre ? b.id.replace('libre-', '') : undefined
+
             const movsBenef = movimientos
-              .filter(m => m.beneficiario_id === b.id)
+              .filter(m => (esLibre ? m.nombre_libre === nombreLibre : m.beneficiario_id === b.id) && m.monto > 0)
               .sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago))
 
             const movsFamilia = movsBenef.filter(m => m.pagado_por !== 'grupo')
             const pagoGrupo = movsBenef.find(m => m.pagado_por === 'grupo')
 
-            const obs = observaciones.find(o => o.beneficiario_id === b.id)
-            const asistencia = asistencias.find(a => a.beneficiario_id === b.id)
+            const obs = observaciones.find(o => esLibre ? o.nombre_libre === nombreLibre : o.beneficiario_id === b.id)
+            const asistencia = asistencias.find(a => esLibre ? a.nombre_libre === nombreLibre : a.beneficiario_id === b.id)
             const asiste = asistencia?.asiste || 'no_se_sabe'
 
             const totalFamilia = movsFamilia
@@ -1393,9 +1635,16 @@ function TablaPlanilla({
               .reduce((sum, m) => sum + m.monto, 0)
             const esInactivo = b.estado === 'inactivo'
             const bgFila = idx % 2 === 0 ? 'white' : '#FAF8F4'
-            const nombreFormateado = formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
+            
+            const nombreFormateado = rama === 'Dirigentes y otros' 
+              ? b.nombre.replace(/^,\s*/, '')
+              : formatearNombreConH(b.nombre, b.apellido, b.tiene_hermanos)
 
-            const valorCamp = esCamp ? getValorCamp(concepto, b, config, anioActual) : 0
+            const valorCamp = esCamp 
+              ? (rama === 'Dirigentes y otros' 
+                  ? getValorCampDirigente(concepto, config, anioActual) 
+                  : getValorCamp(concepto, b, config, anioActual)) 
+              : 0
 
             const debeComputarFaltan = asiste === 'si' && !esInactivo
             const faltan = debeComputarFaltan ? Math.max(0, valorCamp - totalFamilia) : 0
@@ -1410,15 +1659,26 @@ function TablaPlanilla({
                   backgroundColor: bgFila,
                   opacity: esInactivo ? 0.75 : 1
                 }}>
-                  <div style={{
-                    fontSize: 'clamp(11px, 2.3vw, 13px)',
-                    fontWeight: '600',
-                    color: esInactivo ? COLORES.gris : COLORES.textoPrincipal,
-                    lineHeight: 1.2,
-                    wordBreak: 'break-word',
-                    textDecoration: esInactivo ? 'line-through' : 'none'
-                  }}>
-                    {nombreFormateado}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{
+                      fontSize: 'clamp(11px, 2.3vw, 13px)',
+                      fontWeight: '600',
+                      color: esInactivo ? COLORES.gris : COLORES.textoPrincipal,
+                      lineHeight: 1.2,
+                      wordBreak: 'break-word',
+                      textDecoration: esInactivo ? 'line-through' : 'none'
+                    }}>
+                      {nombreFormateado}
+                    </div>
+                    {puedeEditarCeldas && (
+                      <button
+                        onClick={() => onOcultar(b.id, b.id.startsWith('libre-'))}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, padding: '2px' }}
+                        title="Ocultar de esta planilla"
+                      >
+                        🗑️
+                      </button>
+                    )}
                   </div>
                   {esInactivo && (
                     <div style={{
@@ -1530,13 +1790,17 @@ function TablaPlanilla({
                   <td style={{
                     ...tdNormal,
                     backgroundColor:
-                      asiste !== 'si'
-                        ? (asiste === 'no' ? '#FEE2E2' : '#F3F4F6')
-                        : (faltan === 0 ? '#F0F7F0' : '#FEE2E2'),
+                      rama === 'Dirigentes y otros'
+                        ? '#F3F4F6'
+                        : asiste !== 'si'
+                          ? (asiste === 'no' ? '#FEE2E2' : '#F3F4F6')
+                          : (faltan === 0 ? '#F0F7F0' : '#FEE2E2'),
                     color:
-                      asiste !== 'si'
-                        ? (asiste === 'no' ? COLORES.terracota : COLORES.textoSecundario)
-                        : (faltan === 0 ? COLORES.verdeClaro : COLORES.terracota),
+                      rama === 'Dirigentes y otros'
+                        ? COLORES.textoSecundario
+                        : asiste !== 'si'
+                          ? (asiste === 'no' ? COLORES.terracota : COLORES.textoSecundario)
+                          : (faltan === 0 ? COLORES.verdeClaro : COLORES.terracota),
                     textAlign: 'center',
                     fontWeight: '700',
                     opacity: esInactivo ? 0.65 : 1,
@@ -1561,7 +1825,7 @@ function TablaPlanilla({
                     puedeEditar={puedeEditarCeldas}
                     bgFila={bgFila}
                     colorLinea={coloresRama.colorLinea}
-                    onGuardar={(nuevoEstado) => onGuardarAsistencia(concepto, rama, b.id, nuevoEstado, undefined, asistencia?.id)}
+                    onGuardar={(nuevoEstado) => onGuardarAsistencia(concepto, rama, b.id, nuevoEstado, nombreLibre, asistencia?.id)}
                   />
                 )}
 
