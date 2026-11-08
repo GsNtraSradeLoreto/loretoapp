@@ -448,6 +448,7 @@ export function generarPDFPlanilla({
       }
       if (data.section === 'body' && data.column.index > 0 && data.column.index <= numColumnasPago) {
         const beneficiario = ordenados[data.row.index]
+if (!beneficiario) return
         const esLibreRow = beneficiario.id.startsWith('libre-')
         const nombreLibreRow = esLibreRow ? beneficiario.id.replace('libre-', '') : undefined
         const movsFamilia = movimientos.filter(m => 
@@ -466,12 +467,15 @@ export function generarPDFPlanilla({
           }
         } else {
           const movAsignado = movsFamilia[data.column.index - 1]
-          if (movAsignado && movAsignado.recibo_entregado === false) data.cell.styles.fillColor = [252, 211, 77]
-          else if (movAsignado) data.cell.styles.fillColor = [127, 183, 126]
+          if (movAsignado) {
+            if (movAsignado.recibo_entregado === false) data.cell.styles.fillColor = [252, 211, 77]
+            else data.cell.styles.fillColor = [127, 183, 126]
+          }
         }
       }
       if (colGrupoIndex > 0 && data.section === 'body' && data.column.index === colGrupoIndex) {
         const beneficiario = ordenados[data.row.index]
+if (!beneficiario) return
         const pagoGrupo = movimientos.find(m => 
           (beneficiario.id.startsWith('libre-') 
             ? m.nombre_libre === beneficiario.id.replace('libre-', '') 
@@ -500,6 +504,7 @@ export function generarPDFPlanilla({
 
       if (data.column.index > 0 && data.column.index <= numColumnasPago) {
         const beneficiario = ordenados[data.row.index]
+if (!beneficiario) return
         const esLibreRow = beneficiario.id.startsWith('libre-')
         const nombreLibreRow = esLibreRow ? beneficiario.id.replace('libre-', '') : undefined
         const movsFamilia = movimientos.filter(m => 
@@ -516,22 +521,31 @@ export function generarPDFPlanilla({
           movAsignado = movsFamilia[data.column.index - 1]
         }
 
+        // SI NO HAY MOVIMIENTO, NOS SALTEAMOS EL RESTO PARA QUE NO EXPLOTE
+        if (!movAsignado && !esCamp) return
+
         // ============================================
         // 🔥 ACÁ ESTÁ EL FIX DE LOS CAMPAMENTOS
         // ============================================
         if (esCamp) {
           let valorCamp = 0
-          if (rama === 'Dirigentes y otros') {
-            const anioStr = concepto === 'camp_anual' ? (anio + 1).toString() : anio.toString()
-            valorCamp = concepto === 'camp_corto' 
-              ? (config?.camp_corto?.[anioStr]?.dirigente || 0)
-              : (config?.camp_anual?.[anioStr]?.dirigente || 0)
-          } else {
-            valorCamp = getValorCampPDF(concepto, beneficiario, config, anio)
+          let estaCompleto = false
+          
+          try {
+            if (rama === 'Dirigentes y otros') {
+              const anioStr = concepto === 'camp_anual' ? (anio + 1).toString() : anio.toString()
+              valorCamp = concepto === 'camp_corto' 
+                ? (config?.camp_corto?.[anioStr]?.dirigente || 0)
+                : (config?.camp_anual?.[anioStr]?.dirigente || 0)
+            } else {
+              valorCamp = getValorCampPDF(concepto, beneficiario, config, anio)
+            }
+            const totalFamilia = movsFamilia.reduce((sum, m) => sum + m.monto, 0)
+            estaCompleto = totalFamilia >= valorCamp && valorCamp > 0
+          } catch (e) {
+            console.error('Error calculando campamento', e)
           }
-          const totalFamilia = movsFamilia.reduce((sum, m) => sum + m.monto, 0)
-          const estaCompleto = totalFamilia >= valorCamp && valorCamp > 0
-
+          
           if (estaCompleto && !movAsignado) {
             doc.setFillColor(0, 0, 0)
             doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F')
@@ -587,6 +601,7 @@ export function generarPDFPlanilla({
 
       if (colGrupoIndex > 0 && data.column.index === colGrupoIndex) {
         const beneficiario = ordenados[data.row.index]
+if (!beneficiario) return
         const pagoGrupo = movimientos.find(m => 
           (beneficiario.id.startsWith('libre-') 
             ? m.nombre_libre === beneficiario.id.replace('libre-', '') 

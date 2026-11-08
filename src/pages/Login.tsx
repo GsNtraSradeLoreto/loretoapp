@@ -58,26 +58,18 @@ export default function Login() {
           return
         }
 
-// Contar cuántos SUPER_ADMIN hay. Si no hay ninguno, este usuario será el primero.
-const { count, error: countError } = await supabase
-  .from('usuarios')
-  .select('*', { count: 'exact', head: true })
-  .eq('rol', 'SUPER_ADMIN')
+        // Contar cuántos SUPER_ADMIN hay. Si no hay ninguno, este usuario será el primero.
+        const { count, error: countError } = await supabase
+          .from('usuarios')
+          .select('*', { count: 'exact', head: true })
+          .eq('rol', 'SUPER_ADMIN')
 
-// Si hay error de RLS o count es null, asumimos que NO es el primero (más seguro)
-const esPrimerUsuario = !countError && count === 0
+        const esPrimerUsuario = !countError && count === 0
 
+        // 1. Registramos en Auth (SIN metadatos, el trigger ya no se usa)
         const { data: authData, error: signUpError } = await supabase.auth.signUp({
           email,
-          password,
-          options: {
-            data: {
-              nombre: nombre.trim(),
-              apellido: apellido.trim() || '',
-              rol: esPrimerUsuario ? 'SUPER_ADMIN' : 'viewer',
-              activo: true
-            }
-          }
+          password
         })
 
         if (signUpError) {
@@ -94,81 +86,60 @@ const esPrimerUsuario = !countError && count === 0
         }
 
         if (authData.user) {
-  // El trigger de Supabase ya crea el perfil automáticamente.
-  // Intentamos crearlo igual por las dudas, pero si falla por RLS o duplicado, lo ignoramos.
-  const { error: profileError } = await supabase
-    .from('usuarios')
-    .insert({
-      id: authData.user.id,
-      nombre: nombre.trim(),
-      apellido: apellido.trim() || '',
-      email: email,
-      rol: esPrimerUsuario ? 'SUPER_ADMIN' : 'viewer',
-      activo: true
-    })
+          // 2. Creamos el perfil en la tabla usuarios desde acá
+          const { error: profileError } = await supabase
+            .from('usuarios')
+            .insert({
+              id: authData.user.id,
+              nombre: nombre.trim(),
+              apellido: apellido.trim() || '',
+              email: email,
+              rol: esPrimerUsuario ? 'SUPER_ADMIN' : 'viewer',
+              activo: true
+            })
 
-  if (profileError) {
-    // 42501 = RLS bloqueó → el trigger lo creó igual
-    // 23505 = Duplicado → el trigger lo creó primero
-    const esErrorEsperado = 
-      profileError.code === '42501' || 
-      profileError.code === '23505' ||
-      profileError.message.includes('duplicate') ||
-      profileError.message.includes('row-level security')
+          if (profileError) {
+            // Si falla por RLS o porque ya existe, lo mostramos en consola pero NO bloqueamos
+            console.error('Error al crear perfil:', profileError)
+          }
 
-    if (!esErrorEsperado) {
-      // Es un error REAL, sí avisamos
-      console.error('Error inesperado al crear perfil:', profileError)
-      setMessage({ 
-        text: `⚠️ Error al crear el perfil. Contactá al administrador.`, 
-        type: 'error' 
-      })
-      setLoading(false)
-      return
-    }
-    
-    // Error esperado → el trigger ya creó el perfil, seguimos
-    console.log('ℹ️ El trigger creó el perfil automáticamente')
-  }
+          // 3. Enviar mail a Jefatura y SuperAdmin avisando del nuevo usuario
+          try {
+            const { data: jefaturas } = await supabase
+              .from('usuarios')
+              .select('email')
+              .in('rol', ['Jefatura', 'SUPER_ADMIN'])
+              .eq('activo', true)
 
-  // 🆕 Enviar mail a Jefatura y SuperAdmin avisando del nuevo usuario
-  try {
-    const { data: jefaturas } = await supabase
-      .from('usuarios')
-      .select('email')
-      .in('rol', ['Jefatura', 'SUPER_ADMIN'])
-      .eq('activo', true)
+            const destinatarios = (jefaturas || []).map(j => j.email).filter(Boolean)
 
-    const destinatarios = (jefaturas || []).map(j => j.email).filter(Boolean)
+            if (destinatarios.length > 0) {
+              await enviarEmail({
+                tipo: 'nuevo_usuario',
+                destinatarios,
+                datos: {
+                  jefe_nombre: `${nombre.trim()} ${apellido.trim() || ''}`.trim(),
+                  adulto_email: email,
+                  fecha_salida: new Date().toLocaleDateString('es-AR'),
+                  ubicacion: 'Registro desde la app'
+                }
+              })
+            }
+          } catch (mailError) {
+            console.error('⚠️ Error al enviar mail de nuevo usuario:', mailError)
+          }
 
-    if (destinatarios.length > 0) {
-      await enviarEmail({
-        tipo: 'nuevo_usuario',
-        destinatarios,
-        datos: {
-          jefe_nombre: `${nombre.trim()} ${apellido.trim() || ''}`.trim(),
-          adulto_email: email,
-          // Reutilizamos estos campos genéricos para no cambiar la interfaz
-          fecha_salida: new Date().toLocaleDateString('es-AR'),
-          ubicacion: 'Registro desde la app'
+          setMessage({ 
+            text: `✅ ¡Usuario creado! Ya podés iniciar sesión.`, 
+            type: 'success' 
+          })
+          setNombre('')
+          setApellido('')
+          setEmail('')
+          setPassword('')
+          setIsLogin(true)
         }
-      })
-    }
-  } catch (mailError) {
-    console.error('⚠️ Error al enviar mail de nuevo usuario:', mailError)
-  }
-
-  setMessage({ 
-    text: `✅ ¡Usuario creado! Ya podés iniciar sesión.`, 
-    type: 'success' 
-  })
-  setNombre('')
-  setApellido('')
-  setEmail('')
-  setPassword('')
-  setIsLogin(true)
-}
-setLoading(false)
+        setLoading(false)
       }
     } catch (error: any) {
       setMessage({ 
@@ -235,45 +206,45 @@ setLoading(false)
         maxWidth: '420px',
         width: '100%',
         border: '3px solid #BF4E30',
-boxShadow: '0 0 0 3px #111111, 0 10px 25px -5px rgba(0,0,0,0.1)'
+        boxShadow: '0 0 0 3px #111111, 0 10px 25px -5px rgba(0,0,0,0.1)'
       }}>
         {/* Logo y título */}
-<div style={{ textAlign: 'center', marginBottom: '20px' }}>
-  <img 
-    src="/logo-grupo.png" 
-    alt="Logo del Grupo Scout" 
-    style={{ 
-      display: 'block',
-      margin: '0 auto 10px auto',
-      width: '300px', 
-      height: '300px', 
-      objectFit: 'contain' /* Se cambió 'cover' por 'contain' para que el logo no se recorte si no es perfectamente cuadrado */
-    }} 
-  />
-  
-  <h1 style={{
-    fontFamily: 'Oswald, sans-serif',
-    fontWeight: '700',
-    fontSize: '28px',
-    color: '#24352A',
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-    margin: 0
-  }}>
-    LoretApp
-  </h1>
-  <p style={{
-    fontFamily: 'Oswald, sans-serif',
-    fontWeight: '500',
-    fontSize: '14px',
-    color: '#7A7364',
-    textTransform: 'uppercase',
-    letterSpacing: '0.3px',
-    margin: '4px 0 0 0'
-  }}>
-    {showResetPassword ? 'Restablecer Contraseña' : 'Sistema de Gestión - GS. Ntra. Sra. de Loreto'}
-  </p>
-</div>
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+          <img 
+            src="/logo-grupo.png" 
+            alt="Logo del Grupo Scout" 
+            style={{ 
+              display: 'block',
+              margin: '0 auto 10px auto',
+              width: '300px', 
+              height: '300px', 
+              objectFit: 'contain'
+            }} 
+          />
+          
+          <h1 style={{
+            fontFamily: 'Oswald, sans-serif',
+            fontWeight: '700',
+            fontSize: '28px',
+            color: '#24352A',
+            textTransform: 'uppercase',
+            letterSpacing: '1px',
+            margin: 0
+          }}>
+            LoretApp
+          </h1>
+          <p style={{
+            fontFamily: 'Oswald, sans-serif',
+            fontWeight: '500',
+            fontSize: '14px',
+            color: '#7A7364',
+            textTransform: 'uppercase',
+            letterSpacing: '0.3px',
+            margin: '4px 0 0 0'
+          }}>
+            {showResetPassword ? 'Restablecer Contraseña' : 'Sistema de Gestión - GS. Ntra. Sra. de Loreto'}
+          </p>
+        </div>
 
         {/* Mensajes */}
         {message.text && (

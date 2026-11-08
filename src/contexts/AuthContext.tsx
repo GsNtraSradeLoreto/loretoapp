@@ -19,28 +19,22 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   actualizarFechaNacimiento: (fecha: string) => Promise<void>
-  // Roles base
   isSuperAdmin: boolean
   isJefatura: boolean
   isTesorero: boolean
   isAdministrador: boolean
-  // Roles de rama
   getRolData: () => { tipo: 'jefe' | 'subjefe' | 'ayudante' | 'viewer' | 'admin', rama: string | null }
   esJefe: boolean
   esSubJefe: boolean
   esAyudante: boolean
-  // Permisos generales
   canViewAll: boolean
   canEditAll: boolean
   canViewRama: (rama: string) => boolean
   canEditRama: (rama: string) => boolean
-  // Permisos específicos de finanzas
   canViewAllFinanzas: boolean
   canEditFinanzas: (rama?: string) => boolean
   canCreatePagos: boolean
-  // Permisos específicos de campamentos
   canEditCampamentos: (rama?: string) => boolean
-  // 🆕 MATRIZ DE PERMISOS DINÁMICA
   matrizPermisos: Record<string, string[]>
   puedeHacer: (permiso: string) => boolean
 }
@@ -62,9 +56,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(session.user)
           await getProfile(session.user.id, session.user.email)
         }
-        setLoading(false)
       } catch (error) {
         console.error('Error al cargar sesión:', error)
+      } finally {
         setLoading(false)
       }
     }
@@ -92,9 +86,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('usuarios')
         .select('*')
         .eq('id', userId)
-        .single()
+        .maybeSingle() // Usamos maybeSingle en vez de single para que no explote si no lo encuentra
 
-      // 1. Cargamos la matriz de permisos de la base de datos
+      // 1. Cargamos la matriz de permisos
       const { data: configData } = await supabase
         .from('configuracion_grupo')
         .select('valores_planillas')
@@ -106,42 +100,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          const { data: newProfile, error: insertError } = await supabase
-            .from('usuarios')
-            .insert({
-              id: userId,
-              nombre: 'Usuario',
-              apellido: '',
-              email: email || '',
-              rol: 'viewer',
-              rama_asignada: null,
-              activo: true
-            })
-            .select()
-            .single()
-
-          if (!insertError && newProfile) {
-            setProfile(newProfile)
-          }
-        }
+        console.error('Error al buscar perfil:', error)
         return
       }
 
-      setProfile(data)
+      // Si encontró el perfil, lo guardamos
+      if (data) {
+        setProfile(data)
 
-      // ✅ Actualizar último acceso (sin bloquear si falla)
-      supabase
-        .from('usuarios')
-        .update({ ultimo_acceso: new Date().toISOString() })
-        .eq('id', userId)
-        .then(({ error }) => {
-          if (error) {
-            console.warn('⚠️ No se pudo actualizar ultimo_acceso:', error)
-          }
-        })
+        // Actualizamos último acceso (silenciosamente)
+        supabase
+          .from('usuarios')
+          .update({ ultimo_acceso: new Date().toISOString() })
+          .eq('id', userId)
+          .then(({ error }) => {
+            if (error) console.warn('⚠️ No se pudo actualizar ultimo_acceso:', error)
+          })
+      } else {
+        // Si NO encontró el perfil (quizás porque falló el registro o la sesión es vieja),
+        // NO intentamos insertar nada acá para evitar el error 400.
+        console.warn('⚠️ El usuario está en Auth pero no tiene perfil en la tabla usuarios.')
+      }
     } catch (error) {
-      console.error('Error al cargar perfil:', error)
+      console.error('Error general al cargar perfil:', error)
     }
   }
 
@@ -178,18 +159,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const rol = profile?.rol || 'viewer'
 
-  // Roles base
   const isSuperAdmin = rol === 'SUPER_ADMIN'
   const isJefatura = rol === 'Jefatura' || rol === 'SUPER_ADMIN'
   const isTesorero = rol === 'Tesorero' || rol === 'SUPER_ADMIN'
   const isAdministrador = rol === 'Administrador' || rol === 'SUPER_ADMIN'
 
-  // Roles de rama
   const esJefe = rol === 'JefeManada' || rol === 'JefeUnidad' || rol === 'JefeCaminantes' || rol === 'JefeRovers'
   const esSubJefe = rol === 'SubJefeManada' || rol === 'SubJefeUnidad' || rol === 'SubJefeCaminantes' || rol === 'SubJefeRovers'
   const esAyudante = rol === 'AyudanteManada' || rol === 'AyudanteUnidad' || rol === 'AyudanteCaminantes' || rol === 'AyudanteRovers'
 
-  // Obtener la rama del rol
   const getRamaFromRol = (rol: string): string | null => {
     if (rol === 'JefeManada' || rol === 'SubJefeManada' || rol === 'AyudanteManada') return 'Manada'
     if (rol === 'JefeUnidad' || rol === 'SubJefeUnidad' || rol === 'AyudanteUnidad') return 'Unidad Scout'
@@ -200,7 +178,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const ramaAsignada = getRamaFromRol(rol)
 
-  // Función para obtener datos del rol
   const getRolData = () => {
     if (isSuperAdmin || isJefatura || isAdministrador || isTesorero) {
       return { tipo: 'admin' as const, rama: null }
@@ -211,7 +188,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { tipo: 'viewer' as const, rama: null }
   }
 
-  // Permisos generales
   const canViewAll = isSuperAdmin || isJefatura || isAdministrador || isTesorero
   const canEditAll = isSuperAdmin || isJefatura
 
@@ -252,9 +228,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return false
   }
 
-  // =============================================
-  // 🆕 FUNCIÓN MAESTRA DE PERMISOS DINÁMICOS
-  // =============================================
   const puedeHacer = (permiso: string): boolean => {
     if (isSuperAdmin) return true
     const permisosDelRol = matrizPermisos[rol] || []

@@ -72,6 +72,12 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
+      // Si es viewer, no cargamos datos de beneficiarios para evitar errores de RLS
+      if (profile?.rol === 'viewer') {
+        setLoading(false)
+        return
+      }
+
       let query = supabase
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, estado, tiene_hermanos, foto_url, fecha_nacimiento')
@@ -333,6 +339,29 @@ export default function Dashboard() {
           flexShrink: 0
         }}>
           ▶
+        </div>
+      </div>
+    )
+  }
+
+  // 🆕 Bloqueo para viewers
+  if (profile?.rol === 'viewer') {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh', fontFamily: 'Oswald, sans-serif', padding: '20px' }}>
+        <div style={{ maxWidth: '500px', backgroundColor: 'white', border: '2px solid #D1C9B4', borderRadius: '16px', padding: '32px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: '56px', marginBottom: '16px' }}>⏳</div>
+          <h2 style={{ color: '#24352A', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '22px', margin: '0 0 12px 0', fontWeight: '700' }}>
+            Cuenta en Revisión
+          </h2>
+          <p style={{ color: '#7A7364', fontSize: '14px', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+            Hola <strong>{profile?.nombre || 'Usuario'}</strong>, tu cuenta está activa, pero todavía no tenés un rol asignado.
+          </p>
+          <p style={{ color: '#7A7364', fontSize: '14px', lineHeight: 1.6, margin: '0 0 24px 0' }}>
+            Un administrador tiene que asignarte un rol (Jefe, Tesorero, etc.) para que puedas ver los beneficiarios y usar la app.
+          </p>
+          <div style={{ padding: '12px', backgroundColor: '#FEF3C7', borderRadius: '8px', border: '1px solid #FDE68A', fontSize: '12px', color: '#C48A2A', fontWeight: '600' }}>
+            💡 Podés usar el menú de tu perfil (arriba a la derecha) para ver tus datos o cerrar sesión.
+          </div>
         </div>
       </div>
     )

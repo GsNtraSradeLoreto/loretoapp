@@ -59,10 +59,15 @@ export default function ViewerBloqueado() {
           <br />
           Por favor, ponete en contacto con el Jefe de Grupo o el Administrador.
         </p>
+        <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: '#FEF3C7', borderRadius: '8px', border: '1px solid #FDE68A' }}>
+          <p style={{ color: '#C48A2A', fontSize: '12px', margin: 0, fontWeight: '600', fontFamily: 'Oswald, sans-serif' }}>
+            ⚠️ Importante: Hasta que no te asignen un rol, no podés volver a iniciar sesión.
+          </p>
+        </div>
         <button
           onClick={handleLogout}
           style={{
-            backgroundColor: '#BF4E30',
+            backgroundColor: '#24352A',
             color: 'white',
             padding: '10px 24px',
             borderRadius: '8px',
@@ -75,7 +80,7 @@ export default function ViewerBloqueado() {
             fontWeight: '600'
           }}
         >
-          Cerrar Sesión
+          Volver al inicio
         </button>
       </div>
     </div>

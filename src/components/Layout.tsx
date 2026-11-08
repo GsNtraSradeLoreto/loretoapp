@@ -61,12 +61,7 @@ export default function Layout({ children }: LayoutProps) {
     }
   }, [showMenu])
 
-    // 🔒 Si es viewer, lo mandamos a la pantalla de bloqueo
-  useEffect(() => {
-    if (esViewer && location.pathname !== '/cuenta-en-revision') {
-      navigate('/cuenta-en-revision', { replace: true })
-    }
-  }, [esViewer, location.pathname, navigate])
+  // ✅ Ya no mandamos a los viewers a una pantalla bloqueada
 
   const handleLogout = async () => {
     await signOut()
