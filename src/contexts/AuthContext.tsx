@@ -143,13 +143,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const actualizarFechaNacimiento = async (fecha: string) => {
     if (!profile?.id) throw new Error('No hay usuario logueado')
 
-    const { error } = await supabase
+    // 1. Actualizamos la tabla usuarios (para que el perfil tenga la fecha)
+    const { error: errUsr } = await supabase
       .from('usuarios')
       .update({ fecha_nacimiento: fecha })
       .eq('id', profile.id)
 
-    if (error) throw error
+    if (errUsr) throw errUsr
 
+    // 2. Actualizamos la tabla dirigentes (que es de donde ahora lee Cumpleaños)
+    const { error: errDir } = await supabase
+      .from('dirigentes')
+      .update({ fecha_nacimiento: fecha })
+      .eq('usuario_id', profile.id)
+
+    // No lanzamos error si falla en dirigentes (por si el usuario no tiene ficha)
+    if (errDir) {
+      console.warn('⚠️ No se pudo actualizar la fecha en dirigentes:', errDir)
+    }
+
+    // 3. Actualizamos el estado local para que el cartel desaparezca
     setProfile({ ...profile, fecha_nacimiento: fecha })
   }
 

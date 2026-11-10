@@ -110,11 +110,11 @@ export default function Cumpleanos() {
     loadPersonas()
   }, [])
 
-  const loadPersonas = async () => {
+    const loadPersonas = async () => {
     try {
       setLoading(true)
 
-      // Cargar beneficiarios activos
+      // 1. Cargar beneficiarios activos
       const { data: beneficiariosData, error: benefError } = await supabase
         .from('beneficiarios')
         .select('id, nombre, apellido, rama, fecha_nacimiento, foto_url, tiene_hermanos')
@@ -123,15 +123,19 @@ export default function Cumpleanos() {
 
       if (benefError) throw benefError
 
-      // Cargar usuarios activos con fecha
-      const { data: usuariosData, error: userError } = await supabase
-        .from('usuarios')
-        .select('id, nombre, apellido, rol, fecha_nacimiento')
+      // 2. Cargar dirigentes activos con fecha
+      const { data: dirigentesData, error: dirError } = await supabase
+        .from('dirigentes')
+        .select('id, nombre, apellido, rol_grupo, fecha_nacimiento')
         .eq('activo', true)
         .not('fecha_nacimiento', 'is', null)
 
-      if (userError) throw userError
+      if (dirError) throw dirError
 
+      // 🔍 LOG PARA DEPURAR
+      console.log('Dirigentes encontrados:', dirigentesData)
+
+      // 3. Formatear Beneficiarios
       const beneficiarios: Persona[] = (beneficiariosData || []).map(b => ({
         id: b.id,
         nombre: b.nombre,
@@ -144,17 +148,20 @@ export default function Cumpleanos() {
         tiene_hermanos: b.tiene_hermanos || false
       }))
 
-      const usuarios: Persona[] = (usuariosData || []).map(u => ({
+      // 4. Formatear Dirigentes
+      const usuarios: Persona[] = (dirigentesData || []).map(u => ({
         id: u.id,
         nombre: u.nombre,
         apellido: u.apellido,
-        rama: getRamaDeRol(u.rol),
-        rol: u.rol,
+        rama: 'Dirigentes', // Forzamos la rama para que se vea el chip
+        rol: u.rol_grupo || 'Dirigente',
         fecha_nacimiento: u.fecha_nacimiento,
         foto_url: null,
         tipo: 'usuario',
         tiene_hermanos: false
       }))
+
+      console.log('Usuarios formateados para la lista:', usuarios)
 
       setPersonas([...beneficiarios, ...usuarios])
     } catch (error) {

@@ -574,7 +574,8 @@ export default function AdultoDetalle() {
         .from('usuarios')
         .update({
           nombre: form.nombre.trim(),
-          apellido: form.apellido.trim()
+          apellido: form.apellido.trim(),
+          fecha_nacimiento: form.fecha_nacimiento || null // 👈 ESTA ES LA LÍNEA QUE FALTA
         })
         .eq('id', dirigente.usuario_id)
 

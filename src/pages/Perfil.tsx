@@ -6,6 +6,7 @@ export default function Perfil() {
   const { profile, user } = useAuth()
   const [nombre, setNombre] = useState(profile?.nombre || '')
   const [apellido, setApellido] = useState(profile?.apellido || '')
+  const [fechaNacimiento, setFechaNacimiento] = useState(profile?.fecha_nacimiento || '')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState({ text: '', type: '' })
   const [showPasswordForm, setShowPasswordForm] = useState(false)
@@ -44,6 +45,15 @@ export default function Perfil() {
         }
       })
   }, [profile?.id])
+
+  // Actualizar los campos si el perfil cambia en el contexto
+  useEffect(() => {
+    if (profile) {
+      setNombre(profile.nombre || '')
+      setApellido(profile.apellido || '')
+      setFechaNacimiento(profile.fecha_nacimiento || '')
+    }
+  }, [profile])
 
   const handleSubirFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -101,7 +111,7 @@ export default function Perfil() {
         if (errUsr) throw errUsr
       }
 
-            setFotoPerfil(publicUrl)
+      setFotoPerfil(publicUrl)
       setMessage({ text: '✅ Foto actualizada correctamente', type: 'success' })
       
       // Avisamos a la app
@@ -163,17 +173,44 @@ export default function Perfil() {
     setLoading(true)
 
     try {
-      const { error } = await supabase
+      // 1. Actualizamos la tabla usuarios
+      const { data: dataUsr, error: errUsr } = await supabase
         .from('usuarios')
         .update({
           nombre: nombre.trim(),
-          apellido: apellido.trim() || ''
+          apellido: apellido.trim() || '',
+          fecha_nacimiento: fechaNacimiento || null
         })
         .eq('id', profile?.id)
+        .select() // 👈 Pedimos que nos devuelva la fila modificada
 
-      if (error) throw error
+      if (errUsr) {
+        console.error('Error en usuarios:', errUsr)
+        throw new Error('Error al guardar en usuarios: ' + errUsr.message)
+      }
+
+      // Si dataUsr está vacío, significa que RLS bloqueó la actualización sin dar error
+      if (!dataUsr || dataUsr.length === 0) {
+        console.warn('⚠️ El update de usuarios no afectó ninguna fila (posible bloqueo de RLS)')
+      }
+
+      // 2. Actualizamos la tabla dirigentes (si el usuario tiene ficha vinculada)
+      const { error: errDir } = await supabase
+        .from('dirigentes')
+        .update({
+          nombre: nombre.trim(),
+          apellido: apellido.trim() || '',
+          fecha_nacimiento: fechaNacimiento || null
+        })
+        .eq('usuario_id', profile?.id)
+
+      if (errDir) {
+        console.warn('⚠️ No se pudo sincronizar con dirigentes:', errDir)
+      }
+
       setMessage({ text: '✅ Perfil actualizado correctamente', type: 'success' })
     } catch (error: any) {
+      console.error('Error general:', error)
       setMessage({ text: `❌ ${error.message}`, type: 'error' })
     } finally {
       setLoading(false)
@@ -448,6 +485,49 @@ export default function Perfil() {
                 onBlur={(e) => e.currentTarget.style.borderColor = '#D1C9B4'}
               />
             </div>
+          </div>
+
+          {/* Fecha de nacimiento */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#7A7364',
+              marginBottom: '4px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontFamily: 'Oswald, sans-serif'
+            }}>
+              Fecha de nacimiento
+            </label>
+            <input
+              type="date"
+              value={fechaNacimiento}
+              onChange={(e) => setFechaNacimiento(e.target.value)}
+              max={new Date().toISOString().split('T')[0]}
+              style={{
+                width: '100%',
+                padding: '8px 16px',
+                fontSize: '16px',
+                border: '2px solid #D1C9B4',
+                borderRadius: '8px',
+                outline: 'none',
+                fontFamily: 'Oswald, sans-serif',
+                backgroundColor: 'white'
+              }}
+              onFocus={(e) => e.currentTarget.style.borderColor = '#24352A'}
+              onBlur={(e) => e.currentTarget.style.borderColor = '#D1C9B4'}
+            />
+            <p style={{
+              fontSize: '11px',
+              color: '#7A7364',
+              marginTop: '4px',
+              fontFamily: 'Oswald, sans-serif',
+              fontStyle: 'italic'
+            }}>
+              Se usa para la lista de cumpleaños del grupo.
+            </p>
           </div>
 
           <div>
