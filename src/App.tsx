@@ -28,6 +28,7 @@ const PermisoDetalle = lazy(() => import('./pages/PermisoDetalle'))
 const Adultos = lazy(() => import('./pages/Adultos'))
 const AdultoDetalle = lazy(() => import('./pages/AdultoDetalle'))
 const ViewerBloqueado = lazy(() => import('./pages/ViewerBloqueado'))
+const ListaEspera = lazy(() => import('./pages/ListaEspera'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -197,6 +198,13 @@ function AppRoutes() {
           <PrivateRoute>
             <Layout>
               <Cumpleanos />
+            </Layout>
+          </PrivateRoute>
+        } />
+        <Route path="/lista-espera" element={
+          <PrivateRoute>
+            <Layout>
+              <ListaEspera />
             </Layout>
           </PrivateRoute>
         } />

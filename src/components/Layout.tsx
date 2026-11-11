@@ -544,6 +544,29 @@ export default function Layout({ children }: LayoutProps) {
                       Cumpleaños
                     </Link>
 
+                    {(isSuperAdmin || isJefatura || isAdministrador) && (
+                      <Link
+                        to="/lista-espera"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '8px 16px',
+                          color: '#24352A',
+                          textDecoration: 'none',
+                          fontSize: '14px',
+                          fontFamily: 'Oswald, sans-serif',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8DEC4'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        onClick={() => setShowMenu(false)}
+                      >
+                        <span style={{ marginRight: '8px' }}>📥</span>
+                        Lista de Espera
+                      </Link>
+                    )}
+
                     {(isSuperAdmin || isJefatura || isAdministrador || esJefeDeRama) && (
                       <Link
                         to="/solicitudes"
